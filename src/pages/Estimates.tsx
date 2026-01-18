@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
@@ -20,7 +21,10 @@ import {
   Loader2, 
   Trash2,
   Calculator,
-  CheckCircle2
+  CheckCircle2,
+  Edit,
+  Save,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -56,6 +60,7 @@ export const Estimates: React.FC = () => {
     loading, 
     createEstimate, 
     addEstimateItems,
+    updateEstimateItem,
     deleteEstimateItem,
     getItemsByEstimate 
   } = useEstimates();
@@ -73,7 +78,28 @@ export const Estimates: React.FC = () => {
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string } | null>(null);
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
 
-  // Manual item form
+  // Edit state for inline editing
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    kostengruppe_code: '',
+    estimated_amount: '',
+    notes: '',
+  });
+
+  // Manual estimate form state
+  const [manualEstimateName, setManualEstimateName] = useState('');
+  const [manualItems, setManualItems] = useState<Array<{
+    kostengruppe_code: string;
+    estimated_amount: string;
+    notes: string;
+  }>>([]);
+  const [newManualItem, setNewManualItem] = useState({
+    kostengruppe_code: '',
+    estimated_amount: '',
+    notes: '',
+  });
+
+  // Manual item form (for upload dialog)
   const [manualItem, setManualItem] = useState({
     kostengruppe_code: '',
     estimated_amount: '',
@@ -85,6 +111,12 @@ export const Estimates: React.FC = () => {
     setUploadedFile(null);
     setPendingEstimateId(null);
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+  };
+
+  const resetManualForm = () => {
+    setManualEstimateName('');
+    setManualItems([]);
+    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,6 +221,99 @@ export const Estimates: React.FC = () => {
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
   };
 
+  // Manual estimate creation
+  const addNewManualItem = () => {
+    if (!newManualItem.kostengruppe_code || !newManualItem.estimated_amount) {
+      toast({
+        title: 'Fehler',
+        description: 'Bitte Kostengruppe und Betrag angeben',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setManualItems(prev => [...prev, {
+      kostengruppe_code: newManualItem.kostengruppe_code,
+      estimated_amount: newManualItem.estimated_amount,
+      notes: newManualItem.notes,
+    }]);
+
+    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+  };
+
+  const removeManualItem = (index: number) => {
+    setManualItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleCreateManualEstimate = async () => {
+    if (!household) return;
+
+    if (manualItems.length === 0) {
+      toast({
+        title: 'Fehler',
+        description: 'Bitte mindestens eine Kostenposition hinzufügen',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Create estimate without file
+    const estimate = await createEstimate('', manualEstimateName || `Manuelle Schätzung ${format(new Date(), 'dd.MM.yyyy')}`);
+    if (!estimate) return;
+
+    // Add items
+    const success = await addEstimateItems(
+      estimate.id,
+      manualItems.map(item => ({
+        kostengruppe_code: item.kostengruppe_code,
+        estimated_amount: parseFloat(item.estimated_amount),
+        notes: item.notes || undefined,
+      }))
+    );
+
+    if (success) {
+      toast({
+        title: 'Erfolg',
+        description: 'Kostenschätzung wurde erstellt.',
+      });
+      resetManualForm();
+      setIsManualOpen(false);
+    }
+  };
+
+  // Inline editing functions
+  const startEditing = (item: ArchitectEstimateItem) => {
+    setEditingItemId(item.id);
+    setEditFormData({
+      kostengruppe_code: item.kostengruppe_code,
+      estimated_amount: String(item.estimated_amount),
+      notes: item.notes || '',
+    });
+  };
+
+  const cancelEditing = () => {
+    setEditingItemId(null);
+    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+  };
+
+  const saveEditing = async () => {
+    if (!editingItemId) return;
+
+    const success = await updateEstimateItem(editingItemId, {
+      kostengruppe_code: editFormData.kostengruppe_code,
+      estimated_amount: parseFloat(editFormData.estimated_amount) || 0,
+      notes: editFormData.notes || null,
+    });
+
+    if (success) {
+      toast({
+        title: 'Erfolg',
+        description: 'Position wurde aktualisiert.',
+      });
+      cancelEditing();
+    }
+  };
+
   const handleDeleteItem = async () => {
     if (!deleteId) return;
     await deleteEstimateItem(deleteId);
@@ -222,124 +347,240 @@ export const Estimates: React.FC = () => {
             <h1 className="text-3xl font-bold">Kostenschätzung</h1>
             <p className="text-muted-foreground">Architekten-Kalkulation verwalten</p>
           </div>
-          <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button>
-                <Upload className="mr-2 h-4 w-4" />
-                PDF hochladen
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Kostenschätzung hochladen</DialogTitle>
-                <DialogDescription>
-                  Laden Sie die Kostenkalkulation Ihres Architekten als PDF hoch.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                {extractedItems.length === 0 && (
-                  <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept=".pdf"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                    {uploading || analyzing ? (
-                      <div className="text-center">
-                        <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {analyzing ? 'AI analysiert Kostenschätzung...' : 'Hochladen...'}
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <Calculator className="h-12 w-12 text-muted-foreground" />
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          PDF-Kostenschätzung hier ablegen oder klicken
-                        </p>
-                        <Button
-                          variant="outline"
-                          className="mt-4"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          Datei auswählen
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {extractedItems.length > 0 && (
-                  <div className="space-y-4">
-                    <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">
-                      ✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.
-                    </div>
-
-                    {/* Manual add form */}
-                    <div className="rounded-lg border p-4">
-                      <h4 className="mb-3 font-medium">Position hinzufügen</h4>
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <div className="md:col-span-2">
-                          <KostengruppenSelect
-                            value={manualItem.kostengruppe_code}
-                            onValueChange={(value) => setManualItem({ ...manualItem, kostengruppe_code: value })}
-                            placeholder="Kostengruppe"
-                          />
+          <div className="flex gap-2">
+            <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) resetForm(); }}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Upload className="mr-2 h-4 w-4" />
+                  PDF hochladen
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Kostenschätzung hochladen</DialogTitle>
+                  <DialogDescription>
+                    Laden Sie die Kostenkalkulation Ihres Architekten als PDF hoch.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {extractedItems.length === 0 && (
+                    <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept=".pdf"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      {uploading || analyzing ? (
+                        <div className="text-center">
+                          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {analyzing ? 'AI analysiert Kostenschätzung...' : 'Hochladen...'}
+                          </p>
                         </div>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="Betrag"
-                          value={manualItem.estimated_amount}
-                          onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })}
-                        />
-                        <Button onClick={addManualItemToList} variant="outline">
-                          <Plus className="h-4 w-4" />
+                      ) : (
+                        <>
+                          <Calculator className="h-12 w-12 text-muted-foreground" />
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            PDF-Kostenschätzung hier ablegen oder klicken
+                          </p>
+                          <Button
+                            variant="outline"
+                            className="mt-4"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            Datei auswählen
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {extractedItems.length > 0 && (
+                    <div className="space-y-4">
+                      <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">
+                        ✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.
+                      </div>
+
+                      {/* Manual add form */}
+                      <div className="rounded-lg border p-4">
+                        <h4 className="mb-3 font-medium">Position hinzufügen</h4>
+                        <div className="grid gap-3 md:grid-cols-4">
+                          <div className="md:col-span-2">
+                            <KostengruppenSelect
+                              value={manualItem.kostengruppe_code}
+                              onValueChange={(value) => setManualItem({ ...manualItem, kostengruppe_code: value })}
+                              placeholder="Kostengruppe"
+                            />
+                          </div>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Betrag"
+                            value={manualItem.estimated_amount}
+                            onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })}
+                          />
+                          <Button onClick={addManualItemToList} variant="outline">
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Kostengruppe</TableHead>
+                            <TableHead>Bezeichnung</TableHead>
+                            <TableHead className="text-right">Betrag</TableHead>
+                            <TableHead className="w-16"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {extractedItems.map((item, index) => {
+                            const kg = getKostengruppeByCode(item.kostengruppe_code);
+                            return (
+                              <TableRow key={index}>
+                                <TableCell>
+                                  <Input
+                                    value={item.kostengruppe_code}
+                                    onChange={(e) => updateExtractedItem(index, 'kostengruppe_code', e.target.value)}
+                                    className="w-24"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  {kg?.name || item.notes || '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={item.estimated_amount}
+                                    onChange={(e) => updateExtractedItem(index, 'estimated_amount', parseFloat(e.target.value) || 0)}
+                                    className="w-32 text-right"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive"
+                                    onClick={() => removeExtractedItem(index)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                          <TableRow className="font-bold">
+                            <TableCell colSpan={2}>Gesamt</TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(extractedItems.reduce((s, i) => s + Number(i.estimated_amount), 0))}
+                            </TableCell>
+                            <TableCell></TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => { resetForm(); setIsUploadOpen(false); }}>
+                          Abbrechen
+                        </Button>
+                        <Button onClick={handleSaveExtractedItems}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Speichern
                         </Button>
                       </div>
                     </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
 
+            {/* Manual Entry Dialog */}
+            <Dialog open={isManualOpen} onOpenChange={(open) => { setIsManualOpen(open); if (!open) resetManualForm(); }}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Manuell erfassen
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Kostenschätzung manuell erfassen</DialogTitle>
+                  <DialogDescription>
+                    Erstellen Sie eine neue Kostenschätzung und fügen Sie Positionen hinzu.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Bezeichnung</Label>
+                    <Input
+                      value={manualEstimateName}
+                      onChange={(e) => setManualEstimateName(e.target.value)}
+                      placeholder="z.B. Kostenschätzung Architekt Müller"
+                    />
+                  </div>
+
+                  {/* Add item form */}
+                  <div className="rounded-lg border p-4">
+                    <h4 className="mb-3 font-medium">Position hinzufügen</h4>
+                    <div className="grid gap-3 md:grid-cols-5">
+                      <div className="md:col-span-2">
+                        <KostengruppenSelect
+                          value={newManualItem.kostengruppe_code}
+                          onValueChange={(value) => setNewManualItem({ ...newManualItem, kostengruppe_code: value })}
+                          placeholder="Kostengruppe"
+                        />
+                      </div>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="Betrag (EUR)"
+                        value={newManualItem.estimated_amount}
+                        onChange={(e) => setNewManualItem({ ...newManualItem, estimated_amount: e.target.value })}
+                      />
+                      <Input
+                        placeholder="Notiz (optional)"
+                        value={newManualItem.notes}
+                        onChange={(e) => setNewManualItem({ ...newManualItem, notes: e.target.value })}
+                      />
+                      <Button onClick={addNewManualItem} variant="outline">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Items list */}
+                  {manualItems.length > 0 && (
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Kostengruppe</TableHead>
                           <TableHead>Bezeichnung</TableHead>
+                          <TableHead>Notiz</TableHead>
                           <TableHead className="text-right">Betrag</TableHead>
                           <TableHead className="w-16"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {extractedItems.map((item, index) => {
+                        {manualItems.map((item, index) => {
                           const kg = getKostengruppeByCode(item.kostengruppe_code);
                           return (
                             <TableRow key={index}>
-                              <TableCell>
-                                <Input
-                                  value={item.kostengruppe_code}
-                                  onChange={(e) => updateExtractedItem(index, 'kostengruppe_code', e.target.value)}
-                                  className="w-24"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                {kg?.name || item.notes || '-'}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={item.estimated_amount}
-                                  onChange={(e) => updateExtractedItem(index, 'estimated_amount', parseFloat(e.target.value) || 0)}
-                                  className="w-32 text-right"
-                                />
+                              <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
+                              <TableCell>{kg?.name || '-'}</TableCell>
+                              <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
+                              <TableCell className="text-right font-medium">
+                                {formatCurrency(parseFloat(item.estimated_amount) || 0)}
                               </TableCell>
                               <TableCell>
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   className="text-destructive"
-                                  onClick={() => removeExtractedItem(index)}
+                                  onClick={() => removeManualItem(index)}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -348,29 +589,29 @@ export const Estimates: React.FC = () => {
                           );
                         })}
                         <TableRow className="font-bold">
-                          <TableCell colSpan={2}>Gesamt</TableCell>
+                          <TableCell colSpan={3}>Gesamt</TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(extractedItems.reduce((s, i) => s + Number(i.estimated_amount), 0))}
+                            {formatCurrency(manualItems.reduce((s, i) => s + (parseFloat(i.estimated_amount) || 0), 0))}
                           </TableCell>
                           <TableCell></TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
+                  )}
 
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => { resetForm(); setIsUploadOpen(false); }}>
-                        Abbrechen
-                      </Button>
-                      <Button onClick={handleSaveExtractedItems}>
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        Speichern
-                      </Button>
-                    </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { resetManualForm(); setIsManualOpen(false); }}>
+                      Abbrechen
+                    </Button>
+                    <Button onClick={handleCreateManualEstimate} disabled={manualItems.length === 0}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Schätzung speichern
+                    </Button>
                   </div>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Summary Card */}
@@ -395,7 +636,7 @@ export const Estimates: React.FC = () => {
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Calculator className="h-12 w-12 text-muted-foreground" />
               <h3 className="mt-4 text-lg font-medium">Keine Kostenschätzungen vorhanden</h3>
-              <p className="text-muted-foreground">Laden Sie die Kalkulation Ihres Architekten hoch.</p>
+              <p className="text-muted-foreground">Laden Sie die Kalkulation Ihres Architekten hoch oder erfassen Sie sie manuell.</p>
             </CardContent>
           </Card>
         ) : (
@@ -436,12 +677,61 @@ export const Estimates: React.FC = () => {
                               <TableHead>Kostengruppe</TableHead>
                               <TableHead>Notizen</TableHead>
                               <TableHead className="text-right">Betrag</TableHead>
-                              <TableHead className="w-16"></TableHead>
+                              <TableHead className="w-24">Aktionen</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {items.map((item) => {
                               const kg = getKostengruppeByCode(item.kostengruppe_code);
+                              const isEditing = editingItemId === item.id;
+
+                              if (isEditing) {
+                                return (
+                                  <TableRow key={item.id}>
+                                    <TableCell>
+                                      <Input
+                                        value={editFormData.kostengruppe_code}
+                                        onChange={(e) => setEditFormData({ ...editFormData, kostengruppe_code: e.target.value })}
+                                        className="w-24"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <KostengruppenSelect
+                                        value={editFormData.kostengruppe_code}
+                                        onValueChange={(value) => setEditFormData({ ...editFormData, kostengruppe_code: value })}
+                                        placeholder="Kostengruppe"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        value={editFormData.notes}
+                                        onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                                        placeholder="Notiz"
+                                      />
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={editFormData.estimated_amount}
+                                        onChange={(e) => setEditFormData({ ...editFormData, estimated_amount: e.target.value })}
+                                        className="w-32 text-right"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex gap-1">
+                                        <Button size="sm" variant="ghost" onClick={saveEditing}>
+                                          <Save className="h-4 w-4 text-green-600" />
+                                        </Button>
+                                        <Button size="sm" variant="ghost" onClick={cancelEditing}>
+                                          <X className="h-4 w-4 text-muted-foreground" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              }
+
                               return (
                                 <TableRow key={item.id}>
                                   <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
@@ -451,14 +741,23 @@ export const Estimates: React.FC = () => {
                                     {formatCurrency(Number(item.estimated_amount))}
                                   </TableCell>
                                   <TableCell>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="text-destructive"
-                                      onClick={() => setDeleteId(item.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
+                                    <div className="flex gap-1">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => startEditing(item)}
+                                      >
+                                        <Edit className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-destructive"
+                                        onClick={() => setDeleteId(item.id)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               );

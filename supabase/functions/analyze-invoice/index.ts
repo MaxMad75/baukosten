@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,17 +31,69 @@ const DIN276_CATEGORIES = `
 800 - Finanzierung (Finanzierungsnebenkosten, Zinsen)
 `;
 
+// Maximum allowed payload size (500KB)
+const MAX_PAYLOAD_SIZE = 500 * 1024;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Verify authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      console.error("Missing or invalid authorization header");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    // Verify JWT and get user claims
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    
+    if (claimsError || !claimsData?.claims) {
+      console.error("JWT verification failed:", claimsError);
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log("Authenticated user:", userId);
+
+    // Check content length before parsing
+    const contentLength = req.headers.get("content-length");
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+      return new Response(
+        JSON.stringify({ error: "Payload too large. Maximum size is 500KB." }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { pdfContent, fileName } = await req.json();
 
     if (!pdfContent) {
       return new Response(
         JSON.stringify({ error: "PDF content is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate input size
+    if (typeof pdfContent !== "string" || pdfContent.length > MAX_PAYLOAD_SIZE) {
+      return new Response(
+        JSON.stringify({ error: "PDF content too large or invalid" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -124,7 +177,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
 
     const extractedData = JSON.parse(jsonMatch[0]);
 
-    console.log("Successfully extracted invoice data:", extractedData);
+    console.log("Successfully extracted invoice data for user:", userId);
 
     return new Response(
       JSON.stringify({ 

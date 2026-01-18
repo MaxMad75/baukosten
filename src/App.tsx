@@ -10,6 +10,7 @@ import Invoices from "./pages/Invoices";
 import Estimates from "./pages/Estimates";
 import Comparison from "./pages/Comparison";
 import Export from "./pages/Export";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
             <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
             <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -11,7 +11,8 @@ import {
   LogOut, 
   User,
   Menu,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ const navItems = [
   { to: '/estimates', icon: Calculator, label: 'Kostenschätzung' },
   { to: '/comparison', icon: BarChart3, label: 'Soll/Ist' },
   { to: '/export', icon: Download, label: 'Export' },
+  { to: '/settings', icon: Settings, label: 'Einstellungen' },
 ];
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {

@@ -14,7 +14,7 @@ import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { ExtractedInvoiceData } from '@/lib/types';
+import { ExtractedInvoiceData, Invoice } from '@/lib/types';
 import { 
   Plus, 
   Upload, 
@@ -26,7 +26,9 @@ import {
   Calendar,
   Building2,
   Trash2,
-  Edit
+  Edit,
+  Save,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -67,6 +69,8 @@ export const Invoices: React.FC = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -76,6 +80,16 @@ export const Invoices: React.FC = () => {
 
   // Form state
   const [formData, setFormData] = useState({
+    company_name: '',
+    invoice_number: '',
+    invoice_date: '',
+    amount: '',
+    description: '',
+    kostengruppe_code: '',
+  });
+
+  // Edit form state
+  const [editFormData, setEditFormData] = useState({
     company_name: '',
     invoice_number: '',
     invoice_date: '',
@@ -194,6 +208,50 @@ export const Invoices: React.FC = () => {
     }
   };
 
+  const openEditDialog = (invoice: Invoice) => {
+    setEditingInvoice(invoice);
+    setEditFormData({
+      company_name: invoice.company_name,
+      invoice_number: invoice.invoice_number || '',
+      invoice_date: invoice.invoice_date,
+      amount: String(invoice.amount),
+      description: invoice.description || '',
+      kostengruppe_code: invoice.kostengruppe_code || '',
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateInvoice = async () => {
+    if (!editingInvoice) return;
+
+    if (!editFormData.company_name || !editFormData.invoice_date || !editFormData.amount) {
+      toast({
+        title: 'Fehler',
+        description: 'Bitte füllen Sie alle Pflichtfelder aus',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const success = await updateInvoice(editingInvoice.id, {
+      company_name: editFormData.company_name,
+      invoice_number: editFormData.invoice_number || null,
+      invoice_date: editFormData.invoice_date,
+      amount: parseFloat(editFormData.amount),
+      description: editFormData.description || null,
+      kostengruppe_code: editFormData.kostengruppe_code || null,
+    });
+
+    if (success) {
+      toast({
+        title: 'Erfolg',
+        description: 'Rechnung wurde aktualisiert.',
+      });
+      setIsEditOpen(false);
+      setEditingInvoice(null);
+    }
+  };
+
   const handleMarkAsPaid = async () => {
     if (!selectedInvoice || !paymentData.paid_by_profile_id) return;
 
@@ -206,6 +264,21 @@ export const Invoices: React.FC = () => {
     if (success) {
       setIsPayDialogOpen(false);
       setSelectedInvoice(null);
+    }
+  };
+
+  const handleMarkAsUnpaid = async (invoiceId: string) => {
+    const success = await updateInvoice(invoiceId, {
+      is_paid: false,
+      paid_by_profile_id: null,
+      payment_date: null,
+    });
+
+    if (success) {
+      toast({
+        title: 'Erfolg',
+        description: 'Zahlungsstatus wurde zurückgesetzt.',
+      });
     }
   };
 
@@ -511,12 +584,16 @@ export const Invoices: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           {invoice.is_paid ? (
-                            <div className="flex items-center gap-1 text-green-600">
+                            <button
+                              onClick={() => handleMarkAsUnpaid(invoice.id)}
+                              className="flex items-center gap-1 text-green-600 hover:underline"
+                              title="Klicken zum Zurücksetzen"
+                            >
                               <CheckCircle2 className="h-4 w-4" />
                               <span className="text-sm">
                                 Bezahlt{payer ? ` (${payer.name})` : ''}
                               </span>
-                            </div>
+                            </button>
                           ) : (
                             <div className="flex items-center gap-1 text-orange-600">
                               <XCircle className="h-4 w-4" />
@@ -538,6 +615,13 @@ export const Invoices: React.FC = () => {
                             <Button
                               size="sm"
                               variant="ghost"
+                              onClick={() => openEditDialog(invoice)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => setDeleteId(invoice.id)}
                             >
@@ -553,6 +637,77 @@ export const Invoices: React.FC = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Edit Invoice Dialog */}
+        <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingInvoice(null); }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Rechnung bearbeiten</DialogTitle>
+              <DialogDescription>
+                Ändern Sie die Rechnungsdaten.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Firma *</Label>
+                  <Input
+                    value={editFormData.company_name}
+                    onChange={(e) => setEditFormData({ ...editFormData, company_name: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rechnungsnummer</Label>
+                  <Input
+                    value={editFormData.invoice_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, invoice_number: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rechnungsdatum *</Label>
+                  <Input
+                    type="date"
+                    value={editFormData.invoice_date}
+                    onChange={(e) => setEditFormData({ ...editFormData, invoice_date: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Betrag (EUR) *</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editFormData.amount}
+                    onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label>Kostengruppe (DIN 276)</Label>
+                  <KostengruppenSelect
+                    value={editFormData.kostengruppe_code}
+                    onValueChange={(value) => setEditFormData({ ...editFormData, kostengruppe_code: value })}
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label>Beschreibung</Label>
+                  <Textarea
+                    value={editFormData.description}
+                    onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingInvoice(null); }}>
+                  Abbrechen
+                </Button>
+                <Button onClick={handleUpdateInvoice}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Speichern
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Pay Dialog */}
         <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>

@@ -59,6 +59,7 @@ export interface ArchitectEstimateItem {
   kostengruppe_code: string;
   estimated_amount: number;
   notes: string | null;
+  is_gross: boolean;
   created_at: string;
 }
 
@@ -92,6 +93,7 @@ export interface ExtractedEstimateData {
     kostengruppe_code: string;
     estimated_amount: number;
     notes: string;
+    is_gross: boolean;
   }>;
   total: number;
 }

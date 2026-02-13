@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useDocuments, Document } from '@/hooks/useDocuments';
@@ -61,6 +62,54 @@ import {
 // Minimum text length to consider text extraction successful
 const MIN_TEXT_LENGTH = 50;
 
+// MwSt helpers
+const calcNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
+const calcBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
+
+interface VatSummary {
+  netto: number;
+  mwst: number;
+  brutto: number;
+}
+
+function computeVatSummary(items: Array<{ estimated_amount: number; is_gross: boolean }>): VatSummary {
+  let netto = 0;
+  let brutto = 0;
+  for (const item of items) {
+    const amt = Number(item.estimated_amount);
+    netto += calcNetto(amt, item.is_gross);
+    brutto += calcBrutto(amt, item.is_gross);
+  }
+  return { netto, mwst: brutto - netto, brutto };
+}
+
+function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: number; is_gross: boolean }>; colSpan: number }) {
+  const { netto, mwst, brutto } = computeVatSummary(items);
+  return (
+    <>
+      <TableRow className="font-medium">
+        <TableCell colSpan={colSpan}>Netto-Summe</TableCell>
+        <TableCell className="text-right">{formatCurrencyStatic(netto)}</TableCell>
+        <TableCell></TableCell>
+      </TableRow>
+      <TableRow className="text-muted-foreground">
+        <TableCell colSpan={colSpan}>+ MwSt (19%)</TableCell>
+        <TableCell className="text-right">{formatCurrencyStatic(mwst)}</TableCell>
+        <TableCell></TableCell>
+      </TableRow>
+      <TableRow className="font-bold">
+        <TableCell colSpan={colSpan}>Brutto-Summe</TableCell>
+        <TableCell className="text-right">{formatCurrencyStatic(brutto)}</TableCell>
+        <TableCell></TableCell>
+      </TableRow>
+    </>
+  );
+}
+
+function formatCurrencyStatic(amount: number) {
+  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
+}
+
 interface AnalysisResult {
   is_estimate: boolean;
   confidence: string;
@@ -108,6 +157,7 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
+    is_gross: false,
   });
 
   // Manual estimate form state
@@ -116,11 +166,13 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: string;
     estimated_amount: string;
     notes: string;
+    is_gross: boolean;
   }>>([]);
   const [newManualItem, setNewManualItem] = useState({
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
+    is_gross: false,
   });
 
   // Manual item form (for upload dialog)
@@ -128,6 +180,7 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
+    is_gross: false,
   });
 
   const resetForm = () => {
@@ -135,7 +188,7 @@ export const Estimates: React.FC = () => {
     setUploadedFile(null);
     setPendingEstimateId(null);
     setPendingFile(null);
-    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
     setPendingAnalysisPayload(null);
@@ -144,7 +197,7 @@ export const Estimates: React.FC = () => {
   const resetManualForm = () => {
     setManualEstimateName('');
     setManualItems([]);
-    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
   };
 
   // Convert ArrayBuffer to Base64
@@ -182,7 +235,7 @@ export const Estimates: React.FC = () => {
     setAnalysisResult(result);
     
     if (result.is_estimate && result.items && result.items.length > 0) {
-      setExtractedItems(result.items);
+      setExtractedItems(result.items.map(item => ({ ...item, is_gross: false })));
       toast({
         title: 'Kostenschätzung erkannt',
         description: `${result.items.length} Kostenpositionen extrahiert (Konfidenz: ${result.confidence}).`,
@@ -197,7 +250,6 @@ export const Estimates: React.FC = () => {
     let textContent: string | undefined;
     let fileBase64: string | undefined;
 
-    // Try text extraction for PDFs
     if (fileName.toLowerCase().endsWith('.pdf')) {
       try {
         const pdfFile = file instanceof File ? file : new File([file], fileName);
@@ -210,7 +262,6 @@ export const Estimates: React.FC = () => {
       }
     }
 
-    // If no text extracted (scanned PDF or image), use base64
     if (!textContent) {
       const buffer = await file.arrayBuffer();
       fileBase64 = arrayBufferToBase64(buffer);
@@ -225,9 +276,7 @@ export const Estimates: React.FC = () => {
 
     setUploading(true);
     try {
-      // Upload file to storage
       console.log('[Estimates] Uploading file:', file.name, 'size:', file.size);
-      // Sanitize filename: replace spaces, commas, umlauts and special chars
       const sanitizedName = file.name
         .replace(/\s+/g, '_')
         .replace(/,/g, '_')
@@ -245,31 +294,20 @@ export const Estimates: React.FC = () => {
         console.error('[Estimates] Storage upload error:', uploadError);
         throw uploadError;
       }
-      console.log('[Estimates] Storage upload OK');
 
       setUploadedFile({ path: filePath, name: file.name });
       setPendingFile(file);
 
-      // Create estimate record
       const estimate = await createEstimate(filePath, file.name);
-      if (!estimate) {
-        console.error('[Estimates] createEstimate returned null');
-        throw new Error('Could not create estimate');
-      }
-      console.log('[Estimates] Estimate record created:', estimate.id);
+      if (!estimate) throw new Error('Could not create estimate');
       
       setPendingEstimateId(estimate.id);
 
-      // Process and analyze
       setAnalyzing(true);
-      console.log('[Estimates] Processing file for analysis...');
       const payload = await processFileForAnalysis(file, file.name);
-      console.log('[Estimates] Payload ready, textContent length:', payload.textContent?.length || 0, 'fileBase64 length:', payload.fileBase64?.length || 0);
       setPendingAnalysisPayload(payload);
       
-      console.log('[Estimates] Calling analyze-estimate edge function...');
       const result = await callAnalyzeEstimate(payload);
-      console.log('[Estimates] Edge function result:', result);
       if (result) {
         handleAnalysisResult(result);
       }
@@ -286,7 +324,6 @@ export const Estimates: React.FC = () => {
     }
   };
 
-  // Handle document selection from picker
   const handleDocumentSelect = async (doc: Document) => {
     if (!household) return;
 
@@ -295,7 +332,6 @@ export const Estimates: React.FC = () => {
     setAnalyzing(true);
 
     try {
-      // Get signed URL and fetch the file
       const signedUrl = await getDocumentUrl(doc.file_path);
       if (!signedUrl) throw new Error('Could not get document URL');
 
@@ -304,14 +340,12 @@ export const Estimates: React.FC = () => {
       
       const blob = await response.blob();
 
-      // Create estimate record (reference same file path)
       const estimate = await createEstimate(doc.file_path, doc.file_name);
       if (!estimate) throw new Error('Could not create estimate');
       
       setPendingEstimateId(estimate.id);
       setUploadedFile({ path: doc.file_path, name: doc.file_name });
 
-      // Process and analyze
       const payload = await processFileForAnalysis(blob, doc.file_name);
       setPendingAnalysisPayload(payload);
 
@@ -331,10 +365,9 @@ export const Estimates: React.FC = () => {
     }
   };
 
-  // Force analysis even when not recognized as estimate
   const handleForceAnalysis = () => {
     if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
-      setExtractedItems(analysisResult.items);
+      setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false })));
     }
     setShowNotEstimateWarning(false);
   };
@@ -349,7 +382,6 @@ export const Estimates: React.FC = () => {
         description: 'Kostenschätzung wurde gespeichert.',
       });
 
-      // Store as document with duplicate detection
       if (pendingFile) {
         try {
           const hash = await computeFileHash(pendingFile);
@@ -358,7 +390,7 @@ export const Estimates: React.FC = () => {
           if (duplicate) {
             toast({
               title: 'Hinweis',
-              description: 'Dieses Dokument existiert bereits in der Dokumentenbibliothek. Es wurde kein neues Dokument angelegt.',
+              description: 'Dieses Dokument existiert bereits in der Dokumentenbibliothek.',
             });
           } else {
             const uploaded = await uploadDocument(pendingFile);
@@ -387,7 +419,7 @@ export const Estimates: React.FC = () => {
     }
   };
 
-  const updateExtractedItem = (index: number, field: string, value: string | number) => {
+  const updateExtractedItem = (index: number, field: string, value: string | number | boolean) => {
     setExtractedItems(prev => prev.map((item, i) => 
       i === index ? { ...item, [field]: value } : item
     ));
@@ -411,12 +443,12 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: manualItem.kostengruppe_code,
       estimated_amount: parseFloat(manualItem.estimated_amount),
       notes: manualItem.notes || '',
+      is_gross: manualItem.is_gross,
     }]);
 
-    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
   };
 
-  // Manual estimate creation
   const addNewManualItem = () => {
     if (!newManualItem.kostengruppe_code || !newManualItem.estimated_amount) {
       toast({
@@ -431,9 +463,10 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: newManualItem.kostengruppe_code,
       estimated_amount: newManualItem.estimated_amount,
       notes: newManualItem.notes,
+      is_gross: newManualItem.is_gross,
     }]);
 
-    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
   };
 
   const removeManualItem = (index: number) => {
@@ -461,6 +494,7 @@ export const Estimates: React.FC = () => {
         kostengruppe_code: item.kostengruppe_code,
         estimated_amount: parseFloat(item.estimated_amount),
         notes: item.notes || undefined,
+        is_gross: item.is_gross,
       }))
     );
 
@@ -474,19 +508,19 @@ export const Estimates: React.FC = () => {
     }
   };
 
-  // Inline editing functions
   const startEditing = (item: ArchitectEstimateItem) => {
     setEditingItemId(item.id);
     setEditFormData({
       kostengruppe_code: item.kostengruppe_code,
       estimated_amount: String(item.estimated_amount),
       notes: item.notes || '',
+      is_gross: item.is_gross ?? false,
     });
   };
 
   const cancelEditing = () => {
     setEditingItemId(null);
-    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
   };
 
   const saveEditing = async () => {
@@ -496,6 +530,7 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: editFormData.kostengruppe_code,
       estimated_amount: parseFloat(editFormData.estimated_amount) || 0,
       notes: editFormData.notes || null,
+      is_gross: editFormData.is_gross,
     });
 
     if (success) {
@@ -520,7 +555,10 @@ export const Estimates: React.FC = () => {
     }).format(amount);
   };
 
-  const totalEstimated = estimateItems.reduce((sum, item) => sum + Number(item.estimated_amount), 0);
+  // Compute global VAT summary
+  const globalVat = computeVatSummary(
+    estimateItems.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
+  );
 
   if (loading) {
     return (
@@ -557,7 +595,7 @@ export const Estimates: React.FC = () => {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
-                  {/* Upload area - shown when no items extracted and no warning */}
+                  {/* Upload area */}
                   {extractedItems.length === 0 && !showNotEstimateWarning && (
                     <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
                       <input
@@ -640,7 +678,7 @@ export const Estimates: React.FC = () => {
                       {/* Manual add form */}
                       <div className="rounded-lg border p-4">
                         <h4 className="mb-3 font-medium">Position hinzufügen</h4>
-                        <div className="grid gap-3 md:grid-cols-4">
+                        <div className="grid gap-3 md:grid-cols-5">
                           <div className="md:col-span-2">
                             <KostengruppenSelect
                               value={manualItem.kostengruppe_code}
@@ -655,6 +693,14 @@ export const Estimates: React.FC = () => {
                             value={manualItem.estimated_amount}
                             onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })}
                           />
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="manual-item-gross"
+                              checked={manualItem.is_gross}
+                              onCheckedChange={(checked) => setManualItem({ ...manualItem, is_gross: !!checked })}
+                            />
+                            <Label htmlFor="manual-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                          </div>
                           <Button onClick={addManualItemToList} variant="outline">
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -666,6 +712,7 @@ export const Estimates: React.FC = () => {
                           <TableRow>
                             <TableHead>Kostengruppe</TableHead>
                             <TableHead>Bezeichnung</TableHead>
+                            <TableHead className="text-center">inkl. MwSt</TableHead>
                             <TableHead className="text-right">Betrag</TableHead>
                             <TableHead className="w-16"></TableHead>
                           </TableRow>
@@ -684,6 +731,12 @@ export const Estimates: React.FC = () => {
                                 </TableCell>
                                 <TableCell>
                                   {kg?.name || item.notes || '-'}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Checkbox
+                                    checked={item.is_gross}
+                                    onCheckedChange={(checked) => updateExtractedItem(index, 'is_gross', !!checked)}
+                                  />
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <Input
@@ -707,13 +760,7 @@ export const Estimates: React.FC = () => {
                               </TableRow>
                             );
                           })}
-                          <TableRow className="font-bold">
-                            <TableCell colSpan={2}>Gesamt</TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(extractedItems.reduce((s, i) => s + Number(i.estimated_amount), 0))}
-                            </TableCell>
-                            <TableCell></TableCell>
-                          </TableRow>
+                          <VatSummaryRows items={extractedItems} colSpan={3} />
                         </TableBody>
                       </Table>
 
@@ -766,7 +813,7 @@ export const Estimates: React.FC = () => {
                   {/* Add item form */}
                   <div className="rounded-lg border p-4">
                     <h4 className="mb-3 font-medium">Position hinzufügen</h4>
-                    <div className="grid gap-3 md:grid-cols-5">
+                    <div className="grid gap-3 md:grid-cols-6">
                       <div className="md:col-span-2">
                         <KostengruppenSelect
                           value={newManualItem.kostengruppe_code}
@@ -786,6 +833,14 @@ export const Estimates: React.FC = () => {
                         value={newManualItem.notes}
                         onChange={(e) => setNewManualItem({ ...newManualItem, notes: e.target.value })}
                       />
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="new-manual-gross"
+                          checked={newManualItem.is_gross}
+                          onCheckedChange={(checked) => setNewManualItem({ ...newManualItem, is_gross: !!checked })}
+                        />
+                        <Label htmlFor="new-manual-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                      </div>
                       <Button onClick={addNewManualItem} variant="outline">
                         <Plus className="h-4 w-4" />
                       </Button>
@@ -800,6 +855,7 @@ export const Estimates: React.FC = () => {
                           <TableHead>Kostengruppe</TableHead>
                           <TableHead>Bezeichnung</TableHead>
                           <TableHead>Notiz</TableHead>
+                          <TableHead className="text-center">inkl. MwSt</TableHead>
                           <TableHead className="text-right">Betrag</TableHead>
                           <TableHead className="w-16"></TableHead>
                         </TableRow>
@@ -812,6 +868,14 @@ export const Estimates: React.FC = () => {
                               <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
                               <TableCell>{kg?.name || '-'}</TableCell>
                               <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={item.is_gross}
+                                  onCheckedChange={(checked) => {
+                                    setManualItems(prev => prev.map((it, i) => i === index ? { ...it, is_gross: !!checked } : it));
+                                  }}
+                                />
+                              </TableCell>
                               <TableCell className="text-right font-medium">
                                 {formatCurrency(parseFloat(item.estimated_amount) || 0)}
                               </TableCell>
@@ -828,13 +892,10 @@ export const Estimates: React.FC = () => {
                             </TableRow>
                           );
                         })}
-                        <TableRow className="font-bold">
-                          <TableCell colSpan={3}>Gesamt</TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(manualItems.reduce((s, i) => s + (parseFloat(i.estimated_amount) || 0), 0))}
-                          </TableCell>
-                          <TableCell></TableCell>
-                        </TableRow>
+                        <VatSummaryRows
+                          items={manualItems.map(i => ({ estimated_amount: parseFloat(i.estimated_amount) || 0, is_gross: i.is_gross }))}
+                          colSpan={4}
+                        />
                       </TableBody>
                     </Table>
                   )}
@@ -861,10 +922,21 @@ export const Estimates: React.FC = () => {
             <CardDescription>Summe aller geschätzten Kosten</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-primary">
-              {formatCurrency(totalEstimated)}
+            <div className="space-y-1">
+              <div className="flex justify-between items-baseline">
+                <span className="text-sm text-muted-foreground">Netto-Summe</span>
+                <span className="text-lg font-medium">{formatCurrency(globalVat.netto)}</span>
+              </div>
+              <div className="flex justify-between items-baseline">
+                <span className="text-sm text-muted-foreground">+ MwSt (19%)</span>
+                <span className="text-lg font-medium">{formatCurrency(globalVat.mwst)}</span>
+              </div>
+              <div className="flex justify-between items-baseline border-t pt-1">
+                <span className="text-sm font-semibold">Brutto-Summe</span>
+                <span className="text-3xl font-bold text-primary">{formatCurrency(globalVat.brutto)}</span>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground mt-2">
               {estimateItems.length} Kostenpositionen in {estimates.length} Schätzung(en)
             </p>
           </CardContent>
@@ -888,7 +960,9 @@ export const Estimates: React.FC = () => {
               <Accordion type="single" collapsible className="w-full">
                 {estimates.map((estimate) => {
                   const items = getItemsByEstimate(estimate.id);
-                  const estimateTotal = items.reduce((s, i) => s + Number(i.estimated_amount), 0);
+                  const estVat = computeVatSummary(
+                    items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
+                  );
                   
                   return (
                     <AccordionItem key={estimate.id} value={estimate.id}>
@@ -904,7 +978,7 @@ export const Estimates: React.FC = () => {
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="font-medium">{formatCurrency(estimateTotal)}</p>
+                            <p className="font-medium">{formatCurrency(estVat.brutto)}</p>
                             <p className="text-sm text-muted-foreground">{items.length} Positionen</p>
                           </div>
                         </div>
@@ -916,6 +990,7 @@ export const Estimates: React.FC = () => {
                               <TableHead>Code</TableHead>
                               <TableHead>Kostengruppe</TableHead>
                               <TableHead>Notizen</TableHead>
+                              <TableHead className="text-center">inkl. MwSt</TableHead>
                               <TableHead className="text-right">Betrag</TableHead>
                               <TableHead className="w-24">Aktionen</TableHead>
                             </TableRow>
@@ -949,6 +1024,12 @@ export const Estimates: React.FC = () => {
                                         placeholder="Notiz"
                                       />
                                     </TableCell>
+                                    <TableCell className="text-center">
+                                      <Checkbox
+                                        checked={editFormData.is_gross}
+                                        onCheckedChange={(checked) => setEditFormData({ ...editFormData, is_gross: !!checked })}
+                                      />
+                                    </TableCell>
                                     <TableCell className="text-right">
                                       <Input
                                         type="number"
@@ -977,6 +1058,13 @@ export const Estimates: React.FC = () => {
                                   <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
                                   <TableCell>{kg?.name || '-'}</TableCell>
                                   <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
+                                  <TableCell className="text-center">
+                                    {(item.is_gross) ? (
+                                      <span className="text-xs text-muted-foreground">brutto</span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">netto</span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="text-right font-medium">
                                     {formatCurrency(Number(item.estimated_amount))}
                                   </TableCell>
@@ -1002,6 +1090,10 @@ export const Estimates: React.FC = () => {
                                 </TableRow>
                               );
                             })}
+                            <VatSummaryRows
+                              items={items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))}
+                              colSpan={4}
+                            />
                           </TableBody>
                         </Table>
                       </AccordionContent>

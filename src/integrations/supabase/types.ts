@@ -20,6 +20,7 @@ export type Database = {
           estimate_id: string
           estimated_amount: number
           id: string
+          is_gross: boolean
           kostengruppe_code: string
           notes: string | null
         }
@@ -28,6 +29,7 @@ export type Database = {
           estimate_id: string
           estimated_amount?: number
           id?: string
+          is_gross?: boolean
           kostengruppe_code: string
           notes?: string | null
         }
@@ -36,6 +38,7 @@ export type Database = {
           estimate_id?: string
           estimated_amount?: number
           id?: string
+          is_gross?: boolean
           kostengruppe_code?: string
           notes?: string | null
         }

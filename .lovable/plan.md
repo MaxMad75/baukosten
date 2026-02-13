@@ -1,46 +1,74 @@
 
-# Drei Verbesserungen: Mitglieder hinzufuegen, Kostengruppen-Suche, Darstellungsfix
+# MwSt-Handling fuer Kostenschaetzungen
 
-## 1. Haushaltsmitglieder manuell hinzufuegen
+## Uebersicht
 
-Aktuell koennen Mitglieder nur per E-Mail-Einladung hinzugefuegt werden. Da du aber Rechnungen auch Personen zuweisen willst, die noch keinen Account haben, wird eine Funktion zum manuellen Anlegen von "Platzhalter-Profilen" eingebaut.
+Jede Kostenposition erhaelt ein Kennzeichen, ob der Betrag bereits Brutto (inkl. 19% MwSt) oder Netto ist. In der Summenzeile werden dann Netto-Gesamt, MwSt-Anteil und Brutto-Gesamt separat ausgewiesen.
 
-**Aenderung in `src/pages/Settings.tsx`:**
-- Neuer Bereich "Mitglied manuell anlegen" mit Feldern: Name und optional IBAN
-- Erstellt einen Eintrag in der `profiles`-Tabelle mit `user_id = NULL` (Platzhalter-Profil ohne Login)
-- Diese Profile tauchen dann bei Rechnungszuweisung ("Bezahlt von") auf
-- Spaeter kann ein eingeladener Nutzer mit diesem Profil verknuepft werden
+## Datenbank-Migration
 
-**Datenbank-Migration:**
-- Spalte `user_id` in `profiles` muss `NULL` erlauben (aktuell pruefen ob schon nullable)
-- Ggf. RLS-Policy anpassen, damit Haushaltsmitglieder Profile ohne `user_id` erstellen koennen
+Neue Spalte `is_gross` (boolean, Default `false`) in der Tabelle `architect_estimate_items`. Bestehende Positionen werden als Netto behandelt.
 
-## 2. Suchfunktion in der Kostengruppen-Auswahl
+```text
+architect_estimate_items
+  + is_gross  BOOLEAN  NOT NULL  DEFAULT false
+```
 
-Die aktuelle `KostengruppenSelect`-Komponente nutzt ein einfaches Radix Select ohne Suchmoeglichkeit. Bei ueber 50 Eintraegen ist das unuebersichtlich.
+## UI-Aenderungen in `src/pages/Estimates.tsx`
 
-**Aenderung in `src/components/KostengruppenSelect.tsx`:**
-- Umstellung von `Select` auf `Popover` + `Command` (cmdk) fuer eine durchsuchbare Auswahlliste
-- Suchfeld filtert Code und Name gleichzeitig (z.B. "Dach" findet "361 - Dachkonstruktionen")
-- Hierarchische Darstellung bleibt erhalten, gefilterte Ergebnisse zeigen nur Treffer
-- Wird automatisch ueberall wirksam: Rechnungs-Edit, Kostenschaetzung-Upload, manuelles Anlegen
+### 1. Alle Positionstabellen (Upload-Dialog, Manuell-Dialog, Bestandsliste)
 
-## 3. Darstellungsfix: Doppelte Oberkategorien entfernen
+Jede Zeile erhaelt eine Checkbox "inkl. MwSt":
+- Angehakt = Betrag ist bereits Brutto (inkl. 19% MwSt)
+- Nicht angehakt = Betrag ist Netto (MwSt wird aufgeschlagen)
 
-Das aktuelle Problem: Jede Level-1-Kostengruppe (z.B. "600 - Ausstattung und Kunstwerke") erscheint **zweimal** -- einmal als nicht-klickbares Label (`SelectLabel`) und direkt darunter nochmal als klickbarer Eintrag (`SelectItem`). Das ist verwirrend.
+### 2. Summenbereich (alle drei Kontexte)
 
-**Loesung:**
-- Level-1-Gruppen werden nur als Gruppenueberschriften angezeigt (nicht auswaehlbar), da man immer eine spezifischere Untergruppe waehlen sollte
-- Falls doch Level-1 auswaehlbar sein soll, wird das Label entfernt und nur der SelectItem beibehalten
-- Die neue cmdk-basierte Komponente loest das automatisch, da jeder Eintrag genau einmal erscheint
+Statt nur einer "Gesamt"-Zeile werden drei Zeilen angezeigt:
 
----
+```text
+Netto-Summe:    XXX.XXX,XX EUR    (alle Betraege auf Netto umgerechnet)
++ MwSt (19%):    XX.XXX,XX EUR
+Brutto-Summe:  XXX.XXX,XX EUR    (alle Betraege auf Brutto umgerechnet)
+```
 
-## Technische Details
+Berechnung pro Position:
+- Wenn `is_gross = true`: Netto = Betrag / 1.19
+- Wenn `is_gross = false`: Brutto = Betrag * 1.19
+
+### 3. Betroffene Stellen
+
+| Stelle | Aenderung |
+|--------|-----------|
+| Upload-Dialog: extrahierte Items Tabelle (Zeile ~664-717) | Checkbox-Spalte + Summe netto/mwst/brutto |
+| Upload-Dialog: "Position hinzufuegen" Form (Zeile ~641-661) | Checkbox fuer neuen Eintrag |
+| Manuell-Dialog: Items Tabelle (Zeile ~796-839) | Checkbox-Spalte + Summe netto/mwst/brutto |
+| Manuell-Dialog: "Position hinzufuegen" Form (Zeile ~767-793) | Checkbox fuer neuen Eintrag |
+| Bestandsliste: Accordion Items (Zeile ~913-1006) | Checkbox-Spalte + Summe netto/mwst/brutto |
+| Bestandsliste: Edit-Modus (Zeile ~928-971) | Checkbox editierbar |
+| Gesamtschaetzung Summary Card (Zeile ~857-871) | Netto/MwSt/Brutto Aufschluesselung |
+
+### 4. State-Anpassungen
+
+- `extractedItems` und `manualItems`: Neues Feld `is_gross: boolean` (Default `false`)
+- `editFormData`: Neues Feld `is_gross`
+- `newManualItem` und `manualItem`: Neues Feld `is_gross`
+
+## Hook-Aenderungen in `src/hooks/useEstimates.ts`
+
+- `addEstimateItems`: Feld `is_gross` mitsenden
+- `updateEstimateItem`: Feld `is_gross` mitsenden
+
+## Typ-Aenderungen in `src/lib/types.ts`
+
+- `ArchitectEstimateItem`: Neues Feld `is_gross: boolean`
+- `ExtractedEstimateData.items`: Neues Feld `is_gross: boolean`
+
+## Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/components/KostengruppenSelect.tsx` | Komplett umgebaut auf Popover + Command (cmdk) mit Suchfeld, hierarchischer Darstellung ohne Duplikate |
-| `src/pages/Settings.tsx` | Neuer Abschnitt "Mitglied manuell anlegen" mit Name/IBAN-Formular |
-| Datenbank-Migration | `profiles.user_id` auf nullable setzen + RLS-Policy fuer Profil-Insert durch Haushaltsmitglieder |
-
+| DB-Migration | `is_gross` Spalte hinzufuegen |
+| `src/lib/types.ts` | `is_gross` in Typen |
+| `src/hooks/useEstimates.ts` | `is_gross` bei Insert/Update |
+| `src/pages/Estimates.tsx` | Checkboxen, Summenberechnung netto/mwst/brutto |

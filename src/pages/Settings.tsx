@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Users, Mail, Trash2, UserPlus, Home, Loader2 } from 'lucide-react';
+import { AddMemberForm } from '@/components/AddMemberForm';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface HouseholdInvitation {
@@ -224,6 +225,9 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Add Manual Member */}
+        <AddMemberForm onMemberAdded={refreshProfile} />
 
         {/* Invite Members */}
         <Card>

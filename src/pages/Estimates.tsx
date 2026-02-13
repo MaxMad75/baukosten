@@ -223,35 +223,48 @@ export const Estimates: React.FC = () => {
     setUploading(true);
     try {
       // Upload file to storage
+      console.log('[Estimates] Uploading file:', file.name, 'size:', file.size);
       const filePath = `${household.id}/${Date.now()}_${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from('estimates')
         .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('[Estimates] Storage upload error:', uploadError);
+        throw uploadError;
+      }
+      console.log('[Estimates] Storage upload OK');
 
       setUploadedFile({ path: filePath, name: file.name });
 
       // Create estimate record
       const estimate = await createEstimate(filePath, file.name);
-      if (!estimate) throw new Error('Could not create estimate');
+      if (!estimate) {
+        console.error('[Estimates] createEstimate returned null');
+        throw new Error('Could not create estimate');
+      }
+      console.log('[Estimates] Estimate record created:', estimate.id);
       
       setPendingEstimateId(estimate.id);
 
       // Process and analyze
       setAnalyzing(true);
+      console.log('[Estimates] Processing file for analysis...');
       const payload = await processFileForAnalysis(file, file.name);
+      console.log('[Estimates] Payload ready, textContent length:', payload.textContent?.length || 0, 'fileBase64 length:', payload.fileBase64?.length || 0);
       setPendingAnalysisPayload(payload);
       
+      console.log('[Estimates] Calling analyze-estimate edge function...');
       const result = await callAnalyzeEstimate(payload);
+      console.log('[Estimates] Edge function result:', result);
       if (result) {
         handleAnalysisResult(result);
       }
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('[Estimates] Upload error:', error);
       toast({
         title: 'Fehler',
-        description: 'Datei konnte nicht verarbeitet werden',
+        description: error instanceof Error ? error.message : 'Datei konnte nicht verarbeitet werden',
         variant: 'destructive',
       });
     } finally {

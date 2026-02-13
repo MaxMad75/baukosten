@@ -387,6 +387,7 @@ export type Database = {
           id: string
           invoice_date: string
           invoice_number: string | null
+          is_gross: boolean
           is_paid: boolean
           kostengruppe_code: string | null
           paid_by_profile_id: string | null
@@ -406,6 +407,7 @@ export type Database = {
           id?: string
           invoice_date: string
           invoice_number?: string | null
+          is_gross?: boolean
           is_paid?: boolean
           kostengruppe_code?: string | null
           paid_by_profile_id?: string | null
@@ -425,6 +427,7 @@ export type Database = {
           id?: string
           invoice_date?: string
           invoice_number?: string | null
+          is_gross?: boolean
           is_paid?: boolean
           kostengruppe_code?: string | null
           paid_by_profile_id?: string | null

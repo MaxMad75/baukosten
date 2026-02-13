@@ -38,6 +38,7 @@ export interface Invoice {
   payment_date: string | null;
   paid_by_profile_id: string | null;
   ai_extracted: boolean;
+  is_gross: boolean;
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;

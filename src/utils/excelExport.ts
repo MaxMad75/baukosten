@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from '@e965/xlsx';
 import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison } from '@/lib/types';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';

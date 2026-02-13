@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from '@e965/xlsx';
 
 export async function extractTextFromExcel(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();

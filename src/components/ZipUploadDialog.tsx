@@ -22,18 +22,45 @@ interface ZipUploadDialogProps {
   zipFile: File | null;
 }
 
+type FileStatus = 'pending' | 'uploading' | 'analyzing' | 'done' | 'error' | 'skipped';
+
+interface FileUploadStatus {
+  name: string;
+  status: FileStatus;
+  error?: string;
+}
+
 const getFileIcon = (name: string) => {
   const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
-  if (ext === '.pdf' || ext === '.doc' || ext === '.docx') return <FileText className="h-4 w-4 text-red-500" />;
-  if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') return <Image className="h-4 w-4 text-blue-500" />;
-  if (ext === '.xlsx' || ext === '.xls') return <FileSpreadsheet className="h-4 w-4 text-green-500" />;
-  return <FileText className="h-4 w-4 text-muted-foreground" />;
+  if (ext === '.pdf' || ext === '.doc' || ext === '.docx') return <FileText className="h-4 w-4 text-red-500 shrink-0" />;
+  if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') return <Image className="h-4 w-4 text-blue-500 shrink-0" />;
+  if (ext === '.xlsx' || ext === '.xls') return <FileSpreadsheet className="h-4 w-4 text-green-500 shrink-0" />;
+  return <FileText className="h-4 w-4 text-muted-foreground shrink-0" />;
 };
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const StatusIndicator: React.FC<{ status: FileStatus; error?: string }> = ({ status, error }) => {
+  switch (status) {
+    case 'pending':
+      return null;
+    case 'uploading':
+      return <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Hochladen…</span>;
+    case 'analyzing':
+      return <span className="text-xs text-primary whitespace-nowrap flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />KI-Analyse…</span>;
+    case 'done':
+      return <span className="text-xs text-green-600 whitespace-nowrap flex items-center gap-1"><Check className="h-3 w-3" />Fertig</span>;
+    case 'error':
+      return <span className="text-xs text-destructive whitespace-nowrap flex items-center gap-1"><X className="h-3 w-3" />{error || 'Fehler'}</span>;
+    case 'skipped':
+      return <span className="text-xs text-orange-600 whitespace-nowrap flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Übersprungen</span>;
+    default:
+      return null;
+  }
 };
 
 export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenChange, zipFile }) => {
@@ -44,14 +71,16 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
   const [entries, setEntries] = useState<ZipEntry[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, fileName: '' });
-  const [results, setResults] = useState<{ name: string; ok: boolean; error?: string; skipped?: boolean }[] | null>(null);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [fileStatuses, setFileStatuses] = useState<FileUploadStatus[]>([]);
+  const [uploadDone, setUploadDone] = useState(false);
 
   React.useEffect(() => {
     if (!open || !zipFile) {
       setEntries([]);
-      setResults(null);
+      setFileStatuses([]);
       setProcessing(false);
+      setUploadDone(false);
       return;
     }
 
@@ -59,7 +88,6 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
       setExtracting(true);
       try {
         const extracted = await extractZip(zipFile);
-        // Compute hashes and check duplicates
         await Promise.all(
           extracted.map(async (entry) => {
             const blob = await entry.file.async('blob');
@@ -93,26 +121,34 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
   const selectedEntries = entries.filter((e) => e.selected);
   const duplicateCount = entries.filter((e) => e.isDuplicate).length;
 
+  const updateFileStatus = (name: string, status: FileStatus, error?: string) => {
+    setFileStatuses((prev) => prev.map((f) => (f.name === name ? { ...f, status, error } : f)));
+  };
+
   const handleUpload = async () => {
     setProcessing(true);
-    const uploadResults: { name: string; ok: boolean; error?: string; skipped?: boolean }[] = [];
+    setUploadDone(false);
+    const initial: FileUploadStatus[] = selectedEntries.map((e) => ({ name: e.name, status: 'pending' as FileStatus }));
+    setFileStatuses(initial);
     const uploadedHashes = new Set<string>();
+    let successCount = 0;
 
     for (let i = 0; i < selectedEntries.length; i++) {
       const entry = selectedEntries[i];
-      setProgress({ current: i + 1, total: selectedEntries.length, fileName: entry.name });
+      setProgress({ current: i + 1, total: selectedEntries.length });
 
-      // Check against already uploaded in this batch
       if (entry.hash && uploadedHashes.has(entry.hash)) {
-        uploadResults.push({ name: entry.name, ok: false, skipped: true, error: 'Duplikat in dieser Sitzung' });
+        updateFileStatus(entry.name, 'skipped', 'Duplikat in dieser Sitzung');
         continue;
       }
+
+      updateFileStatus(entry.name, 'uploading');
 
       try {
         const file = await zipEntryToFile(entry);
         const uploaded = await uploadDocument(file);
         if (!uploaded) {
-          uploadResults.push({ name: entry.name, ok: false, error: 'Upload fehlgeschlagen' });
+          updateFileStatus(entry.name, 'error', 'Upload fehlgeschlagen');
           continue;
         }
 
@@ -125,6 +161,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
         const analyzableExts = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
         if (analyzableExts.includes(ext)) {
+          updateFileStatus(entry.name, 'analyzing');
           try {
             let body: Record<string, string> = { fileName: file.name };
             if (ext === '.pdf') {
@@ -169,35 +206,34 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           file_hash: entry.hash,
         });
         if (entry.hash) uploadedHashes.add(entry.hash);
-        uploadResults.push({ name: entry.name, ok: true });
+        updateFileStatus(entry.name, 'done');
+        successCount++;
       } catch (err: any) {
-        uploadResults.push({ name: entry.name, ok: false, error: err?.message || 'Unbekannter Fehler' });
+        updateFileStatus(entry.name, 'error', err?.message || 'Unbekannter Fehler');
       }
     }
 
     await fetchDocuments();
-    setResults(uploadResults);
     setProcessing(false);
+    setUploadDone(true);
 
-    const successCount = uploadResults.filter((r) => r.ok).length;
     toast({
       title: 'ZIP-Upload abgeschlossen',
-      description: `${successCount} von ${uploadResults.length} Dateien erfolgreich hochgeladen.`,
+      description: `${successCount} von ${selectedEntries.length} Dateien erfolgreich hochgeladen.`,
     });
   };
 
-  const successCount = results?.filter((r) => r.ok).length || 0;
-  const failedCount = results?.filter((r) => !r.ok).length || 0;
+  const isUploading = processing || uploadDone;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!processing) onOpenChange(o); }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Archive className="h-5 w-5" />
-            ZIP-Datei hochladen
+            <Archive className="h-5 w-5 shrink-0" />
+            <span className="truncate">ZIP-Datei hochladen</span>
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="truncate">
             {zipFile?.name} — Wählen Sie die Dateien aus, die hochgeladen werden sollen.
           </DialogDescription>
         </DialogHeader>
@@ -209,21 +245,21 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           </div>
         )}
 
-        {!extracting && !processing && !results && entries.length > 0 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
+        {!extracting && !isUploading && entries.length > 0 && (
+          <div className="space-y-4 overflow-hidden">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">{entries.length} Dateien gefunden</p>
                 {duplicateCount > 0 && (
                   <p className="text-xs text-orange-600 flex items-center gap-1 mt-0.5">
-                    <AlertTriangle className="h-3 w-3" />
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
                     {duplicateCount} Duplikat{duplicateCount > 1 ? 'e' : ''} erkannt
                   </p>
                 )}
               </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => selectAll(true)}>Alle auswählen</Button>
-                <Button variant="ghost" size="sm" onClick={() => selectAll(false)}>Keine auswählen</Button>
+              <div className="flex gap-2 shrink-0">
+                <Button variant="ghost" size="sm" onClick={() => selectAll(true)}>Alle</Button>
+                <Button variant="ghost" size="sm" onClick={() => selectAll(false)}>Keine</Button>
               </div>
             </div>
 
@@ -234,34 +270,36 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                     key={entry.path}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 hover:bg-muted cursor-pointer ${entry.isDuplicate ? 'opacity-60' : ''}`}
                   >
-                    <Checkbox checked={entry.selected} onCheckedChange={() => toggleEntry(idx)} />
+                    <Checkbox checked={entry.selected} onCheckedChange={() => toggleEntry(idx)} className="shrink-0" />
                     {getFileIcon(entry.name)}
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <p className="text-sm font-medium truncate">{entry.name}</p>
                       {entry.path !== entry.name && (
                         <p className="text-xs text-muted-foreground truncate">{entry.path}</p>
                       )}
                       {entry.isDuplicate && (
-                        <p className="text-xs text-orange-600">Bereits vorhanden als „{entry.duplicateTitle}"</p>
+                        <p className="text-xs text-orange-600 truncate">Bereits vorhanden als „{entry.duplicateTitle}"</p>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">{formatSize(entry.size)}</span>
-                    {entry.isDuplicate ? (
-                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Duplikat</Badge>
-                    ) : (() => {
-                      const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
-                      return ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'].includes(ext);
-                    })() ? (
-                      <Badge variant="secondary" className="text-xs">KI</Badge>
-                    ) : null}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">{formatSize(entry.size)}</span>
+                      {entry.isDuplicate ? (
+                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 shrink-0">Duplikat</Badge>
+                      ) : (() => {
+                        const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
+                        return ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'].includes(ext);
+                      })() ? (
+                        <Badge variant="secondary" className="text-xs shrink-0">KI</Badge>
+                      ) : null}
+                    </div>
                   </label>
                 ))}
               </div>
             </ScrollArea>
 
-            <div className="flex justify-between items-center">
-              <p className="text-sm text-muted-foreground">{selectedEntries.length} ausgewählt</p>
-              <div className="flex gap-2">
+            <div className="flex justify-between items-center gap-2">
+              <p className="text-sm text-muted-foreground shrink-0">{selectedEntries.length} ausgewählt</p>
+              <div className="flex gap-2 shrink-0">
                 <Button variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button>
                 <Button onClick={handleUpload} disabled={selectedEntries.length === 0}>
                   {selectedEntries.length} Dateien hochladen
@@ -271,59 +309,73 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           </div>
         )}
 
-        {processing && (
-          <div className="space-y-4 py-4">
-            <div className="text-center">
-              <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-              <p className="mt-2 text-sm font-medium">
-                Datei {progress.current} von {progress.total}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">{progress.fileName}</p>
-            </div>
-            <Progress value={(progress.current / progress.total) * 100} className="h-2" />
-          </div>
-        )}
+        {isUploading && (
+          <div className="space-y-4 overflow-hidden">
+            {processing && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Datei {progress.current} von {progress.total}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {Math.round((progress.current / progress.total) * 100)}%
+                  </span>
+                </div>
+                <Progress value={(progress.current / progress.total) * 100} className="h-2" />
+              </div>
+            )}
 
-        {results && (
-          <div className="space-y-4">
-            <div className="flex gap-4 justify-center">
-              {successCount > 0 && (
-                <Badge variant="secondary" className="bg-green-100 text-green-800">
-                  <Check className="mr-1 h-3 w-3" /> {successCount} erfolgreich
-                </Badge>
-              )}
-              {failedCount > 0 && (
-                <Badge variant="secondary" className="bg-red-100 text-red-800">
-                  <X className="mr-1 h-3 w-3" /> {failedCount} fehlgeschlagen
-                </Badge>
-              )}
-            </div>
+            {uploadDone && (
+              <div className="flex gap-4 justify-center">
+                {fileStatuses.filter((f) => f.status === 'done').length > 0 && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                    <Check className="mr-1 h-3 w-3" /> {fileStatuses.filter((f) => f.status === 'done').length} erfolgreich
+                  </Badge>
+                )}
+                {fileStatuses.filter((f) => f.status === 'error' || f.status === 'skipped').length > 0 && (
+                  <Badge variant="secondary" className="bg-red-100 text-red-800">
+                    <X className="mr-1 h-3 w-3" /> {fileStatuses.filter((f) => f.status === 'error' || f.status === 'skipped').length} fehlgeschlagen
+                  </Badge>
+                )}
+              </div>
+            )}
 
-            <ScrollArea className="h-48 rounded-md border">
+            <ScrollArea className="h-64 rounded-md border">
               <div className="p-2 space-y-1">
-                {results.map((r, idx) => (
-                  <div key={idx} className="flex items-center gap-2 px-3 py-2 text-sm">
-                    {r.ok ? (
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                    ) : r.skipped ? (
-                      <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
-                    ) : (
-                      <X className="h-4 w-4 text-red-600 shrink-0" />
-                    )}
-                    <span className="truncate flex-1">{r.name}</span>
-                    {r.error && <span className="text-xs text-destructive">{r.error}</span>}
+                {fileStatuses.map((f, idx) => (
+                  <div key={idx} className="flex items-center gap-3 rounded-md px-3 py-2 text-sm">
+                    <div className="shrink-0">
+                      {f.status === 'done' ? (
+                        <Check className="h-4 w-4 text-green-600" />
+                      ) : f.status === 'error' ? (
+                        <X className="h-4 w-4 text-red-600" />
+                      ) : f.status === 'skipped' ? (
+                        <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      ) : f.status === 'pending' ? (
+                        <div className="h-4 w-4 rounded-full border-2 border-muted" />
+                      ) : (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      )}
+                    </div>
+                    {getFileIcon(f.name)}
+                    <span className="truncate flex-1 min-w-0">{f.name}</span>
+                    <div className="shrink-0">
+                      <StatusIndicator status={f.status} error={f.error} />
+                    </div>
                   </div>
                 ))}
               </div>
             </ScrollArea>
 
-            <div className="flex justify-end">
-              <Button onClick={() => onOpenChange(false)}>Schließen</Button>
-            </div>
+            {uploadDone && (
+              <div className="flex justify-end">
+                <Button onClick={() => onOpenChange(false)}>Schließen</Button>
+              </div>
+            )}
           </div>
         )}
 
-        {!extracting && !processing && !results && entries.length === 0 && (
+        {!extracting && !isUploading && entries.length === 0 && (
           <p className="text-center py-8 text-muted-foreground">Keine unterstützten Dateien im ZIP gefunden.</p>
         )}
       </DialogContent>

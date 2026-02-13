@@ -44,7 +44,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="flex h-16 items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <button
-              className="lg:hidden p-2 rounded-lg hover:bg-accent/10 transition-colors"
+              className="md:hidden p-2 rounded-lg hover:bg-accent/10 transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -74,7 +74,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       <div className="flex">
         {/* Sidebar - Desktop */}
-        <aside className="hidden w-64 border-r bg-sidebar text-sidebar-foreground lg:block min-h-[calc(100vh-4rem)]">
+        <aside className="hidden w-56 border-r bg-sidebar text-sidebar-foreground md:block min-h-[calc(100vh-4rem)] shrink-0">
           <nav className="flex flex-col gap-1 p-3 pt-4">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -100,7 +100,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-md lg:hidden">
+          <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-md md:hidden">
             <nav className="flex flex-col gap-1 p-4">
               {navItems.map((item) => {
                 const Icon = item.icon;

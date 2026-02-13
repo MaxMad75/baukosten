@@ -10,6 +10,8 @@ import Auth from "./pages/Auth";
 import Invoices from "./pages/Invoices";
 import Estimates from "./pages/Estimates";
 import Comparison from "./pages/Comparison";
+import Contractors from "./pages/Contractors";
+import ConstructionJournal from "./pages/ConstructionJournal";
 import Export from "./pages/Export";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -36,6 +38,8 @@ const App = () => (
             <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
             <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
             <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
+            <Route path="/contractors" element={<ProtectedRoute><Contractors /></ProtectedRoute>} />
+            <Route path="/journal" element={<ProtectedRoute><ConstructionJournal /></ProtectedRoute>} />
             <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />

@@ -1,48 +1,22 @@
 
-# Kostenschätzungen auch als Dokumente ablegen mit Duplikaterkennung
+# Fix: Dateiname-Sanitierung im Dokument-Upload
 
-## Zusammenfassung
+## Problem
 
-Wenn eine Kostenschätzung hochgeladen wird, soll die Datei nach der KI-Analyse auch im zentralen Dokumentenmanagement abgelegt werden -- inklusive SHA-256 Duplikaterkennung vor dem Ablegen.
+Nach der KI-Analyse wird die Kostenschätzung über `uploadDocument()` in den `documents`-Storage-Bucket hochgeladen. Diese Funktion (`useDocuments.ts`, Zeile 53) verwendet den Original-Dateinamen **ohne Bereinigung** -- Leerzeichen, Kommas und Umlaute verursachen einen 400-Fehler vom Storage.
 
-## Ablauf
+Die Sanitierung existiert bereits auf der Estimates-Seite für den `estimates`-Bucket, fehlt aber im zentralen `useDocuments`-Hook.
 
-```text
-1. Nutzer lädt PDF hoch
-2. KI analysiert das Dokument (wie bisher)
-3. Nutzer prüft/speichert die extrahierten Kosten (wie bisher)
-4. VOR dem Ablegen: SHA-256 Hash berechnen
-5. Hash gegen bestehende Dokumente prüfen (checkDuplicate)
-6. Falls Duplikat: Warnung anzeigen, Nutzer entscheidet ob trotzdem ablegen
-7. Datei wird in den "documents"-Storage-Bucket kopiert (da Estimates einen eigenen Bucket nutzen)
-8. Eintrag in der documents-Tabelle erstellen (Typ: "Kostenschätzung")
-```
+## Lösung
 
-## Technische Änderungen
+**Datei: `src/hooks/useDocuments.ts`**
 
-### 1. `src/pages/Estimates.tsx`
+In der `uploadDocument`-Funktion den Dateinamen bereinigen, bevor er als Storage-Pfad verwendet wird -- gleiche Logik wie auf der Estimates-Seite:
 
-**Import hinzufügen**: `computeFileHash` aus `@/utils/fileHash`
+- Umlaute ersetzen (ä->ae, ö->oe, ü->ue, ß->ss)
+- Leerzeichen, Kommas und Sonderzeichen durch Unterstriche ersetzen
+- Mehrfache Unterstriche zusammenfassen
 
-**`useDocuments` erweitern**: Neben `getDocumentUrl` auch `uploadDocument`, `createDocument`, `checkDuplicate`, `documents` importieren
+Der angezeigte `file.name` bleibt als Originalname erhalten (wird an den Aufrufer zurückgegeben), nur der Storage-Pfad wird bereinigt.
 
-**`handleFileUpload` erweitern** (nach erfolgreicher KI-Analyse und Speicherung der Kostenpositionen):
-- Im `handleSaveExtractedItems` nach dem erfolgreichen `addEstimateItems`:
-  - Die Original-Datei hashen (`computeFileHash`)
-  - `checkDuplicate(hash)` aufrufen
-  - Falls Duplikat: Toast-Warnung "Dieses Dokument existiert bereits in der Dokumentenbibliothek" -- trotzdem als Kostenschätzung speichern, aber kein neues Dokument anlegen
-  - Falls kein Duplikat: Datei in den `documents`-Bucket hochladen und `createDocument` aufrufen mit `document_type: 'Kostenschätzung'`, `file_hash`, und den Datei-Infos
-
-**Neue State-Variable**: `pendingFile` -- speichert die Original-File-Referenz, damit nach dem Speichern der Hash berechnet und die Datei ins Documents-System übernommen werden kann
-
-**`handleDocumentSelect`**: Hier wird kein neues Dokument angelegt, da das Dokument bereits existiert. Nur ein Info-Toast.
-
-### 2. `src/hooks/useDocuments.ts`
-
-Keine Änderungen nötig -- `uploadDocument`, `createDocument`, `checkDuplicate` sind bereits vorhanden.
-
-### Zusammenfassung der Dateien
-
-| Datei | Änderung |
-|-------|----------|
-| `src/pages/Estimates.tsx` | Dokument-Ablage nach Speicherung, Duplikaterkennung, `pendingFile`-State |
+Keine weiteren Dateien müssen geändert werden -- die Korrektur an zentraler Stelle behebt das Problem für alle Upload-Flows (Kostenschätzungen, Dokumente, ZIP-Uploads).

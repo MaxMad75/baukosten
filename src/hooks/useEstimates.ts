@@ -70,7 +70,7 @@ export function useEstimates() {
     return data as ArchitectEstimate;
   };
 
-  const addEstimateItems = async (estimateId: string, items: Array<{ kostengruppe_code: string; estimated_amount: number; notes?: string }>) => {
+  const addEstimateItems = async (estimateId: string, items: Array<{ kostengruppe_code: string; estimated_amount: number; notes?: string; is_gross?: boolean }>) => {
     const { error } = await supabase
       .from('architect_estimate_items')
       .insert(
@@ -79,6 +79,7 @@ export function useEstimates() {
           kostengruppe_code: item.kostengruppe_code,
           estimated_amount: item.estimated_amount,
           notes: item.notes || null,
+          is_gross: item.is_gross ?? false,
         }))
       );
 

@@ -1,0 +1,1 @@
+ALTER TABLE public.architect_estimate_items ADD COLUMN is_gross BOOLEAN NOT NULL DEFAULT false;

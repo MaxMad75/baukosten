@@ -1,75 +1,99 @@
 
-
-# KI-Analyse fuer alle Dateitypen mit Analyse-Status und Re-Analyse
+# Duplikaterkennung per File-Hash
 
 ## Zusammenfassung
 
-Alle Dokumenttypen (nicht nur PDFs) werden per KI analysierbar. In der Dokumentliste ist auf einen Blick erkennbar, welche Dateien bereits analysiert wurden. Per Klick kann eine (erneute) Analyse gestartet werden.
+Jede hochgeladene Datei erhaelt einen SHA-256-Hash, der in der Datenbank gespeichert wird. Vor dem Upload wird geprueft, ob der Hash bereits existiert. Dies funktioniert sowohl bei Einzel-Uploads als auch bei Dateien aus ZIP-Archiven.
 
 ## Was sich aendert
 
-### 1. Erweiterte KI-Analyse fuer alle Dateitypen
+### 1. Datenbank: Neue Spalte `file_hash`
 
-| Dateityp | Methode |
-|----------|---------|
-| PDF | Textextraktion im Browser, dann KI-Analyse (wie bisher) |
-| JPG/JPEG/PNG | Bild als Base64 an KI senden (Gemini Vision) |
-| DOCX/DOC | Dateiname-basierte Analyse (eingeschraenkt, da kein Textextractor vorhanden) |
-| XLSX/XLS | Tabelleninhalt per xlsx-Bibliothek extrahieren, dann KI-Analyse |
+Eine neue Spalte `file_hash` (TEXT, nullable) wird zur `documents`-Tabelle hinzugefuegt. Ein Index beschleunigt die Duplikatsuche.
 
-### 2. Edge Function erweitern (`analyze-document`)
+```text
+documents
+  + file_hash TEXT (nullable, indexed)
+```
 
-Die bestehende Funktion wird erweitert, sodass sie neben `textContent` auch `imageBase64` akzeptiert. Bei Bildern wird Geminis multimodales Modell genutzt, um den Bildinhalt zu analysieren. Der Prompt bleibt gleich - Titel, Typ, Beschreibung und Firmenname werden extrahiert.
+### 2. Neue Utility: `src/utils/fileHash.ts`
 
-### 3. Client-seitige Textextraktion fuer XLSX
+Eine Hilfsfunktion berechnet den SHA-256-Hash einer Datei ueber die Web Crypto API (`crypto.subtle.digest`). Dies funktioniert komplett im Browser ohne externe Abhaengigkeiten.
 
-Eine neue Hilfsfunktion `extractTextFromExcel` in `src/utils/excelExtractor.ts` nutzt die bereits installierte `xlsx`-Bibliothek, um Tabelleninhalte als Text zu extrahieren.
+- `computeFileHash(file: File): Promise<string>` - gibt den Hex-Hash zurueck
+- `computeBlobHash(blob: Blob): Promise<string>` - fuer ZIP-Eintraege
 
-### 4. Analyse-Status in der Dokumentliste
+### 3. Hook `useDocuments` erweitern
 
-In der Tabelle auf der Dokumentseite wird sichtbar gemacht:
-- Goldenes Sparkles-Icon: bereits KI-analysiert
-- Graues Sparkles-Icon mit Fragezeichen: noch nicht analysiert
-- Ein Analyse-Button (Sparkles + Play) pro Dokument zum Starten/Wiederholen der Analyse
+- Neue Funktion `checkDuplicate(hash: string): Document | undefined` die prueeft ob ein Dokument mit diesem Hash bereits existiert
+- `uploadDocument` bekommt optionalen `fileHash`-Parameter
+- `createDocument` bekommt optionales `file_hash`-Feld
+- Der Hash wird beim Erstellen des Dokuments in der DB gespeichert
 
-### 5. Batch-Analyse und Re-Analyse
+### 4. Dokument-Upload (Documents.tsx)
 
-- Einzelne Dokumente koennen ueber einen Button in der Aktionsspalte analysiert oder erneut analysiert werden
-- Waehrend der Analyse wird ein Ladeindikator angezeigt
-- Nach erfolgreicher Analyse werden Titel, Typ, Beschreibung und Firma automatisch aktualisiert
+Vor dem Upload:
+1. Hash der Datei berechnen
+2. Pruefen ob Hash bereits in `documents` existiert (im lokalen State)
+3. Falls Duplikat: Warnung anzeigen mit Dateiname des existierenden Dokuments und Abbruch-Option
+4. Falls kein Duplikat: normaler Upload
+
+### 5. ZIP-Upload (ZipUploadDialog.tsx)
+
+Beim Verarbeiten der ZIP-Eintraege:
+1. Fuer jeden ausgewaehlten Eintrag den Hash berechnen (aus dem entpackten Blob)
+2. Gegen bestehende Dokumente und bereits in dieser Session hochgeladene Dateien pruefen
+3. Duplikate werden mit einem Warn-Badge in der Ergebnisliste markiert und uebersprungen
+4. In der Dateiliste vor dem Upload: Duplikate werden visuell markiert (oranges Badge "Duplikat") und automatisch abgewaehlt
 
 ## Technische Details
 
-### Edge Function Aenderungen (`supabase/functions/analyze-document/index.ts`)
+### Migration SQL
 
-- Neues optionales Feld `imageBase64` im Request Body
-- Wenn `imageBase64` vorhanden: multimodaler Request mit `image_url` Content-Part an Gemini
-- Wenn `textContent` vorhanden: wie bisher Text-Analyse
-- Mindestens eines der beiden Felder muss gesetzt sein
+```text
+ALTER TABLE documents ADD COLUMN file_hash TEXT;
+CREATE INDEX idx_documents_file_hash ON documents(file_hash);
+```
 
-### Neue Datei: `src/utils/excelExtractor.ts`
+### fileHash.ts
 
-- Nutzt die bereits vorhandene `xlsx`-Bibliothek
-- Liest alle Sheets aus und konvertiert sie in lesbaren Text
+Nutzt die native Web Crypto API:
+```text
+ArrayBuffer -> crypto.subtle.digest('SHA-256', buffer) -> Hex-String
+```
 
-### Neue Hilfsfunktion: `src/utils/imageToBase64.ts`
+### Duplikatpruefung-Ablauf
 
-- Konvertiert eine File-Instanz in einen Base64-String fuer die Uebertragung an die Edge Function
+```text
+Datei ausgewaehlt
+  -> Hash berechnen (SHA-256)
+  -> SELECT aus lokalen documents wo file_hash = berechneter Hash
+  -> Duplikat gefunden?
+     Ja -> Warnung: "Diese Datei existiert bereits als [Titel]"
+           Nutzer kann abbrechen oder trotzdem hochladen
+     Nein -> Normaler Upload + Hash in DB speichern
+```
 
-### Aenderungen an `src/pages/Documents.tsx`
+### ZIP-Ablauf
 
-- Neuer Analyse-Button pro Zeile (Sparkles-Icon)
-- Tooltip zeigt "KI-Analyse starten" oder "Erneut analysieren"
-- Analyse-Funktion `handleAnalyze(doc)`:
-  1. Datei aus Storage herunterladen (signierte URL)
-  2. Je nach Dateityp: Text extrahieren oder Base64 erzeugen
-  3. Edge Function aufrufen
-  4. Dokument-Metadaten mit KI-Ergebnis aktualisieren
-- Ladeindikator waehrend der Analyse (Spinner ersetzt Sparkles-Icon)
-- Visueller Unterschied zwischen analysierten und nicht-analysierten Dokumenten
+```text
+ZIP entpackt -> Eintraege angezeigt
+  -> Fuer jeden Eintrag: Hash aus Blob berechnen
+  -> Duplikate markieren (Badge + automatisch abgewaehlt)
+  -> Beim Upload: Hash wird in DB gespeichert
+```
 
-### Aenderungen an `src/components/ZipUploadDialog.tsx`
+### Aenderungen an bestehenden Dateien
 
-- KI-Analyse wird auf alle unterstuetzten Dateitypen erweitert (nicht nur PDFs)
-- Bilder werden als Base64, Excel als Text an die Edge Function gesendet
+| Datei | Aenderung |
+|-------|-----------|
+| `src/utils/fileHash.ts` | Neu: SHA-256 Hash-Berechnung |
+| `src/hooks/useDocuments.ts` | Hash-Feld in Interface und createDocument; checkDuplicate-Funktion |
+| `src/pages/Documents.tsx` | Hash berechnen vor Upload, Duplikat-Warnung anzeigen |
+| `src/components/ZipUploadDialog.tsx` | Hashes fuer ZIP-Eintraege berechnen, Duplikate markieren |
+| `src/utils/zipExtractor.ts` | ZipEntry um optionalen `hash`-Feld erweitern |
+| DB-Migration | file_hash Spalte + Index |
 
+### Build-Fix
+
+Zusaetzlich wird der fehlende `pattern-bg.jpg`-Import in Layout.tsx behoben (Ursache des aktuellen Build-Fehlers), indem stattdessen ein CSS-Gradient als Hintergrundmuster verwendet wird.

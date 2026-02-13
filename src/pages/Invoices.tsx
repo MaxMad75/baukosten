@@ -13,6 +13,7 @@ import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { useToast } from '@/hooks/use-toast';
 import { Invoice } from '@/lib/types';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Loader2, CheckCircle2, XCircle, Euro, Trash2, Edit, Save, TrendingUp, Receipt, CreditCard,
 } from 'lucide-react';
@@ -43,7 +44,7 @@ export const Invoices: React.FC = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
 
   const [editFormData, setEditFormData] = useState({
-    company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '',
+    company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '', is_gross: true,
   });
 
   const [paymentData, setPaymentData] = useState({
@@ -60,6 +61,7 @@ export const Invoices: React.FC = () => {
       amount: String(invoice.amount),
       description: invoice.description || '',
       kostengruppe_code: invoice.kostengruppe_code || '',
+      is_gross: invoice.is_gross ?? true,
     });
     setIsEditOpen(true);
   };
@@ -76,6 +78,7 @@ export const Invoices: React.FC = () => {
       amount: parseFloat(editFormData.amount),
       description: editFormData.description || null,
       kostengruppe_code: editFormData.kostengruppe_code || null,
+      is_gross: editFormData.is_gross,
     });
     if (success) { setIsEditOpen(false); setEditingInvoice(null); }
   };
@@ -213,7 +216,10 @@ export const Invoices: React.FC = () => {
                         <TableCell className="hidden md:table-cell">
                           {kg ? <span className="text-sm">{kg.code} - {kg.name}</span> : <span className="text-sm text-muted-foreground">–</span>}
                         </TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(Number(invoice.amount))}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(Number(invoice.amount))}
+                          <span className="ml-1 text-xs text-muted-foreground">({invoice.is_gross ? 'brutto' : 'netto'})</span>
+                        </TableCell>
                         <TableCell>
                           {invoice.is_paid ? (
                             <button onClick={() => handleMarkAsUnpaid(invoice.id)} className="flex items-center gap-1 text-green-600 hover:underline" title="Klicken zum Zurücksetzen">
@@ -278,6 +284,14 @@ export const Invoices: React.FC = () => {
               <div className="col-span-2 space-y-2">
                 <Label>Beschreibung</Label>
                 <Textarea value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} />
+              </div>
+              <div className="col-span-2 flex items-center gap-2">
+                <Checkbox
+                  id="edit-is-gross"
+                  checked={editFormData.is_gross}
+                  onCheckedChange={(checked) => setEditFormData({ ...editFormData, is_gross: !!checked })}
+                />
+                <Label htmlFor="edit-is-gross" className="cursor-pointer">Betrag inkl. MwSt (brutto)</Label>
               </div>
             </div>
             <div className="flex justify-end gap-2">

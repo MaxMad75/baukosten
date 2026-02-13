@@ -231,6 +231,79 @@ export type Database = {
         }
         Relationships: []
       }
+      documents: {
+        Row: {
+          ai_analyzed: boolean
+          ai_summary: string | null
+          contractor_id: string | null
+          created_at: string | null
+          created_by_profile_id: string | null
+          description: string | null
+          document_type: string | null
+          file_name: string
+          file_path: string
+          file_size: number | null
+          household_id: string
+          id: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          ai_analyzed?: boolean
+          ai_summary?: string | null
+          contractor_id?: string | null
+          created_at?: string | null
+          created_by_profile_id?: string | null
+          description?: string | null
+          document_type?: string | null
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          household_id: string
+          id?: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          ai_analyzed?: boolean
+          ai_summary?: string | null
+          contractor_id?: string | null
+          created_at?: string | null
+          created_by_profile_id?: string | null
+          description?: string | null
+          document_type?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          household_id?: string
+          id?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_contractor_id_fkey"
+            columns: ["contractor_id"]
+            isOneToOne: false
+            referencedRelation: "contractors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_created_by_profile_id_fkey"
+            columns: ["created_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       household_invitations: {
         Row: {
           created_at: string

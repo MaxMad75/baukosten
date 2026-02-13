@@ -73,15 +73,15 @@ export default function Auth() {
       
       {/* Floating card */}
       <Card className="relative z-10 w-full max-w-md glass-card border-border/30 shadow-2xl">
-        <CardHeader className="text-center pb-2">
-          <div className="flex justify-center mb-3">
-            <div className="p-3 rounded-2xl bg-accent text-accent-foreground shadow-lg shadow-accent/25">
-              <Building2 className="w-8 h-8" />
+          <CardHeader className="text-center pb-3">
+            <div className="flex justify-center mb-4">
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xl shadow-primary/30">
+                <Building2 className="w-8 h-8" />
+              </div>
             </div>
-          </div>
-          <CardTitle className="text-2xl">Hausbau-Tracker</CardTitle>
-          <CardDescription>Baukosten intelligent verwalten</CardDescription>
-        </CardHeader>
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">Hausbau-Tracker</CardTitle>
+            <CardDescription className="text-base mt-2">Baukosten intelligent verwalten</CardDescription>
+          </CardHeader>
         <CardContent>
           <Tabs defaultValue="login">
             <TabsList className="grid w-full grid-cols-2">

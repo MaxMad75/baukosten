@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Building2 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import authBg from '@/assets/auth-bg.jpg';
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -29,15 +30,9 @@ export default function Auth() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     const { error } = await signIn(loginEmail, loginPassword);
-
     if (error) {
-      toast({
-        title: 'Anmeldung fehlgeschlagen',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Anmeldung fehlgeschlagen', description: error.message, variant: 'destructive' });
     } else {
       navigate('/');
     }
@@ -47,20 +42,11 @@ export default function Auth() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     const { error } = await signUp(signupEmail, signupPassword, signupName, signupIban);
-
     if (error) {
-      toast({
-        title: 'Registrierung fehlgeschlagen',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Registrierung fehlgeschlagen', description: error.message, variant: 'destructive' });
     } else {
-      toast({
-        title: 'Willkommen!',
-        description: 'Dein Konto wurde erstellt.',
-      });
+      toast({ title: 'Willkommen!', description: 'Dein Konto wurde erstellt.' });
       navigate('/');
     }
     setLoading(false);
@@ -68,30 +54,33 @@ export default function Auth() {
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
+    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
     if (error) {
-      toast({
-        title: 'Google-Anmeldung fehlgeschlagen',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Google-Anmeldung fehlgeschlagen', description: error.message, variant: 'destructive' });
     }
     setGoogleLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="p-3 rounded-xl bg-primary text-primary-foreground">
+    <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
+      {/* Background image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${authBg})` }}
+      />
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/70 to-primary/90" />
+      
+      {/* Floating card */}
+      <Card className="relative z-10 w-full max-w-md glass-card border-border/30 shadow-2xl">
+        <CardHeader className="text-center pb-2">
+          <div className="flex justify-center mb-3">
+            <div className="p-3 rounded-2xl bg-accent text-accent-foreground shadow-lg shadow-accent/25">
               <Building2 className="w-8 h-8" />
             </div>
           </div>
-          <CardTitle className="text-2xl">Hausbau-Dokumentation</CardTitle>
-          <CardDescription>Verwalte deine Baukosten mit KI-Unterstützung</CardDescription>
+          <CardTitle className="text-2xl">Hausbau-Tracker</CardTitle>
+          <CardDescription>Baukosten intelligent verwalten</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login">
@@ -104,23 +93,11 @@ export default function Auth() {
               <form onSubmit={handleLogin} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">E-Mail</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    required
-                  />
+                  <Input id="login-email" type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="login-password">Passwort</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    required
-                  />
+                  <Input id="login-password" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? 'Wird geladen...' : 'Anmelden'}
@@ -140,42 +117,19 @@ export default function Auth() {
               <form onSubmit={handleSignup} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="signup-name">Name</Label>
-                  <Input
-                    id="signup-name"
-                    value={signupName}
-                    onChange={(e) => setSignupName(e.target.value)}
-                    required
-                  />
+                  <Input id="signup-name" value={signupName} onChange={(e) => setSignupName(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">E-Mail</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    value={signupEmail}
-                    onChange={(e) => setSignupEmail(e.target.value)}
-                    required
-                  />
+                  <Input id="signup-email" type="email" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">Passwort</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    value={signupPassword}
-                    onChange={(e) => setSignupPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
+                  <Input id="signup-password" type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={6} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-iban">IBAN (optional)</Label>
-                  <Input
-                    id="signup-iban"
-                    value={signupIban}
-                    onChange={(e) => setSignupIban(e.target.value)}
-                    placeholder="DE..."
-                  />
+                  <Input id="signup-iban" value={signupIban} onChange={(e) => setSignupIban(e.target.value)} placeholder="DE..." />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? 'Wird geladen...' : 'Registrieren'}

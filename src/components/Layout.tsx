@@ -3,19 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { 
-  Home, 
-  FileText, 
-  Calculator, 
-  BarChart3, 
-  Download, 
-  LogOut, 
-  User,
-  Users,
-  BookOpen,
-  FolderOpen,
-  Menu,
-  X,
-  Settings
+  Home, FileText, Calculator, BarChart3, Download, LogOut, User,
+  Users, BookOpen, FolderOpen, Menu, X, Settings
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -50,26 +39,31 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-card">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
+      <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur-xl">
+        <div className="flex h-16 items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <button
-              className="lg:hidden"
+              className="lg:hidden p-2 rounded-lg hover:bg-accent/10 transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <Link to="/" className="text-xl font-bold text-foreground">
-              🏠 Hausbau-Tracker
+            <Link to="/" className="flex items-center gap-2.5 text-lg font-bold text-foreground">
+              <div className="p-1.5 rounded-lg bg-accent text-accent-foreground">
+                <Home className="h-4 w-4" />
+              </div>
+              <span className="hidden sm:inline">Hausbau-Tracker</span>
             </Link>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
-              <User className="h-4 w-4" />
-              <span>{profile?.name}</span>
+              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <span className="font-medium">{profile?.name}</span>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground hover:text-foreground">
               <LogOut className="h-4 w-4" />
               <span className="ml-2 hidden sm:inline">Abmelden</span>
             </Button>
@@ -79,8 +73,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       <div className="flex">
         {/* Sidebar - Desktop */}
-        <aside className="hidden w-64 border-r bg-card lg:block">
-          <nav className="flex flex-col gap-1 p-4">
+        <aside className="hidden w-64 border-r bg-sidebar text-sidebar-foreground lg:block min-h-[calc(100vh-4rem)]">
+          <nav className="flex flex-col gap-1 p-3 pt-4">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.to;
@@ -89,10 +83,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   key={item.to}
                   to={item.to}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
                     isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      ? 'bg-sidebar-accent text-sidebar-primary shadow-sm'
+                      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -105,7 +99,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 top-16 z-40 bg-background lg:hidden">
+          <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-md lg:hidden">
             <nav className="flex flex-col gap-1 p-4">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -116,13 +110,13 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     to={item.to}
                     onClick={() => setMobileMenuOpen(false)}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
                       isActive
                         ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     )}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-5 w-5" />
                     {item.label}
                   </Link>
                 );
@@ -133,7 +127,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
-          <div className="container mx-auto p-4 lg:p-6">
+          <div className="p-4 lg:p-8 max-w-7xl mx-auto">
             {children}
           </div>
         </main>

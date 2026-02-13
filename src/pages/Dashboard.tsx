@@ -7,14 +7,8 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { 
-  FileText, 
-  Calculator, 
-  BarChart3, 
-  Euro, 
-  CheckCircle2, 
-  AlertCircle,
-  TrendingUp,
-  TrendingDown
+  FileText, Calculator, BarChart3, Euro, CheckCircle2, AlertCircle,
+  TrendingUp, TrendingDown, ArrowRight
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
@@ -26,7 +20,6 @@ export const Dashboard: React.FC = () => {
 
   const loading = invoicesLoading || estimatesLoading;
 
-  // Calculate statistics
   const totalInvoices = invoices.length;
   const paidInvoices = invoices.filter(i => i.is_paid);
   const unpaidInvoices = invoices.filter(i => !i.is_paid);
@@ -39,12 +32,8 @@ export const Dashboard: React.FC = () => {
   const budgetDifference = totalActual - totalEstimated;
   const budgetPercentage = totalEstimated > 0 ? ((totalActual / totalEstimated) * 100) : 0;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
 
   if (loading) {
     return (
@@ -58,63 +47,71 @@ export const Dashboard: React.FC = () => {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-8">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Übersicht Ihrer Baukosten</p>
+          <p className="text-muted-foreground mt-1">Übersicht Ihrer Baukosten</p>
         </div>
 
         {/* Quick Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card className="relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Gesamtkosten</CardTitle>
-              <Euro className="h-4 w-4 text-muted-foreground" />
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Euro className="h-4 w-4 text-primary" />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(totalActual)}</div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground mt-1">
                 von {formatCurrency(totalEstimated)} geschätzt
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Rechnungen</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <div className="p-2 rounded-lg bg-primary/10">
+                <FileText className="h-4 w-4 text-primary" />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalInvoices}</div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground mt-1">
                 {paidInvoices.length} bezahlt, {unpaidInvoices.length} offen
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Bezahlt</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(totalPaid)}</div>
-              <p className="text-xs text-muted-foreground">
-                {paidInvoices.length} Rechnungen
-              </p>
+              <div className="text-2xl font-bold text-emerald-600">{formatCurrency(totalPaid)}</div>
+              <p className="text-xs text-muted-foreground mt-1">{paidInvoices.length} Rechnungen</p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Offen</CardTitle>
-              <AlertCircle className="h-4 w-4 text-orange-500" />
+              <div className="p-2 rounded-lg bg-amber-500/10">
+                <AlertCircle className="h-4 w-4 text-amber-600" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{formatCurrency(totalUnpaid)}</div>
-              <p className="text-xs text-muted-foreground">
-                {unpaidInvoices.length} Rechnungen
-              </p>
+              <div className="text-2xl font-bold text-amber-600">{formatCurrency(totalUnpaid)}</div>
+              <p className="text-xs text-muted-foreground mt-1">{unpaidInvoices.length} Rechnungen</p>
             </CardContent>
           </Card>
         </div>
@@ -128,7 +125,7 @@ export const Dashboard: React.FC = () => {
                 {budgetDifference > 0 ? (
                   <TrendingUp className="h-5 w-5 text-destructive" />
                 ) : (
-                  <TrendingDown className="h-5 w-5 text-green-500" />
+                  <TrendingDown className="h-5 w-5 text-emerald-500" />
                 )}
               </CardTitle>
               <CardDescription>
@@ -139,7 +136,7 @@ export const Dashboard: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span>Verbraucht: {formatCurrency(totalActual)}</span>
                   <span>Budget: {formatCurrency(totalEstimated)}</span>
@@ -157,43 +154,52 @@ export const Dashboard: React.FC = () => {
         )}
 
         {/* Quick Actions */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => navigate('/invoices')}>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/invoices')}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileText className="h-5 w-5 text-primary" />
                 Rechnungen
               </CardTitle>
               <CardDescription>Rechnungen hochladen und verwalten</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full">Zur Rechnungsverwaltung</Button>
+              <Button className="w-full group-hover:bg-primary/90">
+                Zur Rechnungsverwaltung
+                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Button>
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => navigate('/estimates')}>
+          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/estimates')}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calculator className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Calculator className="h-5 w-5 text-primary" />
                 Kostenschätzung
               </CardTitle>
               <CardDescription>Architekten-Kalkulation hochladen</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" variant="secondary">Zur Kostenschätzung</Button>
+              <Button className="w-full" variant="secondary">
+                Zur Kostenschätzung
+                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Button>
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => navigate('/comparison')}>
+          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/comparison')}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <BarChart3 className="h-5 w-5 text-primary" />
                 Soll/Ist-Vergleich
               </CardTitle>
               <CardDescription>Budget vs. tatsächliche Kosten</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" variant="outline">Zum Vergleich</Button>
+              <Button className="w-full" variant="outline">
+                Zum Vergleich
+                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -206,13 +212,13 @@ export const Dashboard: React.FC = () => {
               <CardDescription>Die 5 neuesten Rechnungen</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {invoices.slice(0, 5).map((invoice) => {
                   const kg = kostengruppen.find(k => k.code === invoice.kostengruppe_code);
                   return (
                     <div 
                       key={invoice.id} 
-                      className="flex items-center justify-between rounded-lg border p-3"
+                      className="flex items-center justify-between rounded-xl border p-4 transition-colors hover:bg-muted/50"
                     >
                       <div>
                         <p className="font-medium">{invoice.company_name}</p>
@@ -221,8 +227,8 @@ export const Dashboard: React.FC = () => {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-medium">{formatCurrency(Number(invoice.amount))}</p>
-                        <p className={`text-sm ${invoice.is_paid ? 'text-green-600' : 'text-orange-600'}`}>
+                        <p className="font-semibold">{formatCurrency(Number(invoice.amount))}</p>
+                        <p className={`text-sm font-medium ${invoice.is_paid ? 'text-emerald-600' : 'text-amber-600'}`}>
                           {invoice.is_paid ? 'Bezahlt' : 'Offen'}
                         </p>
                       </div>

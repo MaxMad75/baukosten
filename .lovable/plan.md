@@ -1,99 +1,101 @@
 
-# Duplikaterkennung per File-Hash
+
+# Kostenschaetzung: Dokument-Auswahl, OCR-Fallback und KI-Vorab-Analyse
 
 ## Zusammenfassung
 
-Jede hochgeladene Datei erhaelt einen SHA-256-Hash, der in der Datenbank gespeichert wird. Vor dem Upload wird geprueft, ob der Hash bereits existiert. Dies funktioniert sowohl bei Einzel-Uploads als auch bei Dateien aus ZIP-Archiven.
+Drei Verbesserungen fuer die Kostenschaetzungs-Seite:
+
+1. **PDF-Upload reparieren**: Gescannte PDFs (Bilder statt Text) werden aktuell nicht erkannt. Loesung: Wenn die Text-Extraktion wenig Text liefert, wird das PDF als Base64 an die KI geschickt (Vision/OCR-Fallback).
+
+2. **Bereits hochgeladene Dokumente auswaehlen**: Neben dem PDF-Upload kann der Nutzer aus der bestehenden Dokumentenbibliothek ein Dokument waehlen und dieses als Kostenschaetzung analysieren lassen.
+
+3. **KI-Vorab-Analyse**: Bevor Kosten extrahiert werden, prueft die KI zuerst ob das Dokument ueberhaupt eine Kostenschaetzung ist. Falls ja, werden die Kosten strukturiert extrahiert und nach DIN 276 aufbereitet. Falls nein, bekommt der Nutzer eine klare Meldung.
 
 ## Was sich aendert
 
-### 1. Datenbank: Neue Spalte `file_hash`
+### 1. Edge Function `analyze-estimate` ueberarbeiten
 
-Eine neue Spalte `file_hash` (TEXT, nullable) wird zur `documents`-Tabelle hinzugefuegt. Ein Index beschleunigt die Duplikatsuche.
+**Problem**: Die Funktion erwartet reinen Text (`pdfContent`), was bei gescannten PDFs leer ist. Ausserdem fehlt sie in `config.toml`.
 
-```text
-documents
-  + file_hash TEXT (nullable, indexed)
-```
+**Loesung**:
+- Akzeptiert jetzt sowohl `textContent` (extrahierter Text) als auch `fileBase64` (Base64 des PDFs fuer Vision-Analyse)
+- Zweistufiger KI-Prompt:
+  - Schritt 1: "Ist das eine Kostenschaetzung?" -> `is_estimate: true/false` mit Begruendung
+  - Schritt 2 (nur wenn ja): Kosten nach DIN 276 extrahieren
+- In `config.toml` eintragen mit `verify_jwt = false`
 
-### 2. Neue Utility: `src/utils/fileHash.ts`
+### 2. Estimates-Seite (`src/pages/Estimates.tsx`) erweitern
 
-Eine Hilfsfunktion berechnet den SHA-256-Hash einer Datei ueber die Web Crypto API (`crypto.subtle.digest`). Dies funktioniert komplett im Browser ohne externe Abhaengigkeiten.
+**Neuer "Aus Dokumenten waehlen"-Button** neben PDF-Upload und manueller Eingabe:
+- Oeffnet einen Dialog mit Liste aller hochgeladenen Dokumente
+- Suchfeld zum Filtern nach Name
+- Auswahl eines Dokuments -> Datei wird aus dem Storage geladen
+- Text wird extrahiert (mit OCR-Fallback)
+- An `analyze-estimate` geschickt
+- Ergebnisse werden wie bisher in der Tabelle angezeigt
 
-- `computeFileHash(file: File): Promise<string>` - gibt den Hex-Hash zurueck
-- `computeBlobHash(blob: Blob): Promise<string>` - fuer ZIP-Eintraege
+**Upload-Flow verbessert**:
+- Bei PDF-Upload: Text extrahieren, wenn zu wenig Text -> Base64 an Edge Function schicken
+- KI-Vorab-Analyse zeigt dem Nutzer an: "Dies scheint [keine] Kostenschaetzung zu sein"
+- Bei positiver Erkennung: Kosten-Tabelle wie gehabt anzeigen
+- Bei negativer Erkennung: Hinweis mit Option trotzdem fortzufahren
 
-### 3. Hook `useDocuments` erweitern
+### 3. Dokument-Auswahl-Dialog (neues Component)
 
-- Neue Funktion `checkDuplicate(hash: string): Document | undefined` die prueeft ob ein Dokument mit diesem Hash bereits existiert
-- `uploadDocument` bekommt optionalen `fileHash`-Parameter
-- `createDocument` bekommt optionales `file_hash`-Feld
-- Der Hash wird beim Erstellen des Dokuments in der DB gespeichert
-
-### 4. Dokument-Upload (Documents.tsx)
-
-Vor dem Upload:
-1. Hash der Datei berechnen
-2. Pruefen ob Hash bereits in `documents` existiert (im lokalen State)
-3. Falls Duplikat: Warnung anzeigen mit Dateiname des existierenden Dokuments und Abbruch-Option
-4. Falls kein Duplikat: normaler Upload
-
-### 5. ZIP-Upload (ZipUploadDialog.tsx)
-
-Beim Verarbeiten der ZIP-Eintraege:
-1. Fuer jeden ausgewaehlten Eintrag den Hash berechnen (aus dem entpackten Blob)
-2. Gegen bestehende Dokumente und bereits in dieser Session hochgeladene Dateien pruefen
-3. Duplikate werden mit einem Warn-Badge in der Ergebnisliste markiert und uebersprungen
-4. In der Dateiliste vor dem Upload: Duplikate werden visuell markiert (oranges Badge "Duplikat") und automatisch abgewaehlt
+Neues Component `EstimateDocumentPicker.tsx`:
+- Zeigt Dokumente aus `useDocuments()` als filterbare Liste
+- Zeigt Dateiname, Typ, Datum
+- "Analysieren"-Button pro Dokument
+- Laedt die Datei via signedUrl aus dem Storage
 
 ## Technische Details
 
-### Migration SQL
+### Edge Function Aenderungen
 
 ```text
-ALTER TABLE documents ADD COLUMN file_hash TEXT;
-CREATE INDEX idx_documents_file_hash ON documents(file_hash);
+analyze-estimate/index.ts:
+  Input:  { textContent?: string, fileBase64?: string, fileName: string }
+  Output: {
+    is_estimate: boolean,
+    confidence: string,  // "hoch", "mittel", "niedrig"
+    reason: string,      // Begruendung
+    items?: [{ kostengruppe_code, estimated_amount, notes }],
+    total?: number
+  }
 ```
 
-### fileHash.ts
+Die KI bekommt einen kombinierten Prompt der beides macht: Erkennung und Extraktion.
+Bei `fileBase64` wird das Bild als multimodal content (image_url) an die KI geschickt.
 
-Nutzt die native Web Crypto API:
+### config.toml Ergaenzung
+
 ```text
-ArrayBuffer -> crypto.subtle.digest('SHA-256', buffer) -> Hex-String
+[functions.analyze-estimate]
+verify_jwt = false
 ```
 
-### Duplikatpruefung-Ablauf
+### Frontend-Flow
 
 ```text
-Datei ausgewaehlt
-  -> Hash berechnen (SHA-256)
-  -> SELECT aus lokalen documents wo file_hash = berechneter Hash
-  -> Duplikat gefunden?
-     Ja -> Warnung: "Diese Datei existiert bereits als [Titel]"
-           Nutzer kann abbrechen oder trotzdem hochladen
-     Nein -> Normaler Upload + Hash in DB speichern
-```
+Nutzer waehlt Quelle:
+  A) PDF hochladen -> extractTextFromPDF()
+     -> wenig Text? -> file.arrayBuffer() -> Base64
+     -> viel Text? -> textContent verwenden
+  B) Dokument auswaehlen -> signedUrl laden -> fetch -> gleiche Logik
 
-### ZIP-Ablauf
-
-```text
-ZIP entpackt -> Eintraege angezeigt
-  -> Fuer jeden Eintrag: Hash aus Blob berechnen
-  -> Duplikate markieren (Badge + automatisch abgewaehlt)
-  -> Beim Upload: Hash wird in DB gespeichert
+-> Edge Function aufrufen mit textContent ODER fileBase64
+-> Antwort: is_estimate?
+   Ja -> Kosten-Tabelle anzeigen, bearbeiten, speichern
+   Nein -> Warnung: "Kein Kostenschaetzungs-Dokument erkannt. [Grund]. Trotzdem analysieren?"
 ```
 
 ### Aenderungen an bestehenden Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/utils/fileHash.ts` | Neu: SHA-256 Hash-Berechnung |
-| `src/hooks/useDocuments.ts` | Hash-Feld in Interface und createDocument; checkDuplicate-Funktion |
-| `src/pages/Documents.tsx` | Hash berechnen vor Upload, Duplikat-Warnung anzeigen |
-| `src/components/ZipUploadDialog.tsx` | Hashes fuer ZIP-Eintraege berechnen, Duplikate markieren |
-| `src/utils/zipExtractor.ts` | ZipEntry um optionalen `hash`-Feld erweitern |
-| DB-Migration | file_hash Spalte + Index |
+| `supabase/functions/analyze-estimate/index.ts` | Komplett ueberarbeitet: Vision-Support, Vorab-Analyse, neues Input/Output-Format |
+| `supabase/config.toml` | Wird automatisch aktualisiert |
+| `src/pages/Estimates.tsx` | Neuer "Aus Dokumenten"-Button, OCR-Fallback-Logik, Vorab-Analyse-Anzeige |
+| `src/components/EstimateDocumentPicker.tsx` | Neu: Dialog zur Dokument-Auswahl |
 
-### Build-Fix
-
-Zusaetzlich wird der fehlende `pattern-bg.jpg`-Import in Layout.tsx behoben (Ursache des aktuellen Build-Fehlers), indem stattdessen ein CSS-Gradient als Hintergrundmuster verwendet wird.

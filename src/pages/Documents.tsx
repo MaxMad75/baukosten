@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Layout } from '@/components/Layout';
+import { ZipUploadDialog } from '@/components/ZipUploadDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,6 +59,8 @@ export const Documents: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string; size: number } | null>(null);
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [isZipOpen, setIsZipOpen] = useState(false);
 
   const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); };
 
@@ -65,6 +68,13 @@ export const Documents: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Handle ZIP files separately
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      setZipFile(file);
+      setIsZipOpen(true);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setUploading(true);
     try {
       const result = await uploadDocument(file);
@@ -251,7 +261,7 @@ export const Documents: React.FC = () => {
               <div className="space-y-4">
                 {!uploadedFile && (
                   <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
-                    <input type="file" ref={fileInputRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+                    <input type="file" ref={fileInputRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls,.zip" onChange={handleFileUpload} className="hidden" />
                     {uploading || analyzing ? (
                       <div className="text-center">
                         <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
@@ -266,7 +276,7 @@ export const Documents: React.FC = () => {
                     ) : (
                       <>
                         <FolderOpen className="h-12 w-12 text-muted-foreground" />
-                        <p className="mt-2 text-sm text-muted-foreground">PDF, Word, Excel oder Bild hierher ziehen</p>
+                        <p className="mt-2 text-sm text-muted-foreground">PDF, Word, Excel, Bild oder ZIP hierher ziehen</p>
                         <Button variant="outline" className="mt-4" onClick={() => fileInputRef.current?.click()}>Datei auswählen</Button>
                       </>
                     )}
@@ -392,6 +402,11 @@ export const Documents: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ZipUploadDialog
+        open={isZipOpen}
+        onOpenChange={(o) => { setIsZipOpen(o); if (!o) setZipFile(null); }}
+        zipFile={zipFile}
+      />
     </Layout>
   );
 };

@@ -134,6 +134,46 @@ export function useDocuments() {
     return data?.signedUrl || null;
   };
 
+  const uploadBatch = async (
+    files: { file: File; title: string; folderPath?: string }[],
+    onProgress?: (current: number, total: number, fileName: string) => void
+  ): Promise<{ success: number; failed: number; results: { name: string; ok: boolean; error?: string }[] }> => {
+    if (!household || !profile) return { success: 0, failed: 0, results: [] };
+
+    const results: { name: string; ok: boolean; error?: string }[] = [];
+    let success = 0;
+    let failed = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const { file, title } = files[i];
+      onProgress?.(i + 1, files.length, file.name);
+
+      try {
+        const uploaded = await uploadDocument(file);
+        if (!uploaded) {
+          failed++;
+          results.push({ name: file.name, ok: false, error: 'Upload fehlgeschlagen' });
+          continue;
+        }
+
+        await createDocument({
+          file_path: uploaded.path,
+          file_name: uploaded.name,
+          file_size: uploaded.size,
+          title,
+        });
+        success++;
+        results.push({ name: file.name, ok: true });
+      } catch (err: any) {
+        failed++;
+        results.push({ name: file.name, ok: false, error: err?.message || 'Unbekannter Fehler' });
+      }
+    }
+
+    await fetchDocuments();
+    return { success, failed, results };
+  };
+
   return {
     documents,
     loading,
@@ -143,5 +183,6 @@ export function useDocuments() {
     updateDocument,
     deleteDocument,
     getDocumentUrl,
+    uploadBatch,
   };
 }

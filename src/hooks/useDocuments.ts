@@ -50,7 +50,11 @@ export function useDocuments() {
 
   const uploadDocument = async (file: File) => {
     if (!household) return null;
-    const filePath = `${household.id}/${Date.now()}_${file.name}`;
+    const sanitizedName = file.name
+      .replace(/[äÄ]/g, 'ae').replace(/[öÖ]/g, 'oe').replace(/[üÜ]/g, 'ue').replace(/[ß]/g, 'ss')
+      .replace(/[^a-zA-Z0-9.\-]/g, '_')
+      .replace(/_{2,}/g, '_');
+    const filePath = `${household.id}/${Date.now()}_${sanitizedName}`;
     const { error } = await supabase.storage.from('documents').upload(filePath, file);
     if (error) {
       toast({ title: 'Fehler', description: 'Datei konnte nicht hochgeladen werden', variant: 'destructive' });

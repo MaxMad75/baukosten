@@ -87,6 +87,123 @@ export type Database = {
           },
         ]
       }
+      construction_journal: {
+        Row: {
+          category: string | null
+          contractor_id: string | null
+          created_at: string | null
+          created_by_profile_id: string | null
+          description: string
+          entry_date: string
+          household_id: string
+          id: string
+          photos: string[] | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          contractor_id?: string | null
+          created_at?: string | null
+          created_by_profile_id?: string | null
+          description: string
+          entry_date: string
+          household_id: string
+          id?: string
+          photos?: string[] | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          contractor_id?: string | null
+          created_at?: string | null
+          created_by_profile_id?: string | null
+          description?: string
+          entry_date?: string
+          household_id?: string
+          id?: string
+          photos?: string[] | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "construction_journal_contractor_id_fkey"
+            columns: ["contractor_id"]
+            isOneToOne: false
+            referencedRelation: "contractors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "construction_journal_created_by_profile_id_fkey"
+            columns: ["created_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "construction_journal_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contractors: {
+        Row: {
+          company_name: string
+          contact_person: string | null
+          created_at: string | null
+          email: string | null
+          household_id: string
+          id: string
+          notes: string | null
+          phone: string | null
+          rating: number | null
+          trade: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          company_name: string
+          contact_person?: string | null
+          created_at?: string | null
+          email?: string | null
+          household_id: string
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          rating?: number | null
+          trade?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          company_name?: string
+          contact_person?: string | null
+          created_at?: string | null
+          email?: string | null
+          household_id?: string
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          rating?: number | null
+          trade?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contractors_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       din276_kostengruppen: {
         Row: {
           code: string

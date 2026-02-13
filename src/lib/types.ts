@@ -95,3 +95,37 @@ export interface ExtractedEstimateData {
   }>;
   total: number;
 }
+
+export interface Contractor {
+  id: string;
+  household_id: string;
+  company_name: string;
+  trade: string | null;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  notes: string | null;
+  rating: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConstructionJournalEntry {
+  id: string;
+  household_id: string;
+  entry_date: string;
+  title: string;
+  description: string;
+  category: string | null;
+  contractor_id: string | null;
+  photos: string[] | null;
+  created_by_profile_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConstructionJournalWithDetails extends ConstructionJournalEntry {
+  contractor?: Contractor;
+  created_by_profile?: Profile;
+}

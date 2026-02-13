@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { EstimateDocumentPicker } from '@/components/EstimateDocumentPicker';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
+import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ExtractedEstimateData, ArchitectEstimateItem } from '@/lib/types';
@@ -80,7 +81,7 @@ export const Estimates: React.FC = () => {
     getItemsByEstimate 
   } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
-  const { getDocumentUrl } = useDocuments();
+  const { getDocumentUrl, uploadDocument, createDocument, checkDuplicate } = useDocuments();
   const { household } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -94,6 +95,7 @@ export const Estimates: React.FC = () => {
   const [extractedItems, setExtractedItems] = useState<ExtractedEstimateData['items']>([]);
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string } | null>(null);
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   // Pre-analysis result
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -132,6 +134,7 @@ export const Estimates: React.FC = () => {
     setExtractedItems([]);
     setUploadedFile(null);
     setPendingEstimateId(null);
+    setPendingFile(null);
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
@@ -245,6 +248,7 @@ export const Estimates: React.FC = () => {
       console.log('[Estimates] Storage upload OK');
 
       setUploadedFile({ path: filePath, name: file.name });
+      setPendingFile(file);
 
       // Create estimate record
       const estimate = await createEstimate(filePath, file.name);
@@ -344,6 +348,40 @@ export const Estimates: React.FC = () => {
         title: 'Erfolg',
         description: 'Kostenschätzung wurde gespeichert.',
       });
+
+      // Store as document with duplicate detection
+      if (pendingFile) {
+        try {
+          const hash = await computeFileHash(pendingFile);
+          const duplicate = checkDuplicate(hash);
+
+          if (duplicate) {
+            toast({
+              title: 'Hinweis',
+              description: 'Dieses Dokument existiert bereits in der Dokumentenbibliothek. Es wurde kein neues Dokument angelegt.',
+            });
+          } else {
+            const uploaded = await uploadDocument(pendingFile);
+            if (uploaded) {
+              await createDocument({
+                file_path: uploaded.path,
+                file_name: uploaded.name,
+                file_size: uploaded.size,
+                title: pendingFile.name,
+                document_type: 'Kostenschätzung',
+                file_hash: hash,
+              });
+              toast({
+                title: 'Dokument abgelegt',
+                description: 'Die Kostenschätzung wurde auch in der Dokumentenbibliothek gespeichert.',
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error storing estimate as document:', err);
+        }
+      }
+
       resetForm();
       setIsUploadOpen(false);
     }

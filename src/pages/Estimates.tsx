@@ -8,8 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
+import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useAuth } from '@/contexts/AuthContext';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
+import { EstimateDocumentPicker } from '@/components/EstimateDocumentPicker';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +26,9 @@ import {
   CheckCircle2,
   Edit,
   Save,
-  X
+  X,
+  FolderOpen,
+  AlertTriangle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -53,6 +57,17 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
+// Minimum text length to consider text extraction successful
+const MIN_TEXT_LENGTH = 50;
+
+interface AnalysisResult {
+  is_estimate: boolean;
+  confidence: string;
+  reason: string;
+  items: Array<{ kostengruppe_code: string; estimated_amount: number; notes: string }>;
+  total: number;
+}
+
 export const Estimates: React.FC = () => {
   const { 
     estimates, 
@@ -65,18 +80,25 @@ export const Estimates: React.FC = () => {
     getItemsByEstimate 
   } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
+  const { getDocumentUrl } = useDocuments();
   const { household } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
+  const [isDocPickerOpen, setIsDocPickerOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [extractedItems, setExtractedItems] = useState<ExtractedEstimateData['items']>([]);
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string } | null>(null);
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
+
+  // Pre-analysis result
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
+  const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<any>(null);
 
   // Edit state for inline editing
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -111,12 +133,87 @@ export const Estimates: React.FC = () => {
     setUploadedFile(null);
     setPendingEstimateId(null);
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+    setAnalysisResult(null);
+    setShowNotEstimateWarning(false);
+    setPendingAnalysisPayload(null);
   };
 
   const resetManualForm = () => {
     setManualEstimateName('');
     setManualItems([]);
     setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '' });
+  };
+
+  // Convert ArrayBuffer to Base64
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  // Call the analyze-estimate edge function
+  const callAnalyzeEstimate = async (payload: { textContent?: string; fileBase64?: string; fileName: string }): Promise<AnalysisResult | null> => {
+    const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-estimate', {
+      body: payload,
+    });
+
+    if (functionError) throw functionError;
+
+    if (functionData.error) {
+      toast({
+        title: 'AI-Analyse fehlgeschlagen',
+        description: functionData.error,
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    return functionData.data as AnalysisResult;
+  };
+
+  // Process analysis result
+  const handleAnalysisResult = (result: AnalysisResult) => {
+    setAnalysisResult(result);
+    
+    if (result.is_estimate && result.items && result.items.length > 0) {
+      setExtractedItems(result.items);
+      toast({
+        title: 'Kostenschätzung erkannt',
+        description: `${result.items.length} Kostenpositionen extrahiert (Konfidenz: ${result.confidence}).`,
+      });
+    } else if (!result.is_estimate) {
+      setShowNotEstimateWarning(true);
+    }
+  };
+
+  // Process a file (PDF or image) for analysis
+  const processFileForAnalysis = async (file: File | Blob, fileName: string) => {
+    let textContent: string | undefined;
+    let fileBase64: string | undefined;
+
+    // Try text extraction for PDFs
+    if (fileName.toLowerCase().endsWith('.pdf')) {
+      try {
+        const pdfFile = file instanceof File ? file : new File([file], fileName);
+        const text = await extractTextFromPDF(pdfFile);
+        if (text && text.trim().length >= MIN_TEXT_LENGTH) {
+          textContent = text;
+        }
+      } catch (e) {
+        console.log('Text extraction failed, falling back to vision:', e);
+      }
+    }
+
+    // If no text extracted (scanned PDF or image), use base64
+    if (!textContent) {
+      const buffer = await file.arrayBuffer();
+      fileBase64 = arrayBufferToBase64(buffer);
+    }
+
+    return { textContent, fileBase64, fileName };
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,29 +238,14 @@ export const Estimates: React.FC = () => {
       
       setPendingEstimateId(estimate.id);
 
-      // Extract text from PDF
+      // Process and analyze
       setAnalyzing(true);
-      const pdfText = await extractTextFromPDF(file);
-
-      // Call AI analysis
-      const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-estimate', {
-        body: { pdfContent: pdfText, fileName: file.name }
-      });
-
-      if (functionError) throw functionError;
-
-      if (functionData.error) {
-        toast({
-          title: 'AI-Analyse fehlgeschlagen',
-          description: functionData.error,
-          variant: 'destructive',
-        });
-      } else if (functionData.data?.items) {
-        setExtractedItems(functionData.data.items);
-        toast({
-          title: 'Kostenschätzung analysiert',
-          description: `${functionData.data.items.length} Kostenpositionen extrahiert.`,
-        });
+      const payload = await processFileForAnalysis(file, file.name);
+      setPendingAnalysisPayload(payload);
+      
+      const result = await callAnalyzeEstimate(payload);
+      if (result) {
+        handleAnalysisResult(result);
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -176,6 +258,59 @@ export const Estimates: React.FC = () => {
       setUploading(false);
       setAnalyzing(false);
     }
+  };
+
+  // Handle document selection from picker
+  const handleDocumentSelect = async (doc: Document) => {
+    if (!household) return;
+
+    setIsDocPickerOpen(false);
+    setIsUploadOpen(true);
+    setAnalyzing(true);
+
+    try {
+      // Get signed URL and fetch the file
+      const signedUrl = await getDocumentUrl(doc.file_path);
+      if (!signedUrl) throw new Error('Could not get document URL');
+
+      const response = await fetch(signedUrl);
+      if (!response.ok) throw new Error('Could not download document');
+      
+      const blob = await response.blob();
+
+      // Create estimate record (reference same file path)
+      const estimate = await createEstimate(doc.file_path, doc.file_name);
+      if (!estimate) throw new Error('Could not create estimate');
+      
+      setPendingEstimateId(estimate.id);
+      setUploadedFile({ path: doc.file_path, name: doc.file_name });
+
+      // Process and analyze
+      const payload = await processFileForAnalysis(blob, doc.file_name);
+      setPendingAnalysisPayload(payload);
+
+      const result = await callAnalyzeEstimate(payload);
+      if (result) {
+        handleAnalysisResult(result);
+      }
+    } catch (error) {
+      console.error('Document analysis error:', error);
+      toast({
+        title: 'Fehler',
+        description: 'Dokument konnte nicht analysiert werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Force analysis even when not recognized as estimate
+  const handleForceAnalysis = () => {
+    if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
+      setExtractedItems(analysisResult.items);
+    }
+    setShowNotEstimateWarning(false);
   };
 
   const handleSaveExtractedItems = async () => {
@@ -257,11 +392,9 @@ export const Estimates: React.FC = () => {
       return;
     }
 
-    // Create estimate without file
     const estimate = await createEstimate('', manualEstimateName || `Manuelle Schätzung ${format(new Date(), 'dd.MM.yyyy')}`);
     if (!estimate) return;
 
-    // Add items
     const success = await addEstimateItems(
       estimate.id,
       manualItems.map(item => ({
@@ -347,7 +480,8 @@ export const Estimates: React.FC = () => {
             <h1 className="text-3xl font-bold">Kostenschätzung</h1>
             <p className="text-muted-foreground">Architekten-Kalkulation verwalten</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {/* Upload Dialog */}
             <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
                 <Button>
@@ -359,16 +493,17 @@ export const Estimates: React.FC = () => {
                 <DialogHeader>
                   <DialogTitle>Kostenschätzung hochladen</DialogTitle>
                   <DialogDescription>
-                    Laden Sie die Kostenkalkulation Ihres Architekten als PDF hoch.
+                    Laden Sie die Kostenkalkulation Ihres Architekten als PDF hoch. Gescannte PDFs werden automatisch per OCR erkannt.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
-                  {extractedItems.length === 0 && (
+                  {/* Upload area - shown when no items extracted and no warning */}
+                  {extractedItems.length === 0 && !showNotEstimateWarning && (
                     <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
                       <input
                         type="file"
                         ref={fileInputRef}
-                        accept=".pdf"
+                        accept=".pdf,.png,.jpg,.jpeg"
                         onChange={handleFileUpload}
                         className="hidden"
                       />
@@ -376,14 +511,22 @@ export const Estimates: React.FC = () => {
                         <div className="text-center">
                           <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                           <p className="mt-2 text-sm text-muted-foreground">
-                            {analyzing ? 'AI analysiert Kostenschätzung...' : 'Hochladen...'}
+                            {analyzing ? 'KI analysiert Dokument...' : 'Hochladen...'}
                           </p>
+                          {analyzing && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Prüfe ob es eine Kostenschätzung ist und extrahiere Kosten...
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <>
                           <Calculator className="h-12 w-12 text-muted-foreground" />
                           <p className="mt-2 text-sm text-muted-foreground">
-                            PDF-Kostenschätzung hier ablegen oder klicken
+                            PDF oder Bild hier ablegen oder klicken
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Auch gescannte PDFs werden erkannt (OCR)
                           </p>
                           <Button
                             variant="outline"
@@ -397,12 +540,43 @@ export const Estimates: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Not-an-estimate warning */}
+                  {showNotEstimateWarning && analysisResult && (
+                    <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 space-y-3">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-600 mt-0.5" />
+                        <div>
+                          <p className="font-medium text-yellow-900">Keine Kostenschätzung erkannt</p>
+                          <p className="text-sm text-yellow-800 mt-1">{analysisResult.reason}</p>
+                          <p className="text-xs text-yellow-700 mt-1">Konfidenz: {analysisResult.confidence}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => { resetForm(); }}>
+                          Abbrechen
+                        </Button>
+                        <Button size="sm" onClick={handleForceAnalysis}>
+                          Trotzdem analysieren
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Analysis result info */}
+                  {analysisResult && analysisResult.is_estimate && extractedItems.length > 0 && (
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="font-medium">Kostenschätzung erkannt</span>
+                        <span className="text-green-600">(Konfidenz: {analysisResult.confidence})</span>
+                      </div>
+                      <p className="mt-1 text-xs text-green-700">{analysisResult.reason}</p>
+                      <p className="mt-1">✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.</p>
+                    </div>
+                  )}
+
                   {extractedItems.length > 0 && (
                     <div className="space-y-4">
-                      <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">
-                        ✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.
-                      </div>
-
                       {/* Manual add form */}
                       <div className="rounded-lg border p-4">
                         <h4 className="mb-3 font-medium">Position hinzufügen</h4>
@@ -497,6 +671,12 @@ export const Estimates: React.FC = () => {
                 </div>
               </DialogContent>
             </Dialog>
+
+            {/* Document Picker Button */}
+            <Button variant="outline" onClick={() => setIsDocPickerOpen(true)}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Aus Dokumenten
+            </Button>
 
             {/* Manual Entry Dialog */}
             <Dialog open={isManualOpen} onOpenChange={(open) => { setIsManualOpen(open); if (!open) resetManualForm(); }}>
@@ -790,6 +970,14 @@ export const Estimates: React.FC = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Document Picker Dialog */}
+        <EstimateDocumentPicker
+          open={isDocPickerOpen}
+          onOpenChange={setIsDocPickerOpen}
+          onSelect={handleDocumentSelect}
+          loading={analyzing}
+        />
       </div>
     </Layout>
   );

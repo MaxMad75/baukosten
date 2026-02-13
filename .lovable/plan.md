@@ -1,65 +1,75 @@
 
-# ZIP-Upload mit automatischer Entpackung und KI-Analyse
+
+# KI-Analyse fuer alle Dateitypen mit Analyse-Status und Re-Analyse
 
 ## Zusammenfassung
 
-ZIP-Dateien werden im Browser entpackt und jede enthaltene Datei einzeln hochgeladen und (bei PDFs) per KI analysiert. Das ist machbar, braucht aber eine durchdachte Umsetzung.
+Alle Dokumenttypen (nicht nur PDFs) werden per KI analysierbar. In der Dokumentliste ist auf einen Blick erkennbar, welche Dateien bereits analysiert wurden. Per Klick kann eine (erneute) Analyse gestartet werden.
 
-## Einschraenkungen und Risiken
+## Was sich aendert
 
-- **KI-Analyse nur fuer PDFs**: Bilder, Word- und Excel-Dateien werden hochgeladen aber nicht KI-analysiert (wie bisher)
-- **Grosse ZIPs**: Bei vielen Dateien (z.B. 50+) dauert der Upload und die KI-Analyse laenger -- ein Fortschrittsbalken zeigt den Status
-- **Verschachtelte ZIPs**: ZIPs in ZIPs werden nicht entpackt (nur eine Ebene)
-- **Maximale Dateigroesse**: ZIPs bis 50 MB, Einzeldateien innerhalb bis 20 MB
+### 1. Erweiterte KI-Analyse fuer alle Dateitypen
 
-## Ablauf
+| Dateityp | Methode |
+|----------|---------|
+| PDF | Textextraktion im Browser, dann KI-Analyse (wie bisher) |
+| JPG/JPEG/PNG | Bild als Base64 an KI senden (Gemini Vision) |
+| DOCX/DOC | Dateiname-basierte Analyse (eingeschraenkt, da kein Textextractor vorhanden) |
+| XLSX/XLS | Tabelleninhalt per xlsx-Bibliothek extrahieren, dann KI-Analyse |
 
-```text
-ZIP hochladen
-    |
-    v
-Browser entpackt ZIP (JSZip)
-    |
-    v
-Dateiliste mit Ordnerstruktur anzeigen
-    |
-    v
-User kann Dateien abwaehlen / Typ zuweisen
-    |
-    v
-Dateien einzeln hochladen + PDFs per KI analysieren
-    |
-    v
-Fortschrittsanzeige (3/12 Dateien verarbeitet...)
-    |
-    v
-Ergebnis-Uebersicht mit Status pro Datei
-```
+### 2. Edge Function erweitern (`analyze-document`)
 
-## Technische Umsetzung
+Die bestehende Funktion wird erweitert, sodass sie neben `textContent` auch `imageBase64` akzeptiert. Bei Bildern wird Geminis multimodales Modell genutzt, um den Bildinhalt zu analysieren. Der Prompt bleibt gleich - Titel, Typ, Beschreibung und Firmenname werden extrahiert.
 
-### 1. Abhaengigkeit: JSZip installieren
-- `jszip` Paket hinzufuegen fuer clientseitiges Entpacken
+### 3. Client-seitige Textextraktion fuer XLSX
 
-### 2. Neuer Utility: `src/utils/zipExtractor.ts`
-- ZIP-Datei im Browser entpacken
-- Ordnerstruktur auslesen
-- Unterstuetzte Dateitypen filtern (PDF, DOC, DOCX, JPG, PNG, XLSX)
-- Maximale Dateigroesse pro Datei pruefen
+Eine neue Hilfsfunktion `extractTextFromExcel` in `src/utils/excelExtractor.ts` nutzt die bereits installierte `xlsx`-Bibliothek, um Tabelleninhalte als Text zu extrahieren.
 
-### 3. Erweiterung: `src/pages/Documents.tsx`
-- ZIP als akzeptierten Dateityp hinzufuegen
-- Bei ZIP-Upload: Dateiliste mit Ordnernamen anzeigen
-- Fortschrittsbalken waehrend Batch-Upload
-- Checkbox pro Datei zum Ab-/Anwaehlen
-- Batch-Verarbeitung: Dateien sequenziell hochladen und analysieren
-- Ergebnis-Dialog: Uebersicht welche Dateien erfolgreich waren
+### 4. Analyse-Status in der Dokumentliste
 
-### 4. Erweiterung: `src/hooks/useDocuments.ts`
-- Neue Funktion `uploadBatch` fuer mehrere Dateien gleichzeitig
-- Callback fuer Fortschritts-Updates
-- Fehlerbehandlung pro Datei (eine fehlgeschlagene Datei stoppt nicht den Rest)
+In der Tabelle auf der Dokumentseite wird sichtbar gemacht:
+- Goldenes Sparkles-Icon: bereits KI-analysiert
+- Graues Sparkles-Icon mit Fragezeichen: noch nicht analysiert
+- Ein Analyse-Button (Sparkles + Play) pro Dokument zum Starten/Wiederholen der Analyse
 
-### Kein Backend-Aenderung noetig
-- Storage-Bucket und Datenbank-Tabelle bleiben unveraendert
-- Edge Function bleibt unveraendert (wird pro PDF einzeln aufgerufen)
+### 5. Batch-Analyse und Re-Analyse
+
+- Einzelne Dokumente koennen ueber einen Button in der Aktionsspalte analysiert oder erneut analysiert werden
+- Waehrend der Analyse wird ein Ladeindikator angezeigt
+- Nach erfolgreicher Analyse werden Titel, Typ, Beschreibung und Firma automatisch aktualisiert
+
+## Technische Details
+
+### Edge Function Aenderungen (`supabase/functions/analyze-document/index.ts`)
+
+- Neues optionales Feld `imageBase64` im Request Body
+- Wenn `imageBase64` vorhanden: multimodaler Request mit `image_url` Content-Part an Gemini
+- Wenn `textContent` vorhanden: wie bisher Text-Analyse
+- Mindestens eines der beiden Felder muss gesetzt sein
+
+### Neue Datei: `src/utils/excelExtractor.ts`
+
+- Nutzt die bereits vorhandene `xlsx`-Bibliothek
+- Liest alle Sheets aus und konvertiert sie in lesbaren Text
+
+### Neue Hilfsfunktion: `src/utils/imageToBase64.ts`
+
+- Konvertiert eine File-Instanz in einen Base64-String fuer die Uebertragung an die Edge Function
+
+### Aenderungen an `src/pages/Documents.tsx`
+
+- Neuer Analyse-Button pro Zeile (Sparkles-Icon)
+- Tooltip zeigt "KI-Analyse starten" oder "Erneut analysieren"
+- Analyse-Funktion `handleAnalyze(doc)`:
+  1. Datei aus Storage herunterladen (signierte URL)
+  2. Je nach Dateityp: Text extrahieren oder Base64 erzeugen
+  3. Edge Function aufrufen
+  4. Dokument-Metadaten mit KI-Ergebnis aktualisieren
+- Ladeindikator waehrend der Analyse (Spinner ersetzt Sparkles-Icon)
+- Visueller Unterschied zwischen analysierten und nicht-analysierten Dokumenten
+
+### Aenderungen an `src/components/ZipUploadDialog.tsx`
+
+- KI-Analyse wird auf alle unterstuetzten Dateitypen erweitert (nicht nur PDFs)
+- Bilder werden als Base64, Excel als Text an die Edge Function gesendet
+

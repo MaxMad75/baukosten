@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const MAX_PAYLOAD_SIZE = 500 * 1024;
+const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024; // 5MB for images
 
 const DOCUMENT_TYPES = `
 Dokumenttypen:
@@ -18,6 +18,22 @@ Dokumenttypen:
 - Protokoll: Baustellenprotokolle, Abnahmeprotokolle
 - Sonstiges: Alles andere
 `;
+
+const systemPrompt = `Du bist ein Experte für Baudokumente. Analysiere das Dokument und extrahiere folgende Informationen:
+- Einen aussagekräftigen Titel
+- Den Dokumenttyp (einer von: Vertrag, Genehmigung, Angebot, Zeichnung, Rechnung, Protokoll, Sonstiges)
+- Eine kurze Beschreibung / Zusammenfassung (max 2-3 Sätze)
+- Den Firmennamen, falls erkennbar
+
+${DOCUMENT_TYPES}
+
+Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
+{
+  "title": "string",
+  "document_type": "string",
+  "description": "string",
+  "company_name": "string oder null"
+}`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -49,24 +65,18 @@ serve(async (req) => {
     }
 
     const contentLength = req.headers.get("content-length");
-    if (!contentLength) {
-      return new Response(
-        JSON.stringify({ error: "Content-Length header required" }),
-        { status: 411, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    if (parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
       return new Response(
         JSON.stringify({ error: "Payload too large" }),
         { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const { textContent, fileName } = await req.json();
+    const { textContent, imageBase64, fileName } = await req.json();
 
-    if (!textContent || typeof textContent !== "string") {
+    if (!textContent && !imageBase64) {
       return new Response(
-        JSON.stringify({ error: "Text content is required" }),
+        JSON.stringify({ error: "textContent or imageBase64 is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -76,21 +86,25 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const systemPrompt = `Du bist ein Experte für Baudokumente. Analysiere das Dokument und extrahiere folgende Informationen:
-- Einen aussagekräftigen Titel
-- Den Dokumenttyp (einer von: Vertrag, Genehmigung, Angebot, Zeichnung, Rechnung, Protokoll, Sonstiges)
-- Eine kurze Beschreibung / Zusammenfassung (max 2-3 Sätze)
-- Den Firmennamen, falls erkennbar
+    // Build messages based on content type
+    const userContent: any[] = [];
 
-${DOCUMENT_TYPES}
-
-Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
-{
-  "title": "string",
-  "document_type": "string",
-  "description": "string",
-  "company_name": "string oder null"
-}`;
+    if (imageBase64) {
+      // Multimodal: image analysis
+      userContent.push({
+        type: "image_url",
+        image_url: { url: `data:image/jpeg;base64,${imageBase64}` }
+      });
+      userContent.push({
+        type: "text",
+        text: `Analysiere dieses Bild/Dokument (Dateiname: ${fileName}).`
+      });
+    } else {
+      userContent.push({
+        type: "text",
+        text: `Analysiere dieses Dokument (Dateiname: ${fileName}):\n\n${textContent.substring(0, 10000)}`
+      });
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -102,7 +116,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Analysiere dieses Dokument (Dateiname: ${fileName}):\n\n${textContent.substring(0, 10000)}` },
+          { role: "user", content: userContent },
         ],
       }),
     });

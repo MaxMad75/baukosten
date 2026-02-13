@@ -10,11 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors } from '@/hooks/useContractors';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
+import { extractTextFromExcel } from '@/utils/excelExtractor';
+import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink
+  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -61,6 +64,7 @@ export const Documents: React.FC = () => {
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string; size: number } | null>(null);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [isZipOpen, setIsZipOpen] = useState(false);
+  const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
 
   const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); };
 
@@ -81,14 +85,22 @@ export const Documents: React.FC = () => {
       if (!result) { setUploading(false); return; }
       setUploadedFile(result);
 
-      // Try AI analysis for PDFs
-      if (file.name.toLowerCase().endsWith('.pdf')) {
+      // Try AI analysis for supported types
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      const analyzableExts = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
+      if (analyzableExts.includes(ext)) {
         setAnalyzing(true);
         try {
-          const pdfText = await extractTextFromPDF(file);
-          const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', {
-            body: { textContent: pdfText, fileName: file.name }
-          });
+          let body: Record<string, string> = { fileName: file.name };
+          if (ext === '.pdf') {
+            body.textContent = await extractTextFromPDF(file);
+          } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+            body.imageBase64 = await fileToBase64(file);
+          } else if (['.xlsx', '.xls'].includes(ext)) {
+            body.textContent = await extractTextFromExcel(file);
+          }
+
+          const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
 
           if (!functionError && functionData?.data) {
             const ai = functionData.data;
@@ -99,15 +111,12 @@ export const Documents: React.FC = () => {
               contractor_id: '',
             });
 
-            // Try to match contractor by company name
             if (ai.company_name) {
               const match = contractors.find(
                 (c) => c.company_name.toLowerCase().includes(ai.company_name.toLowerCase()) ||
                   ai.company_name.toLowerCase().includes(c.company_name.toLowerCase())
               );
-              if (match) {
-                setFormData((prev) => ({ ...prev, contractor_id: match.id }));
-              }
+              if (match) setFormData((prev) => ({ ...prev, contractor_id: match.id }));
             }
 
             toast({ title: 'KI-Analyse abgeschlossen', description: 'Bitte überprüfen Sie die erkannten Daten.' });
@@ -176,6 +185,63 @@ export const Documents: React.FC = () => {
   const handleDownload = async (doc: Document) => {
     const url = await getDocumentUrl(doc.file_path);
     if (url) window.open(url, '_blank');
+  };
+
+  const handleAnalyzeDocument = async (doc: Document) => {
+    setAnalyzingDocId(doc.id);
+    try {
+      const url = await getDocumentUrl(doc.file_path);
+      if (!url) throw new Error('URL nicht verfügbar');
+
+      const ext = doc.file_name.substring(doc.file_name.lastIndexOf('.')).toLowerCase();
+      let body: Record<string, string> = { fileName: doc.file_name };
+
+      if (ext === '.pdf') {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const file = new File([blob], doc.file_name, { type: 'application/pdf' });
+        body.textContent = await extractTextFromPDF(file);
+      } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+        body.imageBase64 = await fetchFileAsBase64(url);
+      } else if (['.xlsx', '.xls'].includes(ext)) {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const file = new File([blob], doc.file_name);
+        body.textContent = await extractTextFromExcel(file);
+      } else {
+        // For unsupported types, do filename-only analysis
+        body.textContent = `Dateiname: ${doc.file_name}`;
+      }
+
+      const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
+
+      if (functionError) throw new Error(functionError.message);
+      if (!functionData?.data) throw new Error('Keine Daten von KI erhalten');
+
+      const ai = functionData.data;
+      let contractorId = doc.contractor_id;
+
+      if (ai.company_name) {
+        const match = contractors.find(
+          (c) => c.company_name.toLowerCase().includes(ai.company_name.toLowerCase()) ||
+            ai.company_name.toLowerCase().includes(c.company_name.toLowerCase())
+        );
+        if (match) contractorId = match.id;
+      }
+
+      await updateDocument(doc.id, {
+        title: ai.title || doc.title,
+        document_type: ai.document_type || doc.document_type,
+        description: ai.description || doc.description,
+        contractor_id: contractorId,
+        ai_analyzed: true,
+      });
+
+      toast({ title: 'KI-Analyse abgeschlossen', description: `"${ai.title || doc.title}" wurde analysiert.` });
+    } catch (err: any) {
+      toast({ title: 'Analyse fehlgeschlagen', description: err?.message || 'Unbekannter Fehler', variant: 'destructive' });
+    }
+    setAnalyzingDocId(null);
   };
 
   const formatFileSize = (bytes: number | null) => {
@@ -341,7 +407,11 @@ export const Documents: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <FileText className="h-4 w-4 text-muted-foreground" />
                             <span className="font-medium">{doc.title}</span>
-                            {doc.ai_analyzed && <Sparkles className="h-3 w-3 text-primary" />}
+                            {doc.ai_analyzed ? (
+                              <Sparkles className="h-3 w-3 text-amber-500" />
+                            ) : (
+                              <Sparkles className="h-3 w-3 text-muted-foreground/40" />
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">{doc.file_name}</div>
                           {doc.description && <div className="mt-1 text-xs text-muted-foreground line-clamp-1">{doc.description}</div>}
@@ -362,6 +432,29 @@ export const Documents: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleAnalyzeDocument(doc)}
+                                  disabled={analyzingDocId === doc.id}
+                                >
+                                  {analyzingDocId === doc.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : doc.ai_analyzed ? (
+                                    <RotateCw className="h-4 w-4 text-amber-500" />
+                                  ) : (
+                                    <Sparkles className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {doc.ai_analyzed ? 'Erneut analysieren' : 'KI-Analyse starten'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                           <Button variant="ghost" size="icon" onClick={() => handleDownload(doc)} title="Herunterladen">
                             <ExternalLink className="h-4 w-4" />
                           </Button>

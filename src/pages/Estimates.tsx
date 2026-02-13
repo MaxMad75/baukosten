@@ -224,7 +224,16 @@ export const Estimates: React.FC = () => {
     try {
       // Upload file to storage
       console.log('[Estimates] Uploading file:', file.name, 'size:', file.size);
-      const filePath = `${household.id}/${Date.now()}_${file.name}`;
+      // Sanitize filename: replace spaces, commas, umlauts and special chars
+      const sanitizedName = file.name
+        .replace(/\s+/g, '_')
+        .replace(/,/g, '_')
+        .replace(/[äÄ]/g, 'ae')
+        .replace(/[öÖ]/g, 'oe')
+        .replace(/[üÜ]/g, 'ue')
+        .replace(/ß/g, 'ss')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${household.id}/${Date.now()}_${sanitizedName}`;
       const { error: uploadError } = await supabase.storage
         .from('estimates')
         .upload(filePath, file);

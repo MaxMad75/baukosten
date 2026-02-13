@@ -12,6 +12,7 @@ import {
   User,
   Users,
   BookOpen,
+  FolderOpen,
   Menu,
   X,
   Settings
@@ -28,6 +29,7 @@ const navItems = [
   { to: '/invoices', icon: FileText, label: 'Rechnungen' },
   { to: '/estimates', icon: Calculator, label: 'Kostenschätzung' },
   { to: '/comparison', icon: BarChart3, label: 'Soll/Ist' },
+  { to: '/documents', icon: FolderOpen, label: 'Dokumente' },
   { to: '/contractors', icon: Users, label: 'Firmen' },
   { to: '/journal', icon: BookOpen, label: 'Bautagebuch' },
   { to: '/export', icon: Download, label: 'Export' },

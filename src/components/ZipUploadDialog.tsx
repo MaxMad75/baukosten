@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { extractZip, zipEntryToFile, ZipEntry } from '@/utils/zipExtractor';
+import { computeBlobHash } from '@/utils/fileHash';
 import { useDocuments } from '@/hooks/useDocuments';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { extractTextFromExcel } from '@/utils/excelExtractor';
@@ -13,7 +14,7 @@ import { fileToBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useContractors } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, FileText, Image, FileSpreadsheet, Check, X, Archive } from 'lucide-react';
+import { Loader2, FileText, Image, FileSpreadsheet, Check, X, Archive, AlertTriangle } from 'lucide-react';
 
 interface ZipUploadDialogProps {
   open: boolean;
@@ -36,7 +37,7 @@ const formatSize = (bytes: number) => {
 };
 
 export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenChange, zipFile }) => {
-  const { uploadDocument, createDocument, fetchDocuments } = useDocuments();
+  const { uploadDocument, createDocument, fetchDocuments, checkDuplicate } = useDocuments();
   const { contractors } = useContractors();
   const { toast } = useToast();
 
@@ -44,9 +45,8 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
   const [extracting, setExtracting] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, fileName: '' });
-  const [results, setResults] = useState<{ name: string; ok: boolean; error?: string }[] | null>(null);
+  const [results, setResults] = useState<{ name: string; ok: boolean; error?: string; skipped?: boolean }[] | null>(null);
 
-  // Extract ZIP when dialog opens with a file
   React.useEffect(() => {
     if (!open || !zipFile) {
       setEntries([]);
@@ -59,6 +59,19 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
       setExtracting(true);
       try {
         const extracted = await extractZip(zipFile);
+        // Compute hashes and check duplicates
+        await Promise.all(
+          extracted.map(async (entry) => {
+            const blob = await entry.file.async('blob');
+            entry.hash = await computeBlobHash(blob);
+            const existing = checkDuplicate(entry.hash);
+            if (existing) {
+              entry.isDuplicate = true;
+              entry.duplicateTitle = existing.title;
+              entry.selected = false;
+            }
+          })
+        );
         setEntries(extracted);
       } catch (err: any) {
         toast({ title: 'Fehler', description: err.message || 'ZIP konnte nicht entpackt werden', variant: 'destructive' });
@@ -74,18 +87,26 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
   };
 
   const selectAll = (selected: boolean) => {
-    setEntries((prev) => prev.map((e) => ({ ...e, selected })));
+    setEntries((prev) => prev.map((e) => ({ ...e, selected: e.isDuplicate ? false : selected })));
   };
 
   const selectedEntries = entries.filter((e) => e.selected);
+  const duplicateCount = entries.filter((e) => e.isDuplicate).length;
 
   const handleUpload = async () => {
     setProcessing(true);
-    const uploadResults: { name: string; ok: boolean; error?: string }[] = [];
+    const uploadResults: { name: string; ok: boolean; error?: string; skipped?: boolean }[] = [];
+    const uploadedHashes = new Set<string>();
 
     for (let i = 0; i < selectedEntries.length; i++) {
       const entry = selectedEntries[i];
       setProgress({ current: i + 1, total: selectedEntries.length, fileName: entry.name });
+
+      // Check against already uploaded in this batch
+      if (entry.hash && uploadedHashes.has(entry.hash)) {
+        uploadResults.push({ name: entry.name, ok: false, skipped: true, error: 'Duplikat in dieser Sitzung' });
+        continue;
+      }
 
       try {
         const file = await zipEntryToFile(entry);
@@ -101,7 +122,6 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         let contractorId: string | undefined;
         let aiAnalyzed = false;
 
-        // AI analysis for supported types
         const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
         const analyzableExts = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
         if (analyzableExts.includes(ext)) {
@@ -146,7 +166,9 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           document_type: documentType,
           contractor_id: contractorId,
           ai_analyzed: aiAnalyzed,
+          file_hash: entry.hash,
         });
+        if (entry.hash) uploadedHashes.add(entry.hash);
         uploadResults.push({ name: entry.name, ok: true });
       } catch (err: any) {
         uploadResults.push({ name: entry.name, ok: false, error: err?.message || 'Unbekannter Fehler' });
@@ -190,7 +212,15 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         {!extracting && !processing && !results && entries.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">{entries.length} Dateien gefunden</p>
+              <div>
+                <p className="text-sm text-muted-foreground">{entries.length} Dateien gefunden</p>
+                {duplicateCount > 0 && (
+                  <p className="text-xs text-orange-600 flex items-center gap-1 mt-0.5">
+                    <AlertTriangle className="h-3 w-3" />
+                    {duplicateCount} Duplikat{duplicateCount > 1 ? 'e' : ''} erkannt
+                  </p>
+                )}
+              </div>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => selectAll(true)}>Alle auswählen</Button>
                 <Button variant="ghost" size="sm" onClick={() => selectAll(false)}>Keine auswählen</Button>
@@ -202,7 +232,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                 {entries.map((entry, idx) => (
                   <label
                     key={entry.path}
-                    className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-muted cursor-pointer"
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 hover:bg-muted cursor-pointer ${entry.isDuplicate ? 'opacity-60' : ''}`}
                   >
                     <Checkbox checked={entry.selected} onCheckedChange={() => toggleEntry(idx)} />
                     {getFileIcon(entry.name)}
@@ -211,14 +241,19 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                       {entry.path !== entry.name && (
                         <p className="text-xs text-muted-foreground truncate">{entry.path}</p>
                       )}
+                      {entry.isDuplicate && (
+                        <p className="text-xs text-orange-600">Bereits vorhanden als „{entry.duplicateTitle}"</p>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">{formatSize(entry.size)}</span>
-                    {(() => {
+                    {entry.isDuplicate ? (
+                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Duplikat</Badge>
+                    ) : (() => {
                       const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
                       return ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'].includes(ext);
-                    })() && (
+                    })() ? (
                       <Badge variant="secondary" className="text-xs">KI</Badge>
-                    )}
+                    ) : null}
                   </label>
                 ))}
               </div>
@@ -270,6 +305,8 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                   <div key={idx} className="flex items-center gap-2 px-3 py-2 text-sm">
                     {r.ok ? (
                       <Check className="h-4 w-4 text-green-600 shrink-0" />
+                    ) : r.skipped ? (
+                      <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
                     ) : (
                       <X className="h-4 w-4 text-red-600 shrink-0" />
                     )}

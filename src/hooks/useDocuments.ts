@@ -18,6 +18,7 @@ export interface Document {
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;
+  file_hash: string | null;
 }
 
 export function useDocuments() {
@@ -58,6 +59,10 @@ export function useDocuments() {
     return { path: filePath, name: file.name, size: file.size };
   };
 
+  const checkDuplicate = (hash: string): Document | undefined => {
+    return documents.find((d) => d.file_hash === hash);
+  };
+
   const createDocument = async (data: {
     file_path: string;
     file_name: string;
@@ -68,6 +73,7 @@ export function useDocuments() {
     contractor_id?: string;
     ai_analyzed?: boolean;
     ai_summary?: string;
+    file_hash?: string;
   }) => {
     if (!household || !profile) return null;
     const { data: result, error } = await supabase
@@ -83,6 +89,7 @@ export function useDocuments() {
         contractor_id: data.contractor_id || null,
         ai_analyzed: data.ai_analyzed || false,
         ai_summary: data.ai_summary || null,
+        file_hash: data.file_hash || null,
         created_by_profile_id: profile.id,
       })
       .select()
@@ -184,5 +191,6 @@ export function useDocuments() {
     deleteDocument,
     getDocumentUrl,
     uploadBatch,
+    checkDuplicate,
   };
 }

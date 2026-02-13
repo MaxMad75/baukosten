@@ -240,6 +240,7 @@ export type Database = {
           created_by_profile_id: string | null
           description: string | null
           document_type: string | null
+          file_hash: string | null
           file_name: string
           file_path: string
           file_size: number | null
@@ -256,6 +257,7 @@ export type Database = {
           created_by_profile_id?: string | null
           description?: string | null
           document_type?: string | null
+          file_hash?: string | null
           file_name: string
           file_path: string
           file_size?: number | null
@@ -272,6 +274,7 @@ export type Database = {
           created_by_profile_id?: string | null
           description?: string | null
           document_type?: string | null
+          file_hash?: string | null
           file_name?: string
           file_path?: string
           file_size?: number | null

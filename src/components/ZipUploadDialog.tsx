@@ -8,6 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { extractZip, zipEntryToFile, ZipEntry } from '@/utils/zipExtractor';
 import { useDocuments } from '@/hooks/useDocuments';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
+import { extractTextFromExcel } from '@/utils/excelExtractor';
+import { fileToBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useContractors } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
@@ -99,13 +101,21 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         let contractorId: string | undefined;
         let aiAnalyzed = false;
 
-        // AI analysis for PDFs
-        if (file.name.toLowerCase().endsWith('.pdf')) {
+        // AI analysis for supported types
+        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        const analyzableExts = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
+        if (analyzableExts.includes(ext)) {
           try {
-            const pdfText = await extractTextFromPDF(file);
-            const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', {
-              body: { textContent: pdfText, fileName: file.name }
-            });
+            let body: Record<string, string> = { fileName: file.name };
+            if (ext === '.pdf') {
+              body.textContent = await extractTextFromPDF(file);
+            } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+              body.imageBase64 = await fileToBase64(file);
+            } else if (['.xlsx', '.xls'].includes(ext)) {
+              body.textContent = await extractTextFromExcel(file);
+            }
+
+            const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
 
             if (!functionError && functionData?.data) {
               const ai = functionData.data;
@@ -203,7 +213,10 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">{formatSize(entry.size)}</span>
-                    {entry.name.toLowerCase().endsWith('.pdf') && (
+                    {(() => {
+                      const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
+                      return ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'].includes(ext);
+                    })() && (
                       <Badge variant="secondary" className="text-xs">KI</Badge>
                     )}
                   </label>

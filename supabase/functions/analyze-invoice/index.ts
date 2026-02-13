@@ -74,7 +74,13 @@ serve(async (req) => {
 
     // Check content length before parsing
     const contentLength = req.headers.get("content-length");
-    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+    if (!contentLength) {
+      return new Response(
+        JSON.stringify({ error: "Content-Length header required" }),
+        { status: 411, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
       return new Response(
         JSON.stringify({ error: "Payload too large. Maximum size is 500KB." }),
         { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }

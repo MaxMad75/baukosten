@@ -1,13 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-// Maximum allowed payload size (500KB)
-const MAX_PAYLOAD_SIZE = 500 * 1024;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -15,66 +11,11 @@ serve(async (req) => {
   }
 
   try {
-    // Verify authentication
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      console.error("Missing or invalid authorization header");
+    const { textContent, fileBase64, fileName } = await req.json();
+
+    if (!textContent && !fileBase64) {
       return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
-
-    // Verify JWT and get user claims
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    
-    if (claimsError || !claimsData?.claims) {
-      console.error("JWT verification failed:", claimsError);
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const userId = claimsData.claims.sub;
-    console.log("Authenticated user:", userId);
-
-    // Check content length before parsing
-    const contentLength = req.headers.get("content-length");
-    if (!contentLength) {
-      return new Response(
-        JSON.stringify({ error: "Content-Length header required" }),
-        { status: 411, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    if (parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
-      return new Response(
-        JSON.stringify({ error: "Payload too large. Maximum size is 500KB." }),
-        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const { pdfContent, fileName } = await req.json();
-
-    if (!pdfContent) {
-      return new Response(
-        JSON.stringify({ error: "PDF content is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Validate input size
-    if (typeof pdfContent !== "string" || pdfContent.length > MAX_PAYLOAD_SIZE) {
-      return new Response(
-        JSON.stringify({ error: "PDF content too large or invalid" }),
+        JSON.stringify({ error: "Either textContent or fileBase64 is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -85,14 +26,20 @@ serve(async (req) => {
     }
 
     const systemPrompt = `Du bist ein Experte für deutsche Baukostenkalkulationen und die DIN 276 Kostenstruktur.
-Analysiere die Kostenschätzung des Architekten und extrahiere alle Kostengruppen mit ihren geschätzten Beträgen.
 
-Suche nach Kostengruppen im Format:
-- Dreistellige Codes (z.B. 300, 310, 311)
-- Mit zugehörigen Euro-Beträgen
+Deine Aufgabe hat zwei Schritte:
+
+**Schritt 1: Dokumenterkennung**
+Prüfe ob das Dokument eine Kostenschätzung, Kostenberechnung oder Baukalkulation ist.
+
+**Schritt 2: Kostenextraktion (nur wenn Schritt 1 positiv)**
+Extrahiere alle Kostengruppen mit ihren geschätzten Beträgen nach DIN 276.
 
 Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
 {
+  "is_estimate": true/false,
+  "confidence": "hoch" | "mittel" | "niedrig",
+  "reason": "Kurze Begründung warum es (k)eine Kostenschätzung ist",
   "items": [
     {
       "kostengruppe_code": "310",
@@ -103,10 +50,41 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
   "total": 250000.00
 }
 
+Wenn is_estimate=false, setze items auf ein leeres Array und total auf 0.
+
 Wichtig:
 - Extrahiere so viele Kostengruppen wie möglich
 - Verwende die detaillierteste Ebene (3-stellig wenn verfügbar)
-- Beträge als reine Zahlen ohne Währungszeichen`;
+- Beträge als reine Zahlen ohne Währungszeichen
+- Auch wenn das Dokument nicht eindeutig eine Kostenschätzung ist aber Kosten enthält, setze is_estimate auf true mit confidence "niedrig"`;
+
+    // Build messages based on input type
+    const userContent: any[] = [];
+    
+    if (textContent) {
+      userContent.push({
+        type: "text",
+        text: `Analysiere dieses Dokument (Dateiname: ${fileName || 'unbekannt'}):\n\n${textContent}`
+      });
+    }
+    
+    if (fileBase64) {
+      // Determine mime type from base64 or default to pdf
+      const mimeType = fileBase64.startsWith("/9j/") ? "image/jpeg" 
+        : fileBase64.startsWith("iVBOR") ? "image/png" 
+        : "application/pdf";
+      
+      userContent.push({
+        type: "text",
+        text: `Analysiere dieses Dokument (Dateiname: ${fileName || 'unbekannt'}). Das Dokument wurde als Bild/PDF bereitgestellt:`
+      });
+      userContent.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${mimeType};base64,${fileBase64}`
+        }
+      });
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -115,13 +93,10 @@ Wichtig:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { 
-            role: "user", 
-            content: `Analysiere diese Kostenschätzung (Dateiname: ${fileName}):\n\n${pdfContent}` 
-          },
+          { role: "user", content: userContent },
         ],
       }),
     });
@@ -129,13 +104,13 @@ Wichtig:
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+          JSON.stringify({ error: "Rate limit exceeded. Bitte versuchen Sie es später erneut." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (response.status === 402) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits." }),
+          JSON.stringify({ error: "AI-Credits aufgebraucht. Bitte Credits aufladen." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -159,7 +134,7 @@ Wichtig:
 
     const extractedData = JSON.parse(jsonMatch[0]);
 
-    console.log("Successfully extracted estimate data for user:", userId);
+    console.log("Successfully analyzed document:", fileName, "is_estimate:", extractedData.is_estimate);
 
     return new Response(
       JSON.stringify({ 

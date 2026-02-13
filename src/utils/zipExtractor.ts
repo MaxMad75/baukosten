@@ -10,6 +10,9 @@ export interface ZipEntry {
   size: number;
   selected: boolean;
   file: JSZip.JSZipObject;
+  hash?: string;
+  isDuplicate?: boolean;
+  duplicateTitle?: string;
 }
 
 export async function extractZip(file: File): Promise<ZipEntry[]> {

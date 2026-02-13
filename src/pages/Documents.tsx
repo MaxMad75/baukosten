@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { computeFileHash } from '@/utils/fileHash';
 import { Layout } from '@/components/Layout';
 import { ZipUploadDialog } from '@/components/ZipUploadDialog';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,7 +48,7 @@ const typeColors: Record<string, string> = {
 const emptyForm = { title: '', document_type: '', description: '', contractor_id: '' };
 
 export const Documents: React.FC = () => {
-  const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl } = useDocuments();
+  const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
   const { contractors } = useContractors();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,11 +63,13 @@ export const Documents: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string; size: number } | null>(null);
+  const [pendingFileHash, setPendingFileHash] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{ existingTitle: string; file: File } | null>(null);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [isZipOpen, setIsZipOpen] = useState(false);
   const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
 
-  const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); };
+  const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); setPendingFileHash(null); setDuplicateWarning(null); };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -81,6 +84,17 @@ export const Documents: React.FC = () => {
     }
     setUploading(true);
     try {
+      // Compute hash and check for duplicates
+      const hash = await computeFileHash(file);
+      const existing = checkDuplicate(hash);
+      if (existing) {
+        setDuplicateWarning({ existingTitle: existing.title, file });
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      setPendingFileHash(hash);
+
       const result = await uploadDocument(file);
       if (!result) { setUploading(false); return; }
       setUploadedFile(result);
@@ -147,9 +161,30 @@ export const Documents: React.FC = () => {
       description: formData.description || undefined,
       contractor_id: formData.contractor_id || undefined,
       ai_analyzed: analyzing || !!formData.description,
+      file_hash: pendingFileHash || undefined,
     });
     resetForm();
     setIsUploadOpen(false);
+  };
+
+  const handleDuplicateForceUpload = async () => {
+    if (!duplicateWarning) return;
+    setDuplicateWarning(null);
+    const fakeEvent = { target: { files: [duplicateWarning.file] } } as unknown as React.ChangeEvent<HTMLInputElement>;
+    // Re-run upload without duplicate check by directly proceeding
+    const file = duplicateWarning.file;
+    setUploading(true);
+    try {
+      const hash = await computeFileHash(file);
+      setPendingFileHash(hash);
+      const result = await uploadDocument(file);
+      if (!result) { setUploading(false); return; }
+      setUploadedFile(result);
+      setFormData((prev) => ({ ...prev, title: file.name }));
+    } catch {
+      toast({ title: 'Fehler', description: 'Datei konnte nicht hochgeladen werden', variant: 'destructive' });
+    }
+    setUploading(false);
   };
 
   const openEdit = (doc: Document) => {
@@ -495,6 +530,23 @@ export const Documents: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Duplicate Warning */}
+      <AlertDialog open={!!duplicateWarning} onOpenChange={(o) => { if (!o) setDuplicateWarning(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Duplikat erkannt</AlertDialogTitle>
+            <AlertDialogDescription>
+              Diese Datei existiert bereits als „{duplicateWarning?.existingTitle}". Möchten Sie sie trotzdem hochladen?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDuplicateForceUpload}>Trotzdem hochladen</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <ZipUploadDialog
         open={isZipOpen}
         onOpenChange={(o) => { setIsZipOpen(o); if (!o) setZipFile(null); }}

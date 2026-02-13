@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import patternBg from '@/assets/pattern-bg.jpg';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { 
@@ -129,8 +129,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         {/* Main Content */}
         <main className="flex-1 overflow-auto relative">
           <div 
-            className="absolute inset-0 bg-cover bg-center opacity-[0.04] pointer-events-none"
-            style={{ backgroundImage: `url(${patternBg})` }}
+            className="absolute inset-0 opacity-[0.03] pointer-events-none"
+            style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 40px, hsl(var(--primary) / 0.15) 40px, hsl(var(--primary) / 0.15) 41px), repeating-linear-gradient(90deg, transparent, transparent 40px, hsl(var(--primary) / 0.15) 40px, hsl(var(--primary) / 0.15) 41px)' }}
           />
           <div className="relative p-4 lg:p-8 max-w-7xl mx-auto">
             {children}

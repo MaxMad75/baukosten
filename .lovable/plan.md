@@ -1,22 +1,46 @@
 
-# Fix: Dateiname-Sanitierung im Dokument-Upload
+# Drei Verbesserungen: Mitglieder hinzufuegen, Kostengruppen-Suche, Darstellungsfix
 
-## Problem
+## 1. Haushaltsmitglieder manuell hinzufuegen
 
-Nach der KI-Analyse wird die Kostenschätzung über `uploadDocument()` in den `documents`-Storage-Bucket hochgeladen. Diese Funktion (`useDocuments.ts`, Zeile 53) verwendet den Original-Dateinamen **ohne Bereinigung** -- Leerzeichen, Kommas und Umlaute verursachen einen 400-Fehler vom Storage.
+Aktuell koennen Mitglieder nur per E-Mail-Einladung hinzugefuegt werden. Da du aber Rechnungen auch Personen zuweisen willst, die noch keinen Account haben, wird eine Funktion zum manuellen Anlegen von "Platzhalter-Profilen" eingebaut.
 
-Die Sanitierung existiert bereits auf der Estimates-Seite für den `estimates`-Bucket, fehlt aber im zentralen `useDocuments`-Hook.
+**Aenderung in `src/pages/Settings.tsx`:**
+- Neuer Bereich "Mitglied manuell anlegen" mit Feldern: Name und optional IBAN
+- Erstellt einen Eintrag in der `profiles`-Tabelle mit `user_id = NULL` (Platzhalter-Profil ohne Login)
+- Diese Profile tauchen dann bei Rechnungszuweisung ("Bezahlt von") auf
+- Spaeter kann ein eingeladener Nutzer mit diesem Profil verknuepft werden
 
-## Lösung
+**Datenbank-Migration:**
+- Spalte `user_id` in `profiles` muss `NULL` erlauben (aktuell pruefen ob schon nullable)
+- Ggf. RLS-Policy anpassen, damit Haushaltsmitglieder Profile ohne `user_id` erstellen koennen
 
-**Datei: `src/hooks/useDocuments.ts`**
+## 2. Suchfunktion in der Kostengruppen-Auswahl
 
-In der `uploadDocument`-Funktion den Dateinamen bereinigen, bevor er als Storage-Pfad verwendet wird -- gleiche Logik wie auf der Estimates-Seite:
+Die aktuelle `KostengruppenSelect`-Komponente nutzt ein einfaches Radix Select ohne Suchmoeglichkeit. Bei ueber 50 Eintraegen ist das unuebersichtlich.
 
-- Umlaute ersetzen (ä->ae, ö->oe, ü->ue, ß->ss)
-- Leerzeichen, Kommas und Sonderzeichen durch Unterstriche ersetzen
-- Mehrfache Unterstriche zusammenfassen
+**Aenderung in `src/components/KostengruppenSelect.tsx`:**
+- Umstellung von `Select` auf `Popover` + `Command` (cmdk) fuer eine durchsuchbare Auswahlliste
+- Suchfeld filtert Code und Name gleichzeitig (z.B. "Dach" findet "361 - Dachkonstruktionen")
+- Hierarchische Darstellung bleibt erhalten, gefilterte Ergebnisse zeigen nur Treffer
+- Wird automatisch ueberall wirksam: Rechnungs-Edit, Kostenschaetzung-Upload, manuelles Anlegen
 
-Der angezeigte `file.name` bleibt als Originalname erhalten (wird an den Aufrufer zurückgegeben), nur der Storage-Pfad wird bereinigt.
+## 3. Darstellungsfix: Doppelte Oberkategorien entfernen
 
-Keine weiteren Dateien müssen geändert werden -- die Korrektur an zentraler Stelle behebt das Problem für alle Upload-Flows (Kostenschätzungen, Dokumente, ZIP-Uploads).
+Das aktuelle Problem: Jede Level-1-Kostengruppe (z.B. "600 - Ausstattung und Kunstwerke") erscheint **zweimal** -- einmal als nicht-klickbares Label (`SelectLabel`) und direkt darunter nochmal als klickbarer Eintrag (`SelectItem`). Das ist verwirrend.
+
+**Loesung:**
+- Level-1-Gruppen werden nur als Gruppenueberschriften angezeigt (nicht auswaehlbar), da man immer eine spezifischere Untergruppe waehlen sollte
+- Falls doch Level-1 auswaehlbar sein soll, wird das Label entfernt und nur der SelectItem beibehalten
+- Die neue cmdk-basierte Komponente loest das automatisch, da jeder Eintrag genau einmal erscheint
+
+---
+
+## Technische Details
+
+| Datei | Aenderung |
+|-------|-----------|
+| `src/components/KostengruppenSelect.tsx` | Komplett umgebaut auf Popover + Command (cmdk) mit Suchfeld, hierarchischer Darstellung ohne Duplikate |
+| `src/pages/Settings.tsx` | Neuer Abschnitt "Mitglied manuell anlegen" mit Name/IBAN-Formular |
+| Datenbank-Migration | `profiles.user_id` auf nullable setzen + RLS-Policy fuer Profil-Insert durch Haushaltsmitglieder |
+

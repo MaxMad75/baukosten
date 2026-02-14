@@ -131,65 +131,44 @@ export const Contractors: React.FC = () => {
     }
   };
 
-  const ContractorForm = ({ onSubmit, submitLabel, showInvoiceSelect }: { onSubmit: () => void; submitLabel: string; showInvoiceSelect?: boolean }) => (
-    <div className="space-y-4">
-      {showInvoiceSelect && invoices.length > 0 && (
-        <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
-          <Label className="text-xs text-muted-foreground">Daten aus Rechnung übernehmen (optional)</Label>
-          <Select value={selectedInvoiceId} onValueChange={handleInvoiceSelect}>
-            <SelectTrigger><SelectValue placeholder="Rechnung auswählen..." /></SelectTrigger>
-            <SelectContent>
-              {invoices.map((inv) => (
-                <SelectItem key={inv.id} value={inv.id}>
-                  {inv.company_name} – {new Date(inv.invoice_date).toLocaleDateString('de-DE')}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>Firmenname *</Label>
-          <Input value={formData.company_name} onChange={(e) => setFormData({ ...formData, company_name: e.target.value })} placeholder="z.B. Elektro Müller GmbH" />
-        </div>
-        <div className="space-y-2">
-          <Label>Gewerk</Label>
-          <Select value={formData.trade} onValueChange={(v) => setFormData({ ...formData, trade: v })}>
-            <SelectTrigger><SelectValue placeholder="Gewerk wählen" /></SelectTrigger>
-            <SelectContent>
-              {TRADES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Ansprechpartner</Label>
-          <Input value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} placeholder="Vor- und Nachname" />
-        </div>
-        <div className="space-y-2">
-          <Label>Telefon</Label>
-          <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="+49 123 456789" />
-        </div>
-        <div className="space-y-2">
-          <Label>E-Mail</Label>
-          <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="info@firma.de" />
-        </div>
-        <div className="space-y-2">
-          <Label>Website</Label>
-          <Input value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="www.firma.de" />
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Bewertung</Label>
-          <RatingStars rating={formData.rating} onRate={(r) => setFormData({ ...formData, rating: r })} />
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Notizen</Label>
-          <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder="z.B. sehr zuverlässig, guter Preis..." />
-        </div>
+  const formFields = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="space-y-2">
+        <Label>Firmenname *</Label>
+        <Input value={formData.company_name} onChange={(e) => setFormData({ ...formData, company_name: e.target.value })} placeholder="z.B. Elektro Müller GmbH" />
       </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => { resetForm(); setSelectedInvoiceId(''); setIsCreateOpen(false); setIsEditOpen(false); }}>Abbrechen</Button>
-        <Button onClick={onSubmit}>{submitLabel}</Button>
+      <div className="space-y-2">
+        <Label>Gewerk</Label>
+        <Select value={formData.trade} onValueChange={(v) => setFormData({ ...formData, trade: v })}>
+          <SelectTrigger><SelectValue placeholder="Gewerk wählen" /></SelectTrigger>
+          <SelectContent>
+            {TRADES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Ansprechpartner</Label>
+        <Input value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} placeholder="Vor- und Nachname" />
+      </div>
+      <div className="space-y-2">
+        <Label>Telefon</Label>
+        <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="+49 123 456789" />
+      </div>
+      <div className="space-y-2">
+        <Label>E-Mail</Label>
+        <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="info@firma.de" />
+      </div>
+      <div className="space-y-2">
+        <Label>Website</Label>
+        <Input value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="www.firma.de" />
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Bewertung</Label>
+        <RatingStars rating={formData.rating} onRate={(r) => setFormData({ ...formData, rating: r })} />
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Notizen</Label>
+        <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder="z.B. sehr zuverlässig, guter Preis..." />
       </div>
     </div>
   );
@@ -215,7 +194,28 @@ export const Contractors: React.FC = () => {
                 <DialogTitle>Neue Firma hinzufügen</DialogTitle>
                 <DialogDescription>Erfassen Sie die Kontaktdaten der Firma.</DialogDescription>
               </DialogHeader>
-              <ContractorForm onSubmit={handleCreate} submitLabel="Firma hinzufügen" showInvoiceSelect />
+              <div className="space-y-4">
+                {invoices.length > 0 && (
+                  <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
+                    <Label className="text-xs text-muted-foreground">Daten aus Rechnung übernehmen (optional)</Label>
+                    <Select value={selectedInvoiceId} onValueChange={handleInvoiceSelect}>
+                      <SelectTrigger><SelectValue placeholder="Rechnung auswählen..." /></SelectTrigger>
+                      <SelectContent>
+                        {invoices.map((inv) => (
+                          <SelectItem key={inv.id} value={inv.id}>
+                            {inv.company_name} – {new Date(inv.invoice_date).toLocaleDateString('de-DE')}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {formFields}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => { resetForm(); setSelectedInvoiceId(''); setIsCreateOpen(false); }}>Abbrechen</Button>
+                  <Button onClick={handleCreate}>Firma hinzufügen</Button>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         </div>
@@ -304,7 +304,13 @@ export const Contractors: React.FC = () => {
             <DialogTitle>Firma bearbeiten</DialogTitle>
             <DialogDescription>Aktualisieren Sie die Kontaktdaten.</DialogDescription>
           </DialogHeader>
-          <ContractorForm onSubmit={handleUpdate} submitLabel="Speichern" />
+          <div className="space-y-4">
+            {formFields}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingContractor(null); resetForm(); }}>Abbrechen</Button>
+              <Button onClick={handleUpdate}>Speichern</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

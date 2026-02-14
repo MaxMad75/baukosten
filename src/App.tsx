@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { PrivacyProvider } from "@/contexts/PrivacyContext";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Invoices from "./pages/Invoices";
@@ -29,25 +30,27 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
-            <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
-            <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
-            <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
-            <Route path="/contractors" element={<ProtectedRoute><Contractors /></ProtectedRoute>} />
-            <Route path="/journal" element={<ProtectedRoute><ConstructionJournal /></ProtectedRoute>} />
-            <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
+      <PrivacyProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
+              <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
+              <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
+              <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
+              <Route path="/contractors" element={<ProtectedRoute><Contractors /></ProtectedRoute>} />
+              <Route path="/journal" element={<ProtectedRoute><ConstructionJournal /></ProtectedRoute>} />
+              <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </PrivacyProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

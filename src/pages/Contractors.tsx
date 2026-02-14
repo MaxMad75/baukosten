@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useContractors } from '@/hooks/useContractors';
+import { useInvoices } from '@/hooks/useInvoices';
 import { Contractor } from '@/lib/types';
 import {
   Plus, Loader2, Trash2, Edit, Star, Phone, Mail, Globe, User, Search, Building2
@@ -34,6 +35,7 @@ const emptyForm = {
 
 export const Contractors: React.FC = () => {
   const { contractors, loading, createContractor, updateContractor, deleteContractor } = useContractors();
+  const { invoices } = useInvoices();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
@@ -41,6 +43,7 @@ export const Contractors: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTrade, setFilterTrade] = useState<string>('all');
   const [formData, setFormData] = useState(emptyForm);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
 
   const resetForm = () => setFormData(emptyForm);
 
@@ -115,8 +118,36 @@ export const Contractors: React.FC = () => {
     </div>
   );
 
-  const ContractorForm = ({ onSubmit, submitLabel }: { onSubmit: () => void; submitLabel: string }) => (
+  const handleInvoiceSelect = (invoiceId: string) => {
+    setSelectedInvoiceId(invoiceId);
+    if (!invoiceId) return;
+    const inv = invoices.find(i => i.id === invoiceId);
+    if (inv) {
+      setFormData(prev => ({
+        ...prev,
+        company_name: inv.company_name,
+        notes: inv.description || prev.notes,
+      }));
+    }
+  };
+
+  const ContractorForm = ({ onSubmit, submitLabel, showInvoiceSelect }: { onSubmit: () => void; submitLabel: string; showInvoiceSelect?: boolean }) => (
     <div className="space-y-4">
+      {showInvoiceSelect && invoices.length > 0 && (
+        <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
+          <Label className="text-xs text-muted-foreground">Daten aus Rechnung übernehmen (optional)</Label>
+          <Select value={selectedInvoiceId} onValueChange={handleInvoiceSelect}>
+            <SelectTrigger><SelectValue placeholder="Rechnung auswählen..." /></SelectTrigger>
+            <SelectContent>
+              {invoices.map((inv) => (
+                <SelectItem key={inv.id} value={inv.id}>
+                  {inv.company_name} – {new Date(inv.invoice_date).toLocaleDateString('de-DE')}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <Label>Firmenname *</Label>
@@ -157,7 +188,7 @@ export const Contractors: React.FC = () => {
         </div>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => { resetForm(); setIsCreateOpen(false); setIsEditOpen(false); }}>Abbrechen</Button>
+        <Button variant="outline" onClick={() => { resetForm(); setSelectedInvoiceId(''); setIsCreateOpen(false); setIsEditOpen(false); }}>Abbrechen</Button>
         <Button onClick={onSubmit}>{submitLabel}</Button>
       </div>
     </div>
@@ -184,7 +215,7 @@ export const Contractors: React.FC = () => {
                 <DialogTitle>Neue Firma hinzufügen</DialogTitle>
                 <DialogDescription>Erfassen Sie die Kontaktdaten der Firma.</DialogDescription>
               </DialogHeader>
-              <ContractorForm onSubmit={handleCreate} submitLabel="Firma hinzufügen" />
+              <ContractorForm onSubmit={handleCreate} submitLabel="Firma hinzufügen" showInvoiceSelect />
             </DialogContent>
           </Dialog>
         </div>

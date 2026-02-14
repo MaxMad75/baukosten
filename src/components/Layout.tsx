@@ -2,10 +2,11 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 import { Button } from '@/components/ui/button';
 import { 
   Home, FileText, Calculator, BarChart3, Download, LogOut, User,
-  Users, BookOpen, FolderOpen, Menu, X, Settings
+  Users, BookOpen, FolderOpen, Menu, X, Settings, Eye, EyeOff
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ const navItems = [
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { profile, signOut } = useAuth();
+  const { isPrivate, togglePrivacy } = usePrivacy();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -58,6 +60,15 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
 
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={togglePrivacy}
+              className="text-muted-foreground hover:text-foreground"
+              title={isPrivate ? 'Beträge einblenden' : 'Beträge ausblenden'}
+            >
+              {isPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
             <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
               <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
                 <User className="h-4 w-4 text-primary" />

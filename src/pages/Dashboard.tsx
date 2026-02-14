@@ -11,12 +11,14 @@ import {
   TrendingUp, TrendingDown, ArrowRight
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { invoices, loading: invoicesLoading } = useInvoices();
   const { estimates, estimateItems, loading: estimatesLoading } = useEstimates();
   const { kostengruppen } = useKostengruppen();
+  const { formatAmount } = usePrivacy();
 
   const loading = invoicesLoading || estimatesLoading;
 
@@ -32,8 +34,7 @@ export const Dashboard: React.FC = () => {
   const budgetDifference = totalActual - totalEstimated;
   const budgetPercentage = totalEstimated > 0 ? ((totalActual / totalEstimated) * 100) : 0;
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
+  const formatCurrency = (amount: number) => formatAmount(amount);
 
   if (loading) {
     return (

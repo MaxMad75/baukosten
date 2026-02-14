@@ -299,39 +299,33 @@ export const Documents: React.FC = () => {
     return contractors.find((c) => c.id === id)?.company_name || null;
   };
 
-  const DocumentForm = ({ onSubmit, submitLabel }: { onSubmit: () => void; submitLabel: string }) => (
-    <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="col-span-2 space-y-2">
-          <Label>Titel *</Label>
-          <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} placeholder="Dokumenttitel" />
-        </div>
-        <div className="space-y-2">
-          <Label>Dokumenttyp</Label>
-          <Select value={formData.document_type} onValueChange={(v) => setFormData({ ...formData, document_type: v })}>
-            <SelectTrigger><SelectValue placeholder="Typ wählen" /></SelectTrigger>
-            <SelectContent>
-              {DOCUMENT_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Firma zuordnen</Label>
-          <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
-            <SelectTrigger><SelectValue placeholder="Firma wählen (optional)" /></SelectTrigger>
-            <SelectContent>
-              {contractors.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Beschreibung</Label>
-          <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Kurze Beschreibung des Dokuments" rows={3} />
-        </div>
+  const documentFormFields = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="col-span-2 space-y-2">
+        <Label>Titel *</Label>
+        <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} placeholder="Dokumenttitel" />
       </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => { resetForm(); setIsUploadOpen(false); setIsEditOpen(false); }}>Abbrechen</Button>
-        <Button onClick={onSubmit}>{submitLabel}</Button>
+      <div className="space-y-2">
+        <Label>Dokumenttyp</Label>
+        <Select value={formData.document_type} onValueChange={(v) => setFormData({ ...formData, document_type: v })}>
+          <SelectTrigger><SelectValue placeholder="Typ wählen" /></SelectTrigger>
+          <SelectContent>
+            {DOCUMENT_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Firma zuordnen</Label>
+        <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
+          <SelectTrigger><SelectValue placeholder="Firma wählen (optional)" /></SelectTrigger>
+          <SelectContent>
+            {contractors.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Beschreibung</Label>
+        <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Kurze Beschreibung des Dokuments" rows={3} />
       </div>
     </div>
   );
@@ -389,7 +383,13 @@ export const Documents: React.FC = () => {
                     <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">
                       ✓ Datei hochgeladen: {uploadedFile.name} ({formatFileSize(uploadedFile.size)})
                     </div>
-                    <DocumentForm onSubmit={handleCreate} submitLabel="Dokument speichern" />
+                    <div className="space-y-4">
+                      {documentFormFields}
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => { resetForm(); setIsUploadOpen(false); }}>Abbrechen</Button>
+                        <Button onClick={handleCreate}>Dokument speichern</Button>
+                      </div>
+                    </div>
                   </>
                 )}
               </div>
@@ -513,7 +513,13 @@ export const Documents: React.FC = () => {
             <DialogTitle>Dokument bearbeiten</DialogTitle>
             <DialogDescription>Aktualisieren Sie die Dokumentdetails.</DialogDescription>
           </DialogHeader>
-          <DocumentForm onSubmit={handleUpdate} submitLabel="Speichern" />
+          <div className="space-y-4">
+            {documentFormFields}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { resetForm(); setIsEditOpen(false); }}>Abbrechen</Button>
+              <Button onClick={handleUpdate}>Speichern</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

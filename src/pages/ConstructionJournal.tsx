@@ -166,65 +166,56 @@ export const ConstructionJournal: React.FC = () => {
     return cat ? colors[cat] || 'bg-muted text-muted-foreground' : '';
   };
 
-  const EntryForm = ({ onSubmit, submitLabel }: { onSubmit: () => void; submitLabel: string }) => (
-    <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>Datum *</Label>
-          <Input type="date" value={formData.entry_date} onChange={(e) => setFormData({ ...formData, entry_date: e.target.value })} />
-        </div>
-        <div className="space-y-2">
-          <Label>Kategorie</Label>
-          <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-            <SelectTrigger><SelectValue placeholder="Kategorie wählen" /></SelectTrigger>
-            <SelectContent>
-              {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Titel *</Label>
-          <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} placeholder="z.B. Elektroinstallation Erdgeschoss" />
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Beschreibung *</Label>
-          <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Was wurde heute gemacht?" rows={4} />
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Firma</Label>
-          <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
-            <SelectTrigger><SelectValue placeholder="Firma zuordnen (optional)" /></SelectTrigger>
-            <SelectContent>
-              {contractors.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label>Fotos</Label>
-          <input type="file" ref={fileInputRef} multiple accept="image/*" onChange={handlePhotoSelect} className="hidden" />
-          <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="mr-2 h-4 w-4" />Fotos hinzufügen
-          </Button>
-          {pendingPhotos.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {pendingPhotos.map((f, i) => (
-                <div key={i} className="relative">
-                  <img src={URL.createObjectURL(f)} alt="" className="h-20 w-20 rounded-md object-cover" />
-                  <button onClick={() => removePendingPhoto(i)} className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+  const formFields = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="space-y-2">
+        <Label>Datum *</Label>
+        <Input type="date" value={formData.entry_date} onChange={(e) => setFormData({ ...formData, entry_date: e.target.value })} />
       </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => { resetForm(); setIsCreateOpen(false); setIsEditOpen(false); }}>Abbrechen</Button>
-        <Button onClick={onSubmit} disabled={uploading}>
-          {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {submitLabel}
+      <div className="space-y-2">
+        <Label>Kategorie</Label>
+        <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+          <SelectTrigger><SelectValue placeholder="Kategorie wählen" /></SelectTrigger>
+          <SelectContent>
+            {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Titel *</Label>
+        <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} placeholder="z.B. Elektroinstallation Erdgeschoss" />
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Beschreibung *</Label>
+        <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Was wurde heute gemacht?" rows={4} />
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Firma</Label>
+        <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
+          <SelectTrigger><SelectValue placeholder="Firma zuordnen (optional)" /></SelectTrigger>
+          <SelectContent>
+            {contractors.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="col-span-2 space-y-2">
+        <Label>Fotos</Label>
+        <input type="file" ref={fileInputRef} multiple accept="image/*" onChange={handlePhotoSelect} className="hidden" />
+        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
+          <Upload className="mr-2 h-4 w-4" />Fotos hinzufügen
         </Button>
+        {pendingPhotos.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {pendingPhotos.map((f, i) => (
+              <div key={i} className="relative">
+                <img src={URL.createObjectURL(f)} alt="" className="h-20 w-20 rounded-md object-cover" />
+                <button onClick={() => removePendingPhoto(i)} className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -250,7 +241,16 @@ export const ConstructionJournal: React.FC = () => {
                 <DialogTitle>Neuer Tagebucheintrag</DialogTitle>
                 <DialogDescription>Dokumentieren Sie den heutigen Baufortschritt.</DialogDescription>
               </DialogHeader>
-              <EntryForm onSubmit={handleCreate} submitLabel="Eintrag erstellen" />
+              <div className="space-y-4">
+                {formFields}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => { resetForm(); setIsCreateOpen(false); }}>Abbrechen</Button>
+                  <Button onClick={handleCreate} disabled={uploading}>
+                    {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Eintrag erstellen
+                  </Button>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         </div>
@@ -328,7 +328,16 @@ export const ConstructionJournal: React.FC = () => {
             <DialogTitle>Eintrag bearbeiten</DialogTitle>
             <DialogDescription>Aktualisieren Sie den Tagebucheintrag.</DialogDescription>
           </DialogHeader>
-          <EntryForm onSubmit={handleUpdate} submitLabel="Speichern" />
+          <div className="space-y-4">
+            {formFields}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { resetForm(); setIsEditOpen(false); }}>Abbrechen</Button>
+              <Button onClick={handleUpdate} disabled={uploading}>
+                {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Speichern
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

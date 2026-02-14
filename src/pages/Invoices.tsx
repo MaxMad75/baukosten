@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useInvoices } from '@/hooks/useInvoices';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { useToast } from '@/hooks/use-toast';
@@ -29,11 +30,15 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const PIE_COLORS = ['hsl(220, 70%, 55%)', 'hsl(150, 60%, 45%)', 'hsl(35, 85%, 55%)', 'hsl(0, 70%, 55%)', 'hsl(270, 60%, 55%)', 'hsl(180, 50%, 45%)'];
 
 export const Invoices: React.FC = () => {
   const { invoices, loading, updateInvoice, deleteInvoice, markAsPaid } = useInvoices();
   const { getKostengruppeByCode } = useKostengruppen();
   const { profile } = useAuth();
+  const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
   const { toast } = useToast();
 
@@ -99,9 +104,6 @@ export const Invoices: React.FC = () => {
     setDeleteId(null);
   };
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
-
   const openPayDialog = (invoiceId: string) => {
     setSelectedInvoice(invoiceId);
     setPaymentData({ payment_date: format(new Date(), 'yyyy-MM-dd'), paid_by_profile_id: profile?.id || '' });
@@ -113,6 +115,20 @@ export const Invoices: React.FC = () => {
   const paidAmount = invoices.filter((i) => i.is_paid).reduce((s, i) => s + Number(i.amount), 0);
   const openAmount = totalAmount - paidAmount;
   const openCount = invoices.filter((i) => !i.is_paid).length;
+
+  // Pie chart data: who paid how much
+  const pieData = useMemo(() => {
+    const byPayer = new Map<string, number>();
+    for (const inv of invoices) {
+      if (inv.is_paid && inv.paid_by_profile_id) {
+        byPayer.set(inv.paid_by_profile_id, (byPayer.get(inv.paid_by_profile_id) || 0) + Number(inv.amount));
+      }
+    }
+    return Array.from(byPayer.entries()).map(([profileId, amount]) => {
+      const p = profiles?.find((pr) => pr.id === profileId);
+      return { name: p?.name || 'Unbekannt', value: amount };
+    });
+  }, [invoices, profiles]);
 
   if (loading) {
     return <Layout><div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></Layout>;
@@ -136,7 +152,7 @@ export const Invoices: React.FC = () => {
               <Euro className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalAmount)}</div>
+              <div className="text-2xl font-bold">{formatAmount(totalAmount)}</div>
               <p className="text-xs text-muted-foreground">{invoices.length} Rechnungen</p>
             </CardContent>
           </Card>
@@ -146,7 +162,7 @@ export const Invoices: React.FC = () => {
               <CheckCircle2 className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(paidAmount)}</div>
+              <div className="text-2xl font-bold text-green-600">{formatAmount(paidAmount)}</div>
               <p className="text-xs text-muted-foreground">{invoices.length - openCount} Rechnungen</p>
             </CardContent>
           </Card>
@@ -156,7 +172,7 @@ export const Invoices: React.FC = () => {
               <Receipt className="h-4 w-4 text-orange-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-500">{formatCurrency(openAmount)}</div>
+              <div className="text-2xl font-bold text-orange-500">{formatAmount(openAmount)}</div>
               <p className="text-xs text-muted-foreground">{openCount} Rechnungen</p>
             </CardContent>
           </Card>
@@ -173,6 +189,39 @@ export const Invoices: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Payment Distribution Pie Chart */}
+        {pieData.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Zahlungsverteilung</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    >
+                      {pieData.map((_, idx) => (
+                        <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => formatAmount(value)}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Invoice Table */}
         {invoices.length === 0 ? (
@@ -217,7 +266,7 @@ export const Invoices: React.FC = () => {
                           {kg ? <span className="text-sm">{kg.code} - {kg.name}</span> : <span className="text-sm text-muted-foreground">–</span>}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {formatCurrency(Number(invoice.amount))}
+                          {formatAmount(Number(invoice.amount))}
                           <span className="ml-1 text-xs text-muted-foreground">({invoice.is_gross ? 'brutto' : 'netto'})</span>
                         </TableCell>
                         <TableCell>

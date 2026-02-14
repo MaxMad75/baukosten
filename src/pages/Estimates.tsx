@@ -17,6 +17,7 @@ import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 import { ExtractedEstimateData, ArchitectEstimateItem } from '@/lib/types';
 import { 
   Plus, 
@@ -85,21 +86,22 @@ function computeVatSummary(items: Array<{ estimated_amount: number; is_gross: bo
 
 function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: number; is_gross: boolean }>; colSpan: number }) {
   const { netto, mwst, brutto } = computeVatSummary(items);
+  const { formatAmount } = usePrivacy();
   return (
     <>
       <TableRow className="font-medium">
         <TableCell colSpan={colSpan}>Netto-Summe</TableCell>
-        <TableCell className="text-right">{formatCurrencyStatic(netto)}</TableCell>
+        <TableCell className="text-right">{formatAmount(netto)}</TableCell>
         <TableCell></TableCell>
       </TableRow>
       <TableRow className="text-muted-foreground">
         <TableCell colSpan={colSpan}>+ MwSt (19%)</TableCell>
-        <TableCell className="text-right">{formatCurrencyStatic(mwst)}</TableCell>
+        <TableCell className="text-right">{formatAmount(mwst)}</TableCell>
         <TableCell></TableCell>
       </TableRow>
       <TableRow className="font-bold">
         <TableCell colSpan={colSpan}>Brutto-Summe</TableCell>
-        <TableCell className="text-right">{formatCurrencyStatic(brutto)}</TableCell>
+        <TableCell className="text-right">{formatAmount(brutto)}</TableCell>
         <TableCell></TableCell>
       </TableRow>
     </>
@@ -133,6 +135,7 @@ export const Estimates: React.FC = () => {
   const { getDocumentUrl, uploadDocument, createDocument, checkDuplicate } = useDocuments();
   const { household } = useAuth();
   const { toast } = useToast();
+  const { formatAmount } = usePrivacy();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -548,12 +551,7 @@ export const Estimates: React.FC = () => {
     setDeleteId(null);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => formatAmount(amount);
 
   // Compute global VAT summary
   const globalVat = computeVatSummary(

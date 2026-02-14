@@ -11,6 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 
 const toBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
 const toNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
@@ -31,6 +32,7 @@ export const Comparison: React.FC = () => {
   const { estimateItems, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
+  const { formatAmount } = usePrivacy();
 
   const toggleRow = (code: string) => {
     setOpenRows(prev => {
@@ -65,7 +67,7 @@ export const Comparison: React.FC = () => {
     difference: comparisons.reduce((s, c) => s + c.difference, 0),
   }), [comparisons]);
 
-  const formatCurrency = (amount: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
+  const formatCurrency = (amount: number) => formatAmount(amount);
 
   if (invLoading || estLoading) {
     return <Layout><div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div></Layout>;

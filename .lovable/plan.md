@@ -1,77 +1,92 @@
 
-# Brutto/Netto fuer Rechnungen + Soll/Ist-Vergleich mit Details
+# Drei neue Features: Firma aus Rechnung, Kuchendiagramm, Betraege ausblenden
 
 ## Uebersicht
 
-Drei Aenderungen:
-1. Rechnungen erhalten ein `is_gross`-Feld (Default: `true`, da Rechnungsbetraege normalerweise brutto sind)
-2. Der Soll/Ist-Vergleich rechnet alles einheitlich auf Brutto um und zeigt Netto/MwSt/Brutto-Aufschluesselung
-3. Jede Zeile im Soll/Ist-Vergleich ist klickbar und zeigt die zugehoerigen Rechnungen und Schaetzungspositionen
-
-## 1. Datenbank-Migration
-
-Neue Spalte `is_gross` in der Tabelle `invoices`, Default `true` (Rechnungen sind typischerweise brutto):
-
-```text
-invoices
-  + is_gross  BOOLEAN  NOT NULL  DEFAULT true
-```
-
-## 2. Typ-Aenderungen (`src/lib/types.ts`)
-
-- `Invoice`: Neues Feld `is_gross: boolean`
-
-## 3. Rechnungen (`src/pages/Invoices.tsx` + `src/hooks/useInvoices.ts`)
-
-### Hook
-- `createInvoice`: Feld `is_gross` mitsenden
-- `updateInvoice`: Feld `is_gross` mitsenden (schon generisch, kein Code noetig)
-
-### Rechnungstabelle
-- Neue Spalte "Brutto/Netto" in der Tabelle, die anzeigt ob der Betrag inkl. oder exkl. MwSt ist
-- In der Tabelle wird neben dem Betrag ein kleines Label "(brutto)" oder "(netto)" angezeigt
-
-### Bearbeitungsdialog
-- Neue Checkbox "Betrag inkl. MwSt (brutto)" im Edit-Dialog
-- Default ist angehakt (brutto), da Rechnungsbetraege normalerweise brutto angegeben werden
-
-## 4. Soll/Ist-Vergleich (`src/pages/Comparison.tsx`)
-
-### Einheitliche Berechnung
-Alle Betraege werden auf Brutto normalisiert fuer den Vergleich:
-- Rechnungen: `brutto = is_gross ? amount : amount * 1.19`
-- Schaetzungen: `brutto = is_gross ? amount : amount * 1.19`
-
-### Summen-Cards (oben)
-Statt nur Gesamt werden angezeigt:
-- Geschaetzt (Brutto)
-- Tatsaechlich (Brutto)
-- Differenz
-
-### Klickbare Detail-Ansicht
-Jede Zeile in der Vergleichstabelle wird klickbar. Beim Klick oeffnet sich darunter (Collapsible/Accordion) eine Detail-Ansicht mit:
-
-**Schaetzungspositionen:**
-| Betrag | Netto/Brutto | Quelle (Dokument) |
-
-**Rechnungen:**
-| Datum | Firma | Betrag | Netto/Brutto | Bezahlt |
-
-Und eine Zusammenfassung: Netto-Summe, MwSt, Brutto-Summe fuer beide Seiten.
-
-## 5. Export-Anpassung (`src/utils/excelExport.ts`)
-
-Der Excel-Export beruecksichtigt das neue `is_gross`-Feld bei Rechnungen und zeigt in der Rechnungsliste eine zusaetzliche Spalte "Brutto/Netto".
+1. **Firma aus bestehender Rechnung anlegen**: Im "Neue Firma"-Dialog koennen Rechnungen als Datenquelle ausgewaehlt werden, um Firmennamen (und ggf. weitere OCR-Daten) zu uebernehmen.
+2. **Kuchendiagramm auf der Rechnungsseite**: Zeigt, wer im Haushalt wieviel bezahlt hat (Prozent + Euro).
+3. **Globaler Datenschutz-Toggle**: Blendet alle Euro-Betraege in der gesamten App aus und zeigt stattdessen `***` an.
 
 ---
 
-## Technische Details
+## 1. Firma aus Rechnung anlegen
+
+### Ablauf
+Auf der Firmen-Seite im "Neue Firma"-Dialog wird ein optionaler Bereich ergaenzt:
+- Ein Dropdown/Select "Daten aus Rechnung uebernehmen" listet alle vorhandenen Rechnungen auf (Firma + Datum)
+- Bei Auswahl wird der Firmenname automatisch in das Formular uebernommen
+- Falls die Rechnung per KI extrahiert wurde (`ai_extracted = true`), koennte auch die Beschreibung als Notiz uebernommen werden
+- Der Nutzer kann die Daten vor dem Speichern noch anpassen
+
+### Technische Umsetzung
 
 | Datei | Aenderung |
 |-------|-----------|
-| DB-Migration | `is_gross` Spalte in `invoices` (Default `true`) |
-| `src/lib/types.ts` | `is_gross` in `Invoice` |
-| `src/hooks/useInvoices.ts` | `is_gross` bei `createInvoice` |
-| `src/pages/Invoices.tsx` | Checkbox im Edit-Dialog, Label in Tabelle |
-| `src/pages/Comparison.tsx` | Brutto-Normalisierung, klickbare Zeilen mit Accordion-Details |
-| `src/utils/excelExport.ts` | Brutto/Netto-Spalte im Export |
+| `src/pages/Contractors.tsx` | Import `useInvoices`, Select-Feld im ContractorForm fuer Rechnungsauswahl, Auto-Fill Logik |
+
+Keine Datenbank-Aenderungen noetig.
+
+---
+
+## 2. Kuchendiagramm "Wer hat wieviel bezahlt"
+
+### Darstellung
+Unterhalb der Statistik-Cards auf der Rechnungsseite erscheint ein neues Card mit einem Kuchendiagramm (recharts `PieChart`):
+- Jedes Haushaltsmitglied das Rechnungen bezahlt hat, bekommt ein Segment
+- Tooltip und Legende zeigen Name, Euro-Betrag und Prozentanteil
+- Unbezahlte Rechnungen werden nicht beruecksichtigt
+
+### Technische Umsetzung
+
+| Datei | Aenderung |
+|-------|-----------|
+| `src/pages/Invoices.tsx` | Import von `PieChart, Pie, Cell, Tooltip, Legend` aus recharts, Berechnung der Anteile pro `paid_by_profile_id`, neues Card mit Chart |
+
+Keine Datenbank-Aenderungen noetig. `recharts` ist bereits installiert.
+
+---
+
+## 3. Globaler Datenschutz-Modus (Betraege ausblenden)
+
+### Konzept
+Ein Toggle-Button (z.B. Augen-Icon) in der Header-Leiste der App. Wenn aktiviert:
+- Alle Euro-Betraege werden als `***` angezeigt
+- Prozentangaben und andere Daten bleiben sichtbar
+- Der Zustand wird per React Context global bereitgestellt
+- Der Zustand wird nur im Browser-Session gehalten (kein Speichern in DB)
+
+### Ablauf
+- Neuer `PrivacyContext` mit `isPrivate` boolean und `togglePrivacy` Funktion
+- Eine Hilfsfunktion `formatAmount(amount)` die entweder den formatierten Euro-Betrag oder `***` zurueckgibt
+- Der Toggle wird im Header neben dem Benutzernamen platziert (Eye/EyeOff Icon)
+
+### Technische Umsetzung
+
+| Datei | Aenderung |
+|-------|-----------|
+| `src/contexts/PrivacyContext.tsx` | Neuer Context mit `isPrivate` State und `togglePrivacy` |
+| `src/main.tsx` oder `src/App.tsx` | PrivacyProvider einbinden |
+| `src/components/Layout.tsx` | Toggle-Button im Header (Eye/EyeOff) |
+| `src/pages/Invoices.tsx` | `formatCurrency` durch privacy-aware Variante ersetzen |
+| `src/pages/Estimates.tsx` | Gleiche Anpassung |
+| `src/pages/Comparison.tsx` | Gleiche Anpassung |
+| `src/pages/Dashboard.tsx` | Gleiche Anpassung (falls Betraege angezeigt werden) |
+| `src/pages/Export.tsx` | Gleiche Anpassung (falls Betraege angezeigt werden) |
+
+### Hilfsfunktion
+Ein Custom Hook `usePrivacy()` stellt bereit:
+- `isPrivate: boolean`
+- `togglePrivacy: () => void`  
+- `formatAmount: (amount: number) => string` - gibt `***` oder den formatierten Betrag zurueck
+
+---
+
+## Zusammenfassung
+
+| Feature | Dateien | DB-Aenderung |
+|---------|---------|-------------|
+| Firma aus Rechnung | `Contractors.tsx` | Nein |
+| Kuchendiagramm | `Invoices.tsx` | Nein |
+| Privacy-Toggle | Neuer Context + Layout + alle Seiten mit Betraegen | Nein |
+
+Keine Datenbank-Migrationen erforderlich. Alle drei Features sind reine Frontend-Aenderungen.

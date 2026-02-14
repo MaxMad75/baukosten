@@ -1,27 +1,38 @@
 
 
-# Fix: Dialog verliert Fokus bei Tastatureingabe
+# Fix: Fokus-Verlust in allen Formulardialogen
 
 ## Problem
 
-`ContractorForm` ist als Inline-Funktion innerhalb der `Contractors`-Komponente definiert (Zeile 134-195). Bei jeder State-Aenderung (z.B. Tippen in ein Feld aendert `formData`) wird `Contractors` neu gerendert und eine **neue** `ContractorForm`-Funktion erstellt. React erkennt diese als voellig neue Komponente, entfernt die alte und mountet die neue — dadurch geht der Input-Fokus verloren.
+Dasselbe Problem wie bei den Firmen: `EntryForm` und `DocumentForm` sind als Inline-Funktionen innerhalb ihrer jeweiligen Seiten-Komponenten definiert. Bei jeder State-Aenderung (Tippen) wird die Funktion neu erstellt, React behandelt sie als neue Komponente und der Input-Fokus geht verloren.
+
+## Betroffene Dateien
+
+| Datei | Inline-Komponente | Verwendungsstellen |
+|-------|-------------------|-------------------|
+| `src/pages/ConstructionJournal.tsx` | `EntryForm` (Zeile 169) | Create-Dialog (ca. Zeile 238) und Edit-Dialog (ca. Zeile 303) |
+| `src/pages/Documents.tsx` | `DocumentForm` (Zeile 302) | Create-Dialog und Edit-Dialog |
 
 ## Loesung
 
-Die `ContractorForm`-Inline-Funktion wird entfernt und der JSX-Inhalt direkt an den beiden Verwendungsstellen (Create-Dialog Zeile 218 und Edit-Dialog Zeile 307) eingebettet. Das vermeidet die Neuerstellung einer Komponente bei jedem Render.
+Wie beim Firmen-Fix: Die Inline-Funktionskomponenten entfernen und den JSX-Inhalt direkt in die jeweiligen Dialoge einbetten.
 
-Alternativ koennte man `ContractorForm` aus der Komponente herausziehen, aber da sie auf viele lokale State-Variablen zugreift (`formData`, `setFormData`, `invoices`, etc.), ist das direkte Inlining einfacher.
+### ConstructionJournal.tsx
+- `EntryForm`-Funktion (Zeile 169 ff.) entfernen
+- Den Formular-JSX direkt in den Create-Dialog und den Edit-Dialog kopieren
+- `onSubmit` wird durch den jeweiligen Handler (`handleCreate` / `handleUpdate`) ersetzt
+- `submitLabel` wird durch den jeweiligen Text ersetzt
 
-## Betroffene Datei
-
-| Datei | Aenderung |
-|-------|-----------|
-| `src/pages/Contractors.tsx` | `ContractorForm`-Funktion (Zeile 134-195) entfernen und den JSX direkt in den Create-Dialog (Zeile 218) und Edit-Dialog (Zeile 307) einsetzen |
+### Documents.tsx
+- `DocumentForm`-Funktion (Zeile 302 ff.) entfernen
+- Den Formular-JSX direkt in den Create-Dialog und den Edit-Dialog kopieren
+- Gleiche Vorgehensweise wie oben
 
 ## Technische Details
 
-- Zeile 134-195: Die `ContractorForm` Arrow-Function wird geloescht
-- Zeile 218: Wird ersetzt durch den vollen Formular-JSX (mit `showInvoiceSelect`-Bereich)
-- Zeile 307: Wird ersetzt durch den vollen Formular-JSX (ohne `showInvoiceSelect`-Bereich)
-- Keine weiteren Dateien oder Datenbank-Aenderungen betroffen
+Der Kern des Problems: Eine Funktion die innerhalb einer Komponente definiert wird (`const EntryForm = () => ...`) erhaelt bei jedem Render eine neue Referenz. React vergleicht Komponenten-Typen per Referenz - neue Referenz bedeutet neue Komponente, also unmount + remount, also Fokus-Verlust.
+
+Durch direktes Einbetten des JSX entfaellt die Komponenten-Grenze und React kann die DOM-Elemente stabil halten.
+
+Keine Datenbank-Aenderungen noetig.
 

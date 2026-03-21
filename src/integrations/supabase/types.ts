@@ -373,6 +373,51 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_splits: {
+        Row: {
+          amount: number
+          created_at: string | null
+          id: string
+          invoice_id: string
+          percentage: number | null
+          profile_id: string
+          split_type: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          id?: string
+          invoice_id: string
+          percentage?: number | null
+          profile_id: string
+          split_type?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          id?: string
+          invoice_id?: string
+          percentage?: number | null
+          profile_id?: string
+          split_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_splits_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_splits_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           ai_extracted: boolean

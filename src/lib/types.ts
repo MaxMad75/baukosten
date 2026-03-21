@@ -132,3 +132,13 @@ export interface ConstructionJournalWithDetails extends ConstructionJournalEntry
   contractor?: Contractor;
   created_by_profile?: Profile;
 }
+
+export interface InvoiceSplit {
+  id: string;
+  invoice_id: string;
+  profile_id: string;
+  amount: number;
+  percentage: number | null;
+  split_type: 'equal' | 'manual' | 'percentage';
+  created_at: string;
+}

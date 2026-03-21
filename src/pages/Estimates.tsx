@@ -383,7 +383,61 @@ export const Estimates: React.FC = () => {
     }
   };
 
-  const handleForceAnalysis = () => {
+  // Handle replacing an existing estimate with a new file
+  const handleReplaceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !household || !replacingEstimateId) return;
+
+    setUploading(true);
+    setIsUploadOpen(true);
+    try {
+      const sanitizedName = file.name
+        .replace(/\s+/g, '_')
+        .replace(/,/g, '_')
+        .replace(/[äÄ]/g, 'ae')
+        .replace(/[öÖ]/g, 'oe')
+        .replace(/[üÜ]/g, 'ue')
+        .replace(/ß/g, 'ss')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${household.id}/${Date.now()}_${sanitizedName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('estimates')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      setUploadedFile({ path: filePath, name: file.name });
+      setPendingFile(file);
+
+      // Create new version via replaceEstimate
+      const newEstimate = await replaceEstimate(replacingEstimateId, filePath, file.name);
+      if (!newEstimate) throw new Error('Could not create replacement estimate');
+
+      setPendingEstimateId(newEstimate.id);
+
+      setAnalyzing(true);
+      const payload = await processFileForAnalysis(file, file.name);
+      setPendingAnalysisPayload(payload);
+
+      const result = await callAnalyzeEstimate(payload);
+      if (result) {
+        handleAnalysisResult(result);
+      }
+    } catch (error) {
+      console.error('[Estimates] Replace upload error:', error);
+      toast({
+        title: 'Fehler',
+        description: error instanceof Error ? error.message : 'Datei konnte nicht verarbeitet werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploading(false);
+      setAnalyzing(false);
+      setReplacingEstimateId(null);
+    }
+  };
+
+
     if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
       setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false })));
     }

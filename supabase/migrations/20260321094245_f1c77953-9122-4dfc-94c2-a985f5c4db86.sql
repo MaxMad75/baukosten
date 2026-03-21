@@ -1,0 +1,1 @@
+ALTER TABLE public.documents ADD COLUMN invoice_id uuid REFERENCES public.invoices(id) ON DELETE SET NULL;

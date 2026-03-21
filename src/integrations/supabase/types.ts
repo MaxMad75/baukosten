@@ -249,6 +249,7 @@ export type Database = {
           file_size: number | null
           household_id: string
           id: string
+          invoice_id: string | null
           title: string
           updated_at: string | null
         }
@@ -266,6 +267,7 @@ export type Database = {
           file_size?: number | null
           household_id: string
           id?: string
+          invoice_id?: string | null
           title: string
           updated_at?: string | null
         }
@@ -283,6 +285,7 @@ export type Database = {
           file_size?: number | null
           household_id?: string
           id?: string
+          invoice_id?: string | null
           title?: string
           updated_at?: string | null
         }
@@ -306,6 +309,13 @@ export type Database = {
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
         ]

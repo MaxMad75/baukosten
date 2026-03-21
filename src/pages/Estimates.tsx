@@ -159,6 +159,12 @@ export const Estimates: React.FC = () => {
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
+  // Replace state
+  const [replacingEstimateId, setReplacingEstimateId] = useState<string | null>(null);
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
   // Pre-analysis result
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);

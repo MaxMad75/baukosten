@@ -95,6 +95,7 @@ export function useDocuments() {
         ai_analyzed: data.ai_analyzed || false,
         ai_summary: data.ai_summary || null,
         file_hash: data.file_hash || null,
+        invoice_id: data.invoice_id || null,
         created_by_profile_id: profile.id,
       })
       .select()

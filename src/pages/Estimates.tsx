@@ -1024,12 +1024,23 @@ export const Estimates: React.FC = () => {
               <CardTitle>Hochgeladene Schätzungen</CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Hidden file input for replace */}
+              <input
+                type="file"
+                ref={replaceFileInputRef}
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleReplaceUpload}
+                className="hidden"
+              />
+
               <Accordion type="single" collapsible className="w-full">
                 {estimates.map((estimate) => {
                   const items = getItemsByEstimate(estimate.id);
                   const estVat = computeVatSummary(
                     items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
                   );
+                  const versions = getVersions(estimate.id);
+                  const hasVersions = versions.length > 1;
                   
                   return (
                     <AccordionItem key={estimate.id} value={estimate.id}>
@@ -1038,9 +1049,21 @@ export const Estimates: React.FC = () => {
                           <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-muted-foreground" />
                             <div className="text-left">
-                              <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
+                                <Badge variant="default" className="text-xs">
+                                  <Star className="h-3 w-3 mr-1" />
+                                  v{estimate.version_number}
+                                </Badge>
+                                {hasVersions && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {versions.length} Versionen
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-sm text-muted-foreground">
                                 {format(new Date(estimate.uploaded_at), 'dd.MM.yyyy', { locale: de })}
+                                {estimate.notes && <span className="ml-2">— {estimate.notes}</span>}
                               </p>
                             </div>
                           </div>
@@ -1051,6 +1074,78 @@ export const Estimates: React.FC = () => {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
+                        {/* Action buttons */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setReplacingEstimateId(estimate.id);
+                              replaceFileInputRef.current?.click();
+                            }}
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Ersetzen (neue Version)
+                          </Button>
+                          {hasVersions && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setIsVersionHistoryOpen(
+                                isVersionHistoryOpen === estimate.id ? null : estimate.id
+                              )}
+                            >
+                              <History className="mr-2 h-4 w-4" />
+                              Versionen anzeigen
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Version history */}
+                        {isVersionHistoryOpen === estimate.id && hasVersions && (
+                          <div className="mb-4 rounded-lg border p-4 space-y-2">
+                            <h4 className="font-medium text-sm mb-3">Versionshistorie</h4>
+                            {versions.map((v) => {
+                              const vItems = getItemsByEstimate(v.id);
+                              return (
+                                <div
+                                  key={v.id}
+                                  className={`flex items-center justify-between rounded-md border p-3 ${
+                                    v.is_active ? 'border-primary bg-primary/5' : 'opacity-60'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-sm">
+                                        Version {v.version_number}
+                                      </span>
+                                      {v.is_active && (
+                                        <Badge variant="default" className="text-xs">Aktiv</Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      {v.file_name} — {format(new Date(v.uploaded_at), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                      {' — '}{vItems.length} Positionen
+                                    </p>
+                                    {v.notes && (
+                                      <p className="text-xs text-muted-foreground mt-1">{v.notes}</p>
+                                    )}
+                                  </div>
+                                  {!v.is_active && v.processed && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setActiveVersion(v.id)}
+                                    >
+                                      Aktivieren
+                                    </Button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         <Table>
                           <TableHeader>
                             <TableRow>

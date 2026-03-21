@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
+import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
+import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { Invoice, ArchitectEstimateItem } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -31,6 +33,8 @@ export const Comparison: React.FC = () => {
   const { invoices, loading: invLoading } = useInvoices();
   const { estimateItems, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
+  const { getSplitsForInvoice } = useInvoiceSplits();
+  const { data: profiles } = useHouseholdProfiles();
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const { formatAmount } = usePrivacy();
 
@@ -127,7 +131,7 @@ export const Comparison: React.FC = () => {
                       <CollapsibleContent asChild>
                         <TableRow>
                           <TableCell colSpan={7} className="bg-muted/30 p-0">
-                            <DetailPanel row={c} formatCurrency={formatCurrency} />
+                            <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} />
                           </TableCell>
                         </TableRow>
                       </CollapsibleContent>
@@ -143,7 +147,12 @@ export const Comparison: React.FC = () => {
   );
 };
 
-function DetailPanel({ row, formatCurrency }: { row: ComparisonRow; formatCurrency: (n: number) => string }) {
+function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
+  row: ComparisonRow;
+  formatCurrency: (n: number) => string;
+  getSplitsForInvoice: (id: string) => any[];
+  profiles: { id: string; name: string }[];
+}) {
   const estNetto = row.estimateItems.reduce((s, i) => s + toNetto(Number(i.estimated_amount), i.is_gross), 0);
   const estBrutto = row.estimatedBrutto;
   const estMwst = estBrutto - estNetto;
@@ -184,18 +193,31 @@ function DetailPanel({ row, formatCurrency }: { row: ComparisonRow; formatCurren
             <p className="text-sm text-muted-foreground">Keine Rechnungen vorhanden</p>
           ) : (
             <div className="space-y-1">
-              {row.invoiceItems.map(inv => (
-                <div key={inv.id} className="flex justify-between text-sm">
-                  <span>
-                    {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    {formatCurrency(Number(inv.amount))}
-                    <Badge variant="outline" className="text-xs">{inv.is_gross ? 'brutto' : 'netto'}</Badge>
-                    {inv.is_paid && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
-                  </span>
-                </div>
-              ))}
+              {row.invoiceItems.map(inv => {
+                const splits = getSplitsForInvoice(inv.id);
+                return (
+                  <div key={inv.id} className="text-sm">
+                    <div className="flex justify-between">
+                      <span>
+                        {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        {formatCurrency(Number(inv.amount))}
+                        <Badge variant="outline" className="text-xs">{inv.is_gross ? 'brutto' : 'netto'}</Badge>
+                        {inv.is_paid && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
+                      </span>
+                    </div>
+                    {splits.length > 0 && (
+                      <div className="ml-4 text-xs text-muted-foreground">
+                        {splits.map((s: any) => {
+                          const p = profiles.find(pr => pr.id === s.profile_id);
+                          return <span key={s.id} className="mr-2">{p?.name || '?'}: {formatCurrency(Number(s.amount))}</span>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               <div className="border-t pt-1 mt-2 space-y-0.5 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Netto</span><span>{formatCurrency(invNetto)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">MwSt (19%)</span><span>{formatCurrency(invMwst)}</span></div>

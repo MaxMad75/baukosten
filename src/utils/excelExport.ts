@@ -1,5 +1,6 @@
 import * as XLSX from '@e965/xlsx';
-import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoiceSplit } from '@/lib/types';
+import { getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 
@@ -9,37 +10,27 @@ interface ExportData {
   kostengruppen: DIN276Kostengruppe[];
   profiles: Profile[];
   comparisons: CostComparison[];
+  splits?: InvoiceSplit[];
 }
 
 export function exportToExcel(data: ExportData, fileName: string = 'hausbau-export') {
   const workbook = XLSX.utils.book_new();
 
-  // Sheet 1: Übersicht (Summary)
-  const summaryData = createSummarySheet(data);
-  const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+  const summarySheet = XLSX.utils.aoa_to_sheet(createSummarySheet(data));
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Übersicht');
 
-  // Sheet 2: Alle Rechnungen
-  const invoicesData = createInvoicesSheet(data);
-  const invoicesSheet = XLSX.utils.aoa_to_sheet(invoicesData);
+  const invoicesSheet = XLSX.utils.aoa_to_sheet(createInvoicesSheet(data));
   XLSX.utils.book_append_sheet(workbook, invoicesSheet, 'Rechnungen');
 
-  // Sheet 3: Soll-Ist-Vergleich
-  const comparisonData = createComparisonSheet(data);
-  const comparisonSheet = XLSX.utils.aoa_to_sheet(comparisonData);
+  const comparisonSheet = XLSX.utils.aoa_to_sheet(createComparisonSheet(data));
   XLSX.utils.book_append_sheet(workbook, comparisonSheet, 'Soll-Ist');
 
-  // Sheet 4: Nach Kostengruppe
-  const byKGData = createByKostengruppeSheet(data);
-  const byKGSheet = XLSX.utils.aoa_to_sheet(byKGData);
+  const byKGSheet = XLSX.utils.aoa_to_sheet(createByKostengruppeSheet(data));
   XLSX.utils.book_append_sheet(workbook, byKGSheet, 'Nach Kostengruppe');
 
-  // Sheet 5: Nach Zahler
-  const byPayerData = createByPayerSheet(data);
-  const byPayerSheet = XLSX.utils.aoa_to_sheet(byPayerData);
+  const byPayerSheet = XLSX.utils.aoa_to_sheet(createByPayerSheet(data));
   XLSX.utils.book_append_sheet(workbook, byPayerSheet, 'Nach Zahler');
 
-  // Generate file
   const dateStr = format(new Date(), 'yyyy-MM-dd', { locale: de });
   XLSX.writeFile(workbook, `${fileName}_${dateStr}.xlsx`);
 }
@@ -72,22 +63,24 @@ function createSummarySheet(data: ExportData): any[][] {
 
 function createInvoicesSheet(data: ExportData): any[][] {
   const header = [
-    'Rechnungsnr.',
-    'Datum',
-    'Firma',
-    'Beschreibung',
-    'Kostengruppe',
-    'Betrag',
-    'Brutto/Netto',
-    'Bezahlt',
-    'Zahlungsdatum',
-    'Bezahlt von',
+    'Rechnungsnr.', 'Datum', 'Firma', 'Beschreibung', 'Kostengruppe',
+    'Betrag', 'Brutto/Netto', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
   ];
 
   const rows = data.invoices.map(inv => {
     const kg = data.kostengruppen.find(k => k.code === inv.kostengruppe_code);
-    const payer = data.profiles.find(p => p.id === inv.paid_by_profile_id);
-    
+    const invSplits = (data.splits || []).filter(s => s.invoice_id === inv.id);
+    let payerInfo = '-';
+    if (invSplits.length > 0) {
+      payerInfo = invSplits.map(s => {
+        const p = data.profiles.find(pr => pr.id === s.profile_id);
+        return `${p?.name || '?'}: ${formatCurrency(Number(s.amount))}`;
+      }).join('; ');
+    } else {
+      const payer = data.profiles.find(p => p.id === inv.paid_by_profile_id);
+      payerInfo = payer?.name || '-';
+    }
+
     return [
       inv.invoice_number || '-',
       format(new Date(inv.invoice_date), 'dd.MM.yyyy', { locale: de }),
@@ -98,7 +91,8 @@ function createInvoicesSheet(data: ExportData): any[][] {
       inv.is_gross ? 'Brutto' : 'Netto',
       inv.is_paid ? 'Ja' : 'Nein',
       inv.payment_date ? format(new Date(inv.payment_date), 'dd.MM.yyyy', { locale: de }) : '-',
-      payer?.name || '-',
+      payerInfo,
+      invSplits.length > 0 ? 'Aufgeteilt' : 'Einzelzahler',
     ];
   });
 
@@ -106,27 +100,15 @@ function createInvoicesSheet(data: ExportData): any[][] {
 }
 
 function createComparisonSheet(data: ExportData): any[][] {
-  const header = [
-    'Kostengruppe',
-    'Bezeichnung',
-    'Soll (geschätzt)',
-    'Ist (tatsächlich)',
-    'Differenz',
-    'Abweichung %',
-  ];
+  const header = ['Kostengruppe', 'Bezeichnung', 'Soll (geschätzt)', 'Ist (tatsächlich)', 'Differenz', 'Abweichung %'];
 
   const rows = data.comparisons.map(c => [
-    c.kostengruppe_code,
-    c.kostengruppe_name,
-    c.estimated,
-    c.actual,
-    c.difference,
+    c.kostengruppe_code, c.kostengruppe_name, c.estimated, c.actual, c.difference,
     c.estimated > 0 ? `${c.percentage.toFixed(1)}%` : '-',
   ]);
 
   const totalRow = [
-    '',
-    'GESAMT',
+    '', 'GESAMT',
     data.comparisons.reduce((s, c) => s + c.estimated, 0),
     data.comparisons.reduce((s, c) => s + c.actual, 0),
     data.comparisons.reduce((s, c) => s + c.difference, 0),
@@ -142,12 +124,8 @@ function createByKostengruppeSheet(data: ExportData): any[][] {
   data.invoices.forEach(inv => {
     const code = inv.kostengruppe_code || 'Ohne Zuordnung';
     const kg = data.kostengruppen.find(k => k.code === code);
-    
     if (!grouped[code]) {
-      grouped[code] = {
-        name: kg?.name || 'Ohne Zuordnung',
-        invoices: [],
-      };
+      grouped[code] = { name: kg?.name || 'Ohne Zuordnung', invoices: [] };
     }
     grouped[code].invoices.push(inv);
   });
@@ -160,7 +138,6 @@ function createByKostengruppeSheet(data: ExportData): any[][] {
       result.push([]);
       result.push([`${code} - ${group.name}`]);
       result.push(['Firma', 'Datum', 'Betrag', 'Bezahlt']);
-      
       group.invoices.forEach(inv => {
         result.push([
           inv.company_name,
@@ -169,40 +146,47 @@ function createByKostengruppeSheet(data: ExportData): any[][] {
           inv.is_paid ? 'Ja' : 'Nein',
         ]);
       });
-      
-      result.push([
-        'Summe:',
-        '',
-        group.invoices.reduce((s, i) => s + Number(i.amount), 0),
-        '',
-      ]);
+      result.push(['Summe:', '', group.invoices.reduce((s, i) => s + Number(i.amount), 0), '']);
     });
 
   return result;
 }
 
 function createByPayerSheet(data: ExportData): any[][] {
-  const result: any[][] = [['ZAHLUNGEN NACH PERSON']];
+  const result: any[][] = [['ZAHLUNGEN NACH PERSON (inkl. Aufteilungen)']];
+  const splits = data.splits || [];
 
   data.profiles.forEach(profile => {
-    const paidByProfile = data.invoices.filter(
-      i => i.is_paid && i.paid_by_profile_id === profile.id
-    );
-    
+    const amounts = new Map<string, { invoice: Invoice; amount: number }>();
+
+    // Aggregate from splits and fallback
+    for (const inv of data.invoices) {
+      if (!inv.is_paid) continue;
+      const invSplits = splits.filter(s => s.invoice_id === inv.id);
+      const effectiveAmounts = getEffectivePayerAmounts(inv, invSplits);
+      const myAmount = effectiveAmounts.get(profile.id);
+      if (myAmount && myAmount > 0) {
+        amounts.set(inv.id, { invoice: inv, amount: myAmount });
+      }
+    }
+
+    const entries = Array.from(amounts.values());
+    const totalPaid = entries.reduce((s, e) => s + e.amount, 0);
+
     result.push([]);
     result.push([profile.name]);
-    result.push(['Anzahl Zahlungen:', paidByProfile.length]);
-    result.push(['Gesamtbetrag:', formatCurrency(paidByProfile.reduce((s, i) => s + Number(i.amount), 0))]);
-    
-    if (paidByProfile.length > 0) {
+    result.push(['Anzahl Beteiligungen:', entries.length]);
+    result.push(['Gesamtbetrag:', formatCurrency(totalPaid)]);
+
+    if (entries.length > 0) {
       result.push([]);
-      result.push(['Firma', 'Datum', 'Zahlungsdatum', 'Betrag']);
-      paidByProfile.forEach(inv => {
+      result.push(['Firma', 'Datum', 'Rechnungsbetrag', 'Mein Anteil']);
+      entries.forEach(({ invoice, amount }) => {
         result.push([
-          inv.company_name,
-          format(new Date(inv.invoice_date), 'dd.MM.yyyy', { locale: de }),
-          inv.payment_date ? format(new Date(inv.payment_date), 'dd.MM.yyyy', { locale: de }) : '-',
-          Number(inv.amount),
+          invoice.company_name,
+          format(new Date(invoice.invoice_date), 'dd.MM.yyyy', { locale: de }),
+          Number(invoice.amount),
+          amount,
         ]);
       });
     }
@@ -212,8 +196,5 @@ function createByPayerSheet(data: ExportData): any[][] {
 }
 
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('de-DE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(amount);
+  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
 }

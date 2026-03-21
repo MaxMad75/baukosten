@@ -11,10 +11,13 @@ import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
+import { useInvoiceSplits, getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
+import { InvoiceSplitEditor, SplitEntry, SplitMode } from '@/components/InvoiceSplitEditor';
 import { useToast } from '@/hooks/use-toast';
 import { Invoice } from '@/lib/types';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Loader2, CheckCircle2, XCircle, Euro, Trash2, Edit, Save, TrendingUp, Receipt, CreditCard,
 } from 'lucide-react';
@@ -40,6 +43,7 @@ export const Invoices: React.FC = () => {
   const { profile } = useAuth();
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
+  const { allSplits, getSplitsForInvoice, saveSplits } = useInvoiceSplits();
   const { toast } = useToast();
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
@@ -52,10 +56,18 @@ export const Invoices: React.FC = () => {
     company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '', is_gross: true,
   });
 
+  // Split state for edit dialog
+  const [editSplits, setEditSplits] = useState<SplitEntry[]>([]);
+  const [editSplitMode, setEditSplitMode] = useState<SplitMode>('equal');
+
+  // Pay dialog state
   const [paymentData, setPaymentData] = useState({
     payment_date: format(new Date(), 'yyyy-MM-dd'),
     paid_by_profile_id: profile?.id || '',
   });
+  const [payUseSplit, setPayUseSplit] = useState(false);
+  const [paySplits, setPaySplits] = useState<SplitEntry[]>([]);
+  const [paySplitMode, setPaySplitMode] = useState<SplitMode>('equal');
 
   const openEditDialog = (invoice: Invoice) => {
     setEditingInvoice(invoice);
@@ -68,6 +80,14 @@ export const Invoices: React.FC = () => {
       kostengruppe_code: invoice.kostengruppe_code || '',
       is_gross: invoice.is_gross ?? true,
     });
+    const existing = getSplitsForInvoice(invoice.id);
+    if (existing.length > 0) {
+      setEditSplits(existing.map(s => ({ profile_id: s.profile_id, amount: Number(s.amount), percentage: s.percentage, split_type: s.split_type })));
+      setEditSplitMode(existing[0].split_type as SplitMode);
+    } else {
+      setEditSplits([]);
+      setEditSplitMode('equal');
+    }
     setIsEditOpen(true);
   };
 
@@ -76,6 +96,16 @@ export const Invoices: React.FC = () => {
       toast({ title: 'Fehler', description: 'Bitte füllen Sie alle Pflichtfelder aus', variant: 'destructive' });
       return;
     }
+    // Validate splits if any
+    if (editSplits.length > 0) {
+      const totalAssigned = editSplits.reduce((s, e) => s + e.amount, 0);
+      const invoiceAmt = parseFloat(editFormData.amount);
+      if (Math.abs(invoiceAmt - totalAssigned) >= 0.01) {
+        toast({ title: 'Fehler', description: 'Die Kostenaufteilung stimmt nicht mit dem Rechnungsbetrag überein', variant: 'destructive' });
+        return;
+      }
+    }
+
     const success = await updateInvoice(editingInvoice.id, {
       company_name: editFormData.company_name,
       invoice_number: editFormData.invoice_number || null,
@@ -85,17 +115,49 @@ export const Invoices: React.FC = () => {
       kostengruppe_code: editFormData.kostengruppe_code || null,
       is_gross: editFormData.is_gross,
     });
-    if (success) { setIsEditOpen(false); setEditingInvoice(null); }
+
+    if (success) {
+      await saveSplits(editingInvoice.id, editSplits);
+      setIsEditOpen(false);
+      setEditingInvoice(null);
+    }
   };
 
   const handleMarkAsPaid = async () => {
-    if (!selectedInvoice || !paymentData.paid_by_profile_id) return;
-    const success = await markAsPaid(selectedInvoice, paymentData.paid_by_profile_id, paymentData.payment_date);
-    if (success) { setIsPayDialogOpen(false); setSelectedInvoice(null); }
+    if (!selectedInvoice) return;
+
+    if (payUseSplit && paySplits.length > 0) {
+      const inv = invoices.find(i => i.id === selectedInvoice);
+      if (!inv) return;
+      const totalAssigned = paySplits.reduce((s, e) => s + e.amount, 0);
+      if (Math.abs(Number(inv.amount) - totalAssigned) >= 0.01) {
+        toast({ title: 'Fehler', description: 'Die Kostenaufteilung stimmt nicht mit dem Rechnungsbetrag überein', variant: 'destructive' });
+        return;
+      }
+      // Mark as paid (use first payer as paid_by_profile_id for backward compat)
+      const success = await updateInvoice(selectedInvoice, {
+        is_paid: true,
+        payment_date: paymentData.payment_date,
+        paid_by_profile_id: paySplits[0].profile_id,
+      });
+      if (success) {
+        await saveSplits(selectedInvoice, paySplits);
+        setIsPayDialogOpen(false);
+        setSelectedInvoice(null);
+      }
+    } else {
+      if (!paymentData.paid_by_profile_id) return;
+      const success = await markAsPaid(selectedInvoice, paymentData.paid_by_profile_id, paymentData.payment_date);
+      if (success) {
+        setIsPayDialogOpen(false);
+        setSelectedInvoice(null);
+      }
+    }
   };
 
   const handleMarkAsUnpaid = async (invoiceId: string) => {
     await updateInvoice(invoiceId, { is_paid: false, paid_by_profile_id: null, payment_date: null });
+    await saveSplits(invoiceId, []);
   };
 
   const handleDelete = async () => {
@@ -107,6 +169,9 @@ export const Invoices: React.FC = () => {
   const openPayDialog = (invoiceId: string) => {
     setSelectedInvoice(invoiceId);
     setPaymentData({ payment_date: format(new Date(), 'yyyy-MM-dd'), paid_by_profile_id: profile?.id || '' });
+    setPayUseSplit(false);
+    setPaySplits([]);
+    setPaySplitMode('equal');
     setIsPayDialogOpen(true);
   };
 
@@ -116,23 +181,28 @@ export const Invoices: React.FC = () => {
   const openAmount = totalAmount - paidAmount;
   const openCount = invoices.filter((i) => !i.is_paid).length;
 
-  // Pie chart data: who paid how much
+  // Pie chart data: who paid how much (using splits)
   const pieData = useMemo(() => {
     const byPayer = new Map<string, number>();
     for (const inv of invoices) {
-      if (inv.is_paid && inv.paid_by_profile_id) {
-        byPayer.set(inv.paid_by_profile_id, (byPayer.get(inv.paid_by_profile_id) || 0) + Number(inv.amount));
-      }
+      if (!inv.is_paid) continue;
+      const splits = getSplitsForInvoice(inv.id);
+      const amounts = getEffectivePayerAmounts(inv, splits);
+      amounts.forEach((amount, profileId) => {
+        byPayer.set(profileId, (byPayer.get(profileId) || 0) + amount);
+      });
     }
     return Array.from(byPayer.entries()).map(([profileId, amount]) => {
       const p = profiles?.find((pr) => pr.id === profileId);
       return { name: p?.name || 'Unbekannt', value: amount };
     });
-  }, [invoices, profiles]);
+  }, [invoices, profiles, allSplits]);
 
   if (loading) {
     return <Layout><div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></Layout>;
   }
+
+  const selectedInvoiceObj = selectedInvoice ? invoices.find(i => i.id === selectedInvoice) : null;
 
   return (
     <Layout>
@@ -212,9 +282,7 @@ export const Invoices: React.FC = () => {
                         <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(value: number) => formatAmount(value)}
-                    />
+                    <Tooltip formatter={(value: number) => formatAmount(value)} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
@@ -252,7 +320,8 @@ export const Invoices: React.FC = () => {
                 <TableBody>
                   {invoices.map((invoice) => {
                     const kg = getKostengruppeByCode(invoice.kostengruppe_code || '');
-                    const payer = profiles?.find((p) => p.id === invoice.paid_by_profile_id);
+                    const splits = getSplitsForInvoice(invoice.id);
+                    const payerAmounts = getEffectivePayerAmounts(invoice, splits);
                     return (
                       <TableRow key={invoice.id}>
                         <TableCell>{format(new Date(invoice.invoice_date), 'dd.MM.yyyy', { locale: de })}</TableCell>
@@ -273,7 +342,15 @@ export const Invoices: React.FC = () => {
                           {invoice.is_paid ? (
                             <button onClick={() => handleMarkAsUnpaid(invoice.id)} className="flex items-center gap-1 text-green-600 hover:underline" title="Klicken zum Zurücksetzen">
                               <CheckCircle2 className="h-4 w-4" />
-                              <span className="text-sm">Bezahlt{payer ? ` (${payer.name})` : ''}</span>
+                              <span className="text-sm">
+                                {splits.length > 0
+                                  ? splits.map(s => {
+                                      const p = profiles?.find(pr => pr.id === s.profile_id);
+                                      return `${p?.name || '?'}: ${Math.round(Number(s.amount) / Number(invoice.amount) * 100)}%`;
+                                    }).join(', ')
+                                  : `Bezahlt${payerAmounts.size > 0 ? ` (${profiles?.find(p => p.id === invoice.paid_by_profile_id)?.name || ''})` : ''}`
+                                }
+                              </span>
                             </button>
                           ) : (
                             <div className="flex items-center gap-1 text-orange-600">
@@ -303,7 +380,7 @@ export const Invoices: React.FC = () => {
 
       {/* Edit Invoice Dialog */}
       <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingInvoice(null); }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Rechnung bearbeiten</DialogTitle>
             <DialogDescription>Ändern Sie die Rechnungsdaten.</DialogDescription>
@@ -343,6 +420,19 @@ export const Invoices: React.FC = () => {
                 <Label htmlFor="edit-is-gross" className="cursor-pointer">Betrag inkl. MwSt (brutto)</Label>
               </div>
             </div>
+
+            {/* Split Editor in Edit Dialog */}
+            {profiles && profiles.length > 0 && (
+              <InvoiceSplitEditor
+                invoiceAmount={parseFloat(editFormData.amount) || 0}
+                profiles={profiles}
+                splits={editSplits}
+                onChange={setEditSplits}
+                mode={editSplitMode}
+                onModeChange={setEditSplitMode}
+              />
+            )}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingInvoice(null); }}>Abbrechen</Button>
               <Button onClick={handleUpdateInvoice}><Save className="mr-2 h-4 w-4" />Speichern</Button>
@@ -353,7 +443,7 @@ export const Invoices: React.FC = () => {
 
       {/* Pay Dialog */}
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Zahlung erfassen</DialogTitle>
             <DialogDescription>Markieren Sie diese Rechnung als bezahlt.</DialogDescription>
@@ -363,15 +453,35 @@ export const Invoices: React.FC = () => {
               <Label>Zahlungsdatum</Label>
               <Input type="date" value={paymentData.payment_date} onChange={(e) => setPaymentData({ ...paymentData, payment_date: e.target.value })} />
             </div>
-            <div className="space-y-2">
-              <Label>Bezahlt von</Label>
-              <Select value={paymentData.paid_by_profile_id} onValueChange={(v) => setPaymentData({ ...paymentData, paid_by_profile_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Person auswählen" /></SelectTrigger>
-                <SelectContent>
-                  {profiles?.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+
+            <div className="flex items-center gap-3">
+              <Switch checked={payUseSplit} onCheckedChange={setPayUseSplit} id="pay-split-toggle" />
+              <Label htmlFor="pay-split-toggle" className="cursor-pointer">Auf mehrere Personen aufteilen</Label>
             </div>
+
+            {!payUseSplit ? (
+              <div className="space-y-2">
+                <Label>Bezahlt von</Label>
+                <Select value={paymentData.paid_by_profile_id} onValueChange={(v) => setPaymentData({ ...paymentData, paid_by_profile_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Person auswählen" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles?.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              profiles && selectedInvoiceObj && (
+                <InvoiceSplitEditor
+                  invoiceAmount={Number(selectedInvoiceObj.amount)}
+                  profiles={profiles}
+                  splits={paySplits}
+                  onChange={setPaySplits}
+                  mode={paySplitMode}
+                  onModeChange={setPaySplitMode}
+                />
+              )
+            )}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsPayDialogOpen(false)}>Abbrechen</Button>
               <Button onClick={handleMarkAsPaid}>Als bezahlt markieren</Button>

@@ -78,6 +78,7 @@ export function useDocuments() {
     ai_analyzed?: boolean;
     ai_summary?: string;
     file_hash?: string;
+    invoice_id?: string;
   }) => {
     if (!household || !profile) return null;
     const { data: result, error } = await supabase

@@ -59,8 +59,12 @@ export type Database = {
           file_path: string | null
           household_id: string
           id: string
+          is_active: boolean
+          notes: string | null
+          parent_id: string | null
           processed: boolean
           uploaded_at: string
+          version_number: number
         }
         Insert: {
           created_at?: string
@@ -68,8 +72,12 @@ export type Database = {
           file_path?: string | null
           household_id: string
           id?: string
+          is_active?: boolean
+          notes?: string | null
+          parent_id?: string | null
           processed?: boolean
           uploaded_at?: string
+          version_number?: number
         }
         Update: {
           created_at?: string
@@ -77,8 +85,12 @@ export type Database = {
           file_path?: string | null
           household_id?: string
           id?: string
+          is_active?: boolean
+          notes?: string | null
+          parent_id?: string | null
           processed?: boolean
           uploaded_at?: string
+          version_number?: number
         }
         Relationships: [
           {
@@ -86,6 +98,13 @@ export type Database = {
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "architect_estimates_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "architect_estimates"
             referencedColumns: ["id"]
           },
         ]

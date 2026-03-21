@@ -52,6 +52,10 @@ export interface ArchitectEstimate {
   uploaded_at: string;
   processed: boolean;
   created_at: string;
+  parent_id: string | null;
+  version_number: number;
+  is_active: boolean;
+  notes: string | null;
 }
 
 export interface ArchitectEstimateItem {

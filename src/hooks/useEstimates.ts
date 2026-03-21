@@ -8,7 +8,9 @@ export function useEstimates() {
   const { household } = useAuth();
   const { toast } = useToast();
   const [estimates, setEstimates] = useState<ArchitectEstimate[]>([]);
+  const [allEstimates, setAllEstimates] = useState<ArchitectEstimate[]>([]);
   const [estimateItems, setEstimateItems] = useState<ArchitectEstimateItem[]>([]);
+  const [activeEstimateItems, setActiveEstimateItems] = useState<ArchitectEstimateItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchEstimates = async () => {
@@ -22,9 +24,12 @@ export function useEstimates() {
       .order('uploaded_at', { ascending: false });
 
     if (estimatesData) {
-      setEstimates(estimatesData as ArchitectEstimate[]);
+      const all = estimatesData as ArchitectEstimate[];
+      setAllEstimates(all);
+      // Active estimates for display (show only active or root with no versions)
+      setEstimates(all.filter(e => e.is_active));
 
-      // Fetch all items for these estimates
+      // Fetch all items for all estimates
       const estimateIds = estimatesData.map(e => e.id);
       if (estimateIds.length > 0) {
         const { data: itemsData } = await supabase
@@ -33,8 +38,15 @@ export function useEstimates() {
           .in('estimate_id', estimateIds);
 
         if (itemsData) {
-          setEstimateItems(itemsData as ArchitectEstimateItem[]);
+          const items = itemsData as ArchitectEstimateItem[];
+          setEstimateItems(items);
+          // Only items from active estimates for Soll calculations
+          const activeIds = new Set(all.filter(e => e.is_active).map(e => e.id));
+          setActiveEstimateItems(items.filter(i => activeIds.has(i.estimate_id)));
         }
+      } else {
+        setEstimateItems([]);
+        setActiveEstimateItems([]);
       }
     }
     setLoading(false);
@@ -44,7 +56,7 @@ export function useEstimates() {
     fetchEstimates();
   }, [household]);
 
-  const createEstimate = async (filePath: string, fileName: string) => {
+  const createEstimate = async (filePath: string, fileName: string, parentId?: string, versionNumber?: number) => {
     if (!household) return null;
 
     const { data, error } = await supabase
@@ -53,6 +65,9 @@ export function useEstimates() {
         household_id: household.id,
         file_path: filePath,
         file_name: fileName,
+        parent_id: parentId || null,
+        version_number: versionNumber || 1,
+        is_active: true,
       })
       .select()
       .single();
@@ -102,6 +117,67 @@ export function useEstimates() {
     return true;
   };
 
+  /** Replace an existing estimate with a new version. Deactivates the old one. */
+  const replaceEstimate = async (oldEstimateId: string, filePath: string, fileName: string) => {
+    if (!household) return null;
+
+    const oldEstimate = allEstimates.find(e => e.id === oldEstimateId);
+    if (!oldEstimate) return null;
+
+    // Determine root parent and next version number
+    const rootId = oldEstimate.parent_id || oldEstimate.id;
+    const siblings = allEstimates.filter(e => e.id === rootId || e.parent_id === rootId);
+    const maxVersion = Math.max(...siblings.map(e => e.version_number));
+
+    // Deactivate all versions in the family
+    const familyIds = siblings.map(e => e.id);
+    await supabase
+      .from('architect_estimates')
+      .update({ is_active: false })
+      .in('id', familyIds);
+
+    // Create new version
+    const newEstimate = await createEstimate(filePath, fileName, rootId, maxVersion + 1);
+    return newEstimate;
+  };
+
+  /** Get all versions of an estimate (by its family/root) */
+  const getVersions = (estimateId: string): ArchitectEstimate[] => {
+    const est = allEstimates.find(e => e.id === estimateId);
+    if (!est) return [];
+    const rootId = est.parent_id || est.id;
+    return allEstimates
+      .filter(e => e.id === rootId || e.parent_id === rootId)
+      .sort((a, b) => a.version_number - b.version_number);
+  };
+
+  /** Activate a specific version and deactivate all others in the family */
+  const setActiveVersion = async (estimateId: string) => {
+    const versions = getVersions(estimateId);
+    if (versions.length === 0) return false;
+
+    const familyIds = versions.map(e => e.id);
+    // Deactivate all
+    await supabase
+      .from('architect_estimates')
+      .update({ is_active: false })
+      .in('id', familyIds);
+
+    // Activate selected
+    const { error } = await supabase
+      .from('architect_estimates')
+      .update({ is_active: true })
+      .eq('id', estimateId);
+
+    if (error) {
+      toast({ title: 'Fehler', description: 'Version konnte nicht aktiviert werden', variant: 'destructive' });
+      return false;
+    }
+
+    await fetchEstimates();
+    return true;
+  };
+
   const updateEstimateItem = async (id: string, updates: Partial<ArchitectEstimateItem>) => {
     const { error } = await supabase
       .from('architect_estimate_items')
@@ -114,6 +190,21 @@ export function useEstimates() {
         description: 'Position konnte nicht aktualisiert werden',
         variant: 'destructive',
       });
+      return false;
+    }
+
+    await fetchEstimates();
+    return true;
+  };
+
+  const updateEstimateNotes = async (id: string, notes: string) => {
+    const { error } = await supabase
+      .from('architect_estimates')
+      .update({ notes })
+      .eq('id', id);
+
+    if (error) {
+      toast({ title: 'Fehler', description: 'Notiz konnte nicht gespeichert werden', variant: 'destructive' });
       return false;
     }
 
@@ -146,7 +237,7 @@ export function useEstimates() {
 
   const getAllEstimatedAmounts = () => {
     const totals: Record<string, number> = {};
-    estimateItems.forEach(item => {
+    activeEstimateItems.forEach(item => {
       totals[item.kostengruppe_code] = (totals[item.kostengruppe_code] || 0) + Number(item.estimated_amount);
     });
     return totals;
@@ -154,12 +245,18 @@ export function useEstimates() {
 
   return {
     estimates,
-    estimateItems,
+    allEstimates,
+    estimateItems: activeEstimateItems, // Only active items for Soll calculations
+    allEstimateItems: estimateItems,
     loading,
     fetchEstimates,
     createEstimate,
     addEstimateItems,
+    replaceEstimate,
+    getVersions,
+    setActiveVersion,
     updateEstimateItem,
+    updateEstimateNotes,
     deleteEstimateItem,
     getItemsByEstimate,
     getAllEstimatedAmounts,

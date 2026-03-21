@@ -8,31 +8,41 @@ const corsHeaders = {
 
 const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024; // 5MB for images
 
-const DOCUMENT_TYPES = `
-Dokumenttypen:
-- Vertrag: Bauverträge, Werkverträge, Kaufverträge
-- Genehmigung: Baugenehmigungen, behördliche Bescheide
-- Angebot: Kostenvoranschläge, Angebote von Handwerkern
-- Zeichnung: Baupläne, technische Zeichnungen
-- Rechnung: Rechnungen (wenn nicht schon im Rechnungsmodul)
-- Protokoll: Baustellenprotokolle, Abnahmeprotokolle
-- Sonstiges: Alles andere
+const DIN276_CATEGORIES = `
+100 - Grundstück
+200 - Vorbereitende Maßnahmen
+300 - Bauwerk - Baukonstruktionen (310-360)
+400 - Bauwerk - Technische Anlagen (410-450)
+500 - Außenanlagen
+600 - Ausstattung
+700 - Baunebenkosten (710-740)
+800 - Finanzierung
 `;
 
-const systemPrompt = `Du bist ein Experte für Baudokumente. Analysiere das Dokument und extrahiere folgende Informationen:
+const systemPrompt = `Du bist ein Experte für Baudokumente und die DIN 276 Kostenstruktur. Analysiere das Dokument und extrahiere folgende Informationen:
 - Einen aussagekräftigen Titel
 - Den Dokumenttyp (einer von: Vertrag, Genehmigung, Angebot, Zeichnung, Rechnung, Protokoll, Sonstiges)
 - Eine kurze Beschreibung / Zusammenfassung (max 2-3 Sätze)
 - Den Firmennamen, falls erkennbar
 
-${DOCUMENT_TYPES}
+Falls es sich um eine RECHNUNG handelt, extrahiere zusätzlich:
+- Rechnungsnummer
+- Gesamtbetrag (nur die Zahl, z.B. 1234.56)
+- Rechnungsdatum (im Format YYYY-MM-DD)
+- Die passende DIN 276 Kostengruppe (3-stelliger Code)
+
+${DIN276_CATEGORIES}
 
 Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
 {
   "title": "string",
   "document_type": "string",
   "description": "string",
-  "company_name": "string oder null"
+  "company_name": "string oder null",
+  "invoice_number": "string oder null (nur bei Rechnungen)",
+  "amount": "number oder null (nur bei Rechnungen)",
+  "invoice_date": "YYYY-MM-DD oder null (nur bei Rechnungen)",
+  "kostengruppe_code": "string oder null (nur bei Rechnungen)"
 }`;
 
 serve(async (req) => {
@@ -86,11 +96,9 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Build messages based on content type
     const userContent: any[] = [];
 
     if (imageBase64) {
-      // Multimodal: image analysis
       userContent.push({
         type: "image_url",
         image_url: { url: `data:image/jpeg;base64,${imageBase64}` }

@@ -10,13 +10,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors } from '@/hooks/useContractors';
+import { useInvoices } from '@/hooks/useInvoices';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { extractTextFromExcel } from '@/utils/excelExtractor';
 import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw
+  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -47,9 +48,21 @@ const typeColors: Record<string, string> = {
 
 const emptyForm = { title: '', document_type: '', description: '', contractor_id: '' };
 
+interface AiResult {
+  title?: string;
+  document_type?: string;
+  description?: string;
+  company_name?: string | null;
+  invoice_number?: string | null;
+  amount?: number | null;
+  invoice_date?: string | null;
+  kostengruppe_code?: string | null;
+}
+
 export const Documents: React.FC = () => {
   const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
-  const { contractors } = useContractors();
+  const { contractors, createContractor, fetchContractors } = useContractors();
+  const { createInvoice, fetchInvoices } = useInvoices();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,8 +81,57 @@ export const Documents: React.FC = () => {
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [isZipOpen, setIsZipOpen] = useState(false);
   const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
+  // Store full AI result for invoice creation
+  const [pendingAiResult, setPendingAiResult] = useState<AiResult | null>(null);
 
-  const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); setPendingFileHash(null); setDuplicateWarning(null); };
+  const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); setPendingFileHash(null); setDuplicateWarning(null); setPendingAiResult(null); };
+
+  /**
+   * Find or create contractor by company name.
+   * Returns contractor ID or null.
+   */
+  const findOrCreateContractor = async (companyName: string): Promise<string | null> => {
+    const match = contractors.find(
+      (c) => c.company_name.toLowerCase().includes(companyName.toLowerCase()) ||
+        companyName.toLowerCase().includes(c.company_name.toLowerCase())
+    );
+    if (match) return match.id;
+
+    // Auto-create contractor
+    const newContractor = await createContractor({ company_name: companyName });
+    if (newContractor) {
+      toast({ title: 'Firma angelegt', description: `"${companyName}" wurde automatisch als Firma erstellt.` });
+      return newContractor.id;
+    }
+    return null;
+  };
+
+  /**
+   * Create an invoice record from AI-extracted data and link it to the document.
+   */
+  const createInvoiceFromDocument = async (
+    ai: AiResult,
+    filePath: string,
+    fileName: string,
+    contractorId: string | null
+  ): Promise<string | null> => {
+    if (!ai.amount || !ai.invoice_date || !ai.company_name) return null;
+
+    const invoice = await createInvoice({
+      amount: ai.amount,
+      invoice_date: ai.invoice_date,
+      company_name: ai.company_name,
+      invoice_number: ai.invoice_number || null,
+      description: ai.description || null,
+      kostengruppe_code: ai.kostengruppe_code || null,
+      file_path: filePath,
+      file_name: fileName,
+      ai_extracted: true,
+      is_gross: true,
+    });
+
+    return invoice?.id || null;
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -117,7 +179,8 @@ export const Documents: React.FC = () => {
           const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
 
           if (!functionError && functionData?.data) {
-            const ai = functionData.data;
+            const ai: AiResult = functionData.data;
+            setPendingAiResult(ai);
             setFormData({
               title: ai.title || file.name,
               document_type: ai.document_type || '',
@@ -127,8 +190,8 @@ export const Documents: React.FC = () => {
 
             if (ai.company_name) {
               const match = contractors.find(
-                (c) => c.company_name.toLowerCase().includes(ai.company_name.toLowerCase()) ||
-                  ai.company_name.toLowerCase().includes(c.company_name.toLowerCase())
+                (c) => c.company_name.toLowerCase().includes(ai.company_name!.toLowerCase()) ||
+                  ai.company_name!.toLowerCase().includes(c.company_name.toLowerCase())
               );
               if (match) setFormData((prev) => ({ ...prev, contractor_id: match.id }));
             }
@@ -152,6 +215,31 @@ export const Documents: React.FC = () => {
 
   const handleCreate = async () => {
     if (!uploadedFile || !formData.title) return;
+
+    const isInvoice = formData.document_type === 'Rechnung';
+    let contractorId = formData.contractor_id || null;
+    let invoiceId: string | null = null;
+
+    // If classified as Rechnung, handle contractor + invoice creation
+    if (isInvoice && pendingAiResult) {
+      // Find or create contractor from company name
+      if (pendingAiResult.company_name && !contractorId) {
+        contractorId = await findOrCreateContractor(pendingAiResult.company_name);
+      }
+
+      // Create invoice record
+      invoiceId = await createInvoiceFromDocument(
+        pendingAiResult,
+        uploadedFile.path,
+        uploadedFile.name,
+        contractorId
+      );
+
+      if (invoiceId) {
+        toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
+      }
+    }
+
     await createDocument({
       file_path: uploadedFile.path,
       file_name: uploadedFile.name,
@@ -159,9 +247,10 @@ export const Documents: React.FC = () => {
       title: formData.title,
       document_type: formData.document_type || undefined,
       description: formData.description || undefined,
-      contractor_id: formData.contractor_id || undefined,
+      contractor_id: contractorId || undefined,
       ai_analyzed: analyzing || !!formData.description,
       file_hash: pendingFileHash || undefined,
+      invoice_id: invoiceId || undefined,
     });
     resetForm();
     setIsUploadOpen(false);
@@ -170,8 +259,6 @@ export const Documents: React.FC = () => {
   const handleDuplicateForceUpload = async () => {
     if (!duplicateWarning) return;
     setDuplicateWarning(null);
-    const fakeEvent = { target: { files: [duplicateWarning.file] } } as unknown as React.ChangeEvent<HTMLInputElement>;
-    // Re-run upload without duplicate check by directly proceeding
     const file = duplicateWarning.file;
     setUploading(true);
     try {
@@ -244,7 +331,6 @@ export const Documents: React.FC = () => {
         const file = new File([blob], doc.file_name);
         body.textContent = await extractTextFromExcel(file);
       } else {
-        // For unsupported types, do filename-only analysis
         body.textContent = `Dateiname: ${doc.file_name}`;
       }
 
@@ -253,15 +339,21 @@ export const Documents: React.FC = () => {
       if (functionError) throw new Error(functionError.message);
       if (!functionData?.data) throw new Error('Keine Daten von KI erhalten');
 
-      const ai = functionData.data;
+      const ai: AiResult = functionData.data;
       let contractorId = doc.contractor_id;
 
+      // Find or create contractor
       if (ai.company_name) {
-        const match = contractors.find(
-          (c) => c.company_name.toLowerCase().includes(ai.company_name.toLowerCase()) ||
-            ai.company_name.toLowerCase().includes(c.company_name.toLowerCase())
-        );
-        if (match) contractorId = match.id;
+        contractorId = await findOrCreateContractor(ai.company_name);
+      }
+
+      // If classified as Rechnung and no invoice linked yet, create one
+      let invoiceId = (doc as any).invoice_id || null;
+      if (ai.document_type === 'Rechnung' && !invoiceId) {
+        invoiceId = await createInvoiceFromDocument(ai, doc.file_path, doc.file_name, contractorId);
+        if (invoiceId) {
+          toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
+        }
       }
 
       await updateDocument(doc.id, {
@@ -270,7 +362,8 @@ export const Documents: React.FC = () => {
         description: ai.description || doc.description,
         contractor_id: contractorId,
         ai_analyzed: true,
-      });
+        ...(invoiceId ? { invoice_id: invoiceId } : {}),
+      } as any);
 
       toast({ title: 'KI-Analyse abgeschlossen', description: `"${ai.title || doc.title}" wurde analysiert.` });
     } catch (err: any) {
@@ -327,6 +420,20 @@ export const Documents: React.FC = () => {
         <Label>Beschreibung</Label>
         <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Kurze Beschreibung des Dokuments" rows={3} />
       </div>
+      {/* Invoice hint */}
+      {formData.document_type === 'Rechnung' && pendingAiResult?.amount && (
+        <div className="col-span-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+          <div className="flex items-center gap-2 font-medium">
+            <Receipt className="h-4 w-4" />
+            Rechnung erkannt – wird automatisch in die Rechnungsverwaltung übernommen
+          </div>
+          <div className="mt-1 text-xs">
+            {pendingAiResult.company_name && <span>Firma: {pendingAiResult.company_name} · </span>}
+            Betrag: {pendingAiResult.amount?.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
+            {pendingAiResult.invoice_date && <span> · Datum: {pendingAiResult.invoice_date}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -350,7 +457,7 @@ export const Documents: React.FC = () => {
               <DialogHeader>
                 <DialogTitle>Dokument hochladen</DialogTitle>
                 <DialogDescription>
-                  Laden Sie ein Dokument hoch. PDFs werden automatisch per KI analysiert.
+                  Laden Sie ein Dokument hoch. PDFs werden automatisch per KI analysiert. Rechnungen werden automatisch in die Rechnungsverwaltung übernommen.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -447,6 +554,11 @@ export const Documents: React.FC = () => {
                             ) : (
                               <Sparkles className="h-3 w-3 text-muted-foreground/40" />
                             )}
+                            {(doc as any).invoice_id && (
+                              <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
+                                <Receipt className="mr-1 h-3 w-3" />Rechnung
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">{doc.file_name}</div>
                           {doc.description && <div className="mt-1 text-xs text-muted-foreground line-clamp-1">{doc.description}</div>}
@@ -463,7 +575,7 @@ export const Documents: React.FC = () => {
                       <TableCell className="hidden lg:table-cell">{getContractorName(doc.contractor_id) || '–'}</TableCell>
                       <TableCell className="hidden md:table-cell">{formatFileSize(doc.file_size)}</TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        {format(new Date(doc.created_at), 'dd.MM.yyyy', { locale: de })}
+                        {format(new Date(doc.created_at!), 'dd.MM.yyyy', { locale: de })}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">

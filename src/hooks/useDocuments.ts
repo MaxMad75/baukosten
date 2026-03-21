@@ -19,6 +19,7 @@ export interface Document {
   created_at: string;
   updated_at: string;
   file_hash: string | null;
+  invoice_id: string | null;
 }
 
 export function useDocuments() {
@@ -78,6 +79,7 @@ export function useDocuments() {
     ai_analyzed?: boolean;
     ai_summary?: string;
     file_hash?: string;
+    invoice_id?: string;
   }) => {
     if (!household || !profile) return null;
     const { data: result, error } = await supabase
@@ -94,6 +96,7 @@ export function useDocuments() {
         ai_analyzed: data.ai_analyzed || false,
         ai_summary: data.ai_summary || null,
         file_hash: data.file_hash || null,
+        invoice_id: data.invoice_id || null,
         created_by_profile_id: profile.id,
       })
       .select()

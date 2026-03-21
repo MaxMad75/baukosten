@@ -19,6 +19,7 @@ export interface Document {
   created_at: string;
   updated_at: string;
   file_hash: string | null;
+  invoice_id: string | null;
 }
 
 export function useDocuments() {

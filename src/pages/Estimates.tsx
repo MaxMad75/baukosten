@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useDocuments, Document } from '@/hooks/useDocuments';
@@ -31,7 +32,10 @@ import {
   Save,
   X,
   FolderOpen,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  History,
+  Star
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';

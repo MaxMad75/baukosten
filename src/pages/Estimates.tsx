@@ -127,11 +127,17 @@ interface AnalysisResult {
 export const Estimates: React.FC = () => {
   const { 
     estimates, 
+    allEstimates,
     estimateItems, 
+    allEstimateItems,
     loading, 
     createEstimate, 
     addEstimateItems,
+    replaceEstimate,
+    getVersions,
+    setActiveVersion,
     updateEstimateItem,
+    updateEstimateNotes,
     deleteEstimateItem,
     getItemsByEstimate 
   } = useEstimates();

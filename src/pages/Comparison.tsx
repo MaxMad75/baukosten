@@ -39,6 +39,7 @@ interface ComparisonRow {
   invoiceItems: Array<{ invoice: Invoice; allocatedAmount: number }>;
   offerBrutto: number;
   offerItems: OfferDetail[];
+  offerVsEstimate: number;
 }
 
 export const Comparison: React.FC = () => {

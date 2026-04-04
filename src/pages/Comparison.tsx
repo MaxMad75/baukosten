@@ -313,7 +313,7 @@ export const Comparison: React.FC = () => {
                       </CollapsibleTrigger>
                       <CollapsibleContent asChild>
                         <TableRow>
-                          <TableCell colSpan={offersActive ? 8 : 7} className="bg-muted/30 p-0">
+                          <TableCell colSpan={offersActive ? 9 : 7} className="bg-muted/30 p-0">
                             <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} offersActive={offersActive} />
                           </TableCell>
                         </TableRow>

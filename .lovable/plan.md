@@ -1,37 +1,37 @@
 
 
-# Invoice Stabilization Plan (Refined)
+# Estimate Version Comparison Plan (Refined)
 
-## Legacy Field Consolidation Rule
+## Comparison-Selection Rules
 
-**Principle**: `invoice_payments` + derived `status` are the sole authority for payment state. Legacy fields (`is_paid`, `paid_by_profile_id`, `payment_date`) are only synchronized in one central place: `recalculateInvoiceStatus` in `useInvoicePayments.ts`. No other code path may write these fields independently.
+1. **Union of selected versions**: The Soll column is computed from the union of estimate items across all selected versions — one selected version per family.
+2. **One version per family**: Component state holds a `Record<string, string>` mapping root estimate ID → selected version ID. Exactly one version is selected per family at all times.
+3. **Default = active**: On mount, each family's selection defaults to whichever version has `is_active === true`.
+4. **Empty versions are valid**: A selected version with zero estimate items contributes nothing to Soll but remains selectable in the dropdown.
+5. **Actuals unchanged**: The invoice/allocation side is completely untouched — same `getEffectiveAllocations` logic as today.
+6. **Exclusive source**: Soll values come exclusively from the selected versions' items. No mixing with the global `activeEstimateItems`. The `comparisons` useMemo replaces its current `estimateItems` input with items fetched via `getItemsByEstimateIds(Object.values(selectedVersions))`.
 
 ## Changes
 
-### `src/hooks/useInvoices.ts`
-1. **Remove `markAsPaid`** — dead code that bypasses the payment model
-2. **Remove `is_paid` from `createInvoice`** — new invoices start as `status: 'draft'` with no payments; `is_paid` defaults to `false` in the DB and is only ever set by `recalculateInvoiceStatus`
+### `src/hooks/useEstimates.ts`
+- Add `getItemsByEstimateIds(ids: string[]): ArchitectEstimateItem[]` — filters `allEstimateItems` (the full set, not just active) by the given estimate IDs
 
-### `src/hooks/useInvoicePayments.ts`
-3. **`recalculateInvoiceStatus` becomes the single sync point** for all legacy fields:
-   - Already syncs `is_paid` and `payment_date` — add `paid_by_profile_id` sync here too (set to the most recent payment's `profile_id` when paid, `null` when not)
-   - When `totalPaid` drops to 0, set status to `'approved'` instead of falling through to `'draft'`
-
-### `src/pages/Invoices.tsx`
-4. **`handleRecordPayment`** (lines 225, 231): Remove the `updateInvoice({ paid_by_profile_id: ... })` calls — `recalculateInvoiceStatus` now handles this centrally
-5. **`handleResetPayments`** (line 242): Remove the manual `updateInvoice({ is_paid: false, paid_by_profile_id: null, payment_date: null, status: 'draft' })` — `deleteAllPayments` already calls `recalculateInvoiceStatus` which will set all these fields correctly (status → `approved`)
-6. **Restrict status dropdown**: Disable `paid` and `partially_paid` options in the edit dialog — these are payment-derived, not manually settable
-7. **Enforce cost group**: Require at least one cost group before saving in `handleUpdateInvoice`
-8. **Fix allocation editor grid**: Consistent column layout regardless of estimate item presence
-
-### Unchanged
-- `useInvoicePayments` structure, `Comparison.tsx`, backup/restore, invoice splits, all other pages
+### `src/pages/Comparison.tsx`
+- Derive estimate families from `allEstimates` (group by `parent_id || id`)
+- Add local state: `selectedVersions: Record<string, string>` initialized from active versions
+- Render a version selector per family above the comparison table (small Select dropdowns showing version number + file name)
+- Replace the current `estimateItems` usage in the `comparisons` useMemo with items from `getItemsByEstimateIds(Object.values(selectedVersions))`
+- All per-KG and total Soll values derive solely from this filtered set
 
 ## Files
 
 | File | Change |
 |------|--------|
-| `src/hooks/useInvoices.ts` | Remove `markAsPaid`, remove `is_paid` from create |
-| `src/hooks/useInvoicePayments.ts` | Centralize all legacy field sync in `recalculateInvoiceStatus`; fix fallback to `approved` |
-| `src/pages/Invoices.tsx` | Remove ad-hoc legacy writes from handlers; restrict status dropdown; enforce KG; fix grid |
+| `src/hooks/useEstimates.ts` | Add `getItemsByEstimateIds` helper |
+| `src/pages/Comparison.tsx` | Version selector UI + derive Soll from selected versions only |
+
+## Unchanged
+- Invoice payments, allocations, splits, status model
+- Estimate DB schema, `is_active` semantics, Estimates page
+- Dashboard, auth, backup/restore, documents, all other pages
 

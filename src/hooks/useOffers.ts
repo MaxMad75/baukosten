@@ -163,5 +163,5 @@ export function useOffers() {
     return true;
   };
 
-  return { offers, loading, fetchOffers, createOffer, updateOffer, deleteOffer, fetchOfferItems, saveOfferItems };
+  return { offers, allOfferItems, loading, fetchOffers, createOffer, updateOffer, deleteOffer, fetchOfferItems, saveOfferItems };
 }

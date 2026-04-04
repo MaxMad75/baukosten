@@ -28,6 +28,21 @@ export function useOffers() {
     setLoading(false);
   };
 
+  const fetchAllOfferItems = async (offerIds: string[]) => {
+    if (offerIds.length === 0) {
+      setAllOfferItems([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('offer_items')
+      .select('*')
+      .in('offer_id', offerIds);
+
+    if (!error && data) {
+      setAllOfferItems((data as unknown as OfferItem[]) || []);
+    }
+  };
+
   useEffect(() => {
     fetchOffers();
   }, [household]);

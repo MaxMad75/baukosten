@@ -586,6 +586,11 @@ export const Documents: React.FC = () => {
                                 <Receipt className="mr-1 h-3 w-3" />Rechnung
                               </Badge>
                             )}
+                            {offers.some(o => o.document_id === doc.id) && (
+                              <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700">
+                                <FileCheck className="mr-1 h-3 w-3" />Angebot
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">{doc.file_name}</div>
                           {doc.description && <div className="mt-1 text-xs text-muted-foreground line-clamp-1">{doc.description}</div>}

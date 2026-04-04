@@ -222,13 +222,11 @@ export const Invoices: React.FC = () => {
       }
       if (success) {
         await saveSplits(selectedInvoice, paySplits);
-        await updateInvoice(selectedInvoice, { paid_by_profile_id: paySplits[0].profile_id });
       }
     } else {
       if (!paymentData.paid_by_profile_id) return;
       const payAmount = paymentData.amount ? parseFloat(paymentData.amount) : Number(inv.amount);
       await addPayment(selectedInvoice, paymentData.paid_by_profile_id, payAmount, paymentData.payment_date);
-      await updateInvoice(selectedInvoice, { paid_by_profile_id: paymentData.paid_by_profile_id });
     }
 
     await fetchInvoices();
@@ -239,7 +237,6 @@ export const Invoices: React.FC = () => {
 
   const handleResetPayments = async (invoiceId: string) => {
     await deleteAllPayments(invoiceId);
-    await updateInvoice(invoiceId, { is_paid: false, paid_by_profile_id: null, payment_date: null, status: 'draft' });
     await saveSplits(invoiceId, []);
     await fetchInvoices();
   };

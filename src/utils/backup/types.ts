@@ -141,6 +141,16 @@ export interface BackupDocument {
   updated_at: string;
 }
 
+export interface BackupInvoicePayment {
+  id: string;
+  invoice_id: string;
+  profile_id: string;
+  amount: number;
+  payment_date: string;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface BackupData {
   schemaVersion: string;
   exportedAt: string;
@@ -154,6 +164,7 @@ export interface BackupData {
     profiles: BackupProfile[];
     invoices: BackupInvoice[];
     invoiceSplits: BackupInvoiceSplit[];
+    invoicePayments: BackupInvoicePayment[];
     estimates: BackupEstimate[];
     estimateItems: BackupEstimateItem[];
     contractors: BackupContractor[];

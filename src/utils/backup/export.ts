@@ -189,6 +189,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       invoices: (invoices || []).map((i: any) => stripHouseholdId(i)),
       invoiceSplits: splits.map((s: any) => ({ ...s })),
       invoicePayments: payments.map((p: any) => ({ ...p })),
+      invoiceAllocations: allocations.map((a: any) => ({ ...a })),
       estimates: (estimates || []).map((e: any) => stripHouseholdId(e)),
       estimateItems: estimateItems.map((i: any) => ({ ...i })),
       contractors: (contractors || []).map((c: any) => stripHouseholdId(c)),

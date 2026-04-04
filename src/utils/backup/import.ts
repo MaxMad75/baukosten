@@ -10,6 +10,7 @@ export interface RestoreResult {
     invoices: number;
     invoiceSplits: number;
     invoicePayments: number;
+    invoiceAllocations: number;
     estimates: number;
     estimateItems: number;
     journalEntries: number;
@@ -78,7 +79,7 @@ export async function restoreBackupZip(
     return { success: false, message: 'Ungültige Backup-Struktur.' };
   }
 
-  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, estimates: 0, estimateItems: 0, journalEntries: 0, documents: 0, attachments: 0 };
+  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, invoiceAllocations: 0, estimates: 0, estimateItems: 0, journalEntries: 0, documents: 0, attachments: 0 };
 
   // ID mapping: old ID -> new ID (for referential integrity)
   const contractorIdMap = new Map<string, string>();
@@ -246,6 +247,24 @@ export async function restoreBackupZip(
       });
 
     if (!error) counts.invoicePayments++;
+  }
+
+  // 8c. Restore invoice allocations
+  for (const alloc of backup.data.invoiceAllocations || []) {
+    const newInvoiceId = invoiceIdMap.get(alloc.invoice_id);
+    if (!newInvoiceId) continue;
+
+    const { error } = await supabase
+      .from('invoice_allocations')
+      .insert({
+        invoice_id: newInvoiceId,
+        kostengruppe_code: alloc.kostengruppe_code,
+        estimate_item_id: null, // estimate items may have different IDs after restore
+        amount: alloc.amount,
+        notes: alloc.notes,
+      });
+
+    if (!error) counts.invoiceAllocations++;
   }
 
   // 9. Restore journal entries

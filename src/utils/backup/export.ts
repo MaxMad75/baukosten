@@ -42,11 +42,12 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     .select('*')
     .eq('household_id', householdId);
 
-  // 3. Invoice splits
+  // 3. Invoice splits, payments, allocations
   progress('Kostenaufteilungen laden…');
   const invoiceIds = (invoices || []).map((i: any) => i.id);
   let splits: any[] = [];
   let payments: any[] = [];
+  let allocations: any[] = [];
   if (invoiceIds.length > 0) {
     const { data: splitsData } = await supabase
       .from('invoice_splits')
@@ -59,6 +60,12 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       .select('*')
       .in('invoice_id', invoiceIds);
     payments = paymentsData || [];
+
+    const { data: allocData } = await supabase
+      .from('invoice_allocations')
+      .select('*')
+      .in('invoice_id', invoiceIds);
+    allocations = allocData || [];
   }
 
   // 4. Estimates + items
@@ -182,6 +189,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       invoices: (invoices || []).map((i: any) => stripHouseholdId(i)),
       invoiceSplits: splits.map((s: any) => ({ ...s })),
       invoicePayments: payments.map((p: any) => ({ ...p })),
+      invoiceAllocations: allocations.map((a: any) => ({ ...a })),
       estimates: (estimates || []).map((e: any) => stripHouseholdId(e)),
       estimateItems: estimateItems.map((i: any) => ({ ...i })),
       contractors: (contractors || []).map((c: any) => stripHouseholdId(c)),
@@ -206,6 +214,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       invoices: backupData.data.invoices.length,
       invoiceSplits: backupData.data.invoiceSplits.length,
       invoicePayments: backupData.data.invoicePayments.length,
+      invoiceAllocations: backupData.data.invoiceAllocations.length,
       estimates: backupData.data.estimates.length,
       estimateItems: backupData.data.estimateItems.length,
       contractors: backupData.data.contractors.length,

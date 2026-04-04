@@ -16,6 +16,7 @@ export interface BackupManifest {
     invoices: number;
     invoiceSplits: number;
     invoicePayments: number;
+    invoiceAllocations: number;
     estimates: number;
     estimateItems: number;
     contractors: number;
@@ -152,6 +153,16 @@ export interface BackupInvoicePayment {
   created_at: string;
 }
 
+export interface BackupInvoiceAllocation {
+  id: string;
+  invoice_id: string;
+  kostengruppe_code: string;
+  estimate_item_id: string | null;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface BackupData {
   schemaVersion: string;
   exportedAt: string;
@@ -166,6 +177,7 @@ export interface BackupData {
     invoices: BackupInvoice[];
     invoiceSplits: BackupInvoiceSplit[];
     invoicePayments: BackupInvoicePayment[];
+    invoiceAllocations: BackupInvoiceAllocation[];
     estimates: BackupEstimate[];
     estimateItems: BackupEstimateItem[];
     contractors: BackupContractor[];

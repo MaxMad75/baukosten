@@ -402,6 +402,51 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_allocations: {
+        Row: {
+          amount: number
+          created_at: string | null
+          estimate_item_id: string | null
+          id: string
+          invoice_id: string
+          kostengruppe_code: string
+          notes: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          estimate_item_id?: string | null
+          id?: string
+          invoice_id: string
+          kostengruppe_code: string
+          notes?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          estimate_item_id?: string | null
+          id?: string
+          invoice_id?: string
+          kostengruppe_code?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_allocations_estimate_item_id_fkey"
+            columns: ["estimate_item_id"]
+            isOneToOne: false
+            referencedRelation: "architect_estimate_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_payments: {
         Row: {
           amount: number

@@ -50,7 +50,7 @@ export function useInvoices() {
         kostengruppe_code: invoiceData.kostengruppe_code || null,
         file_path: invoiceData.file_path || null,
         file_name: invoiceData.file_name || null,
-        is_paid: invoiceData.is_paid || false,
+        
         ai_extracted: invoiceData.ai_extracted || false,
         is_gross: invoiceData.is_gross ?? true,
         status: invoiceData.status || 'draft',

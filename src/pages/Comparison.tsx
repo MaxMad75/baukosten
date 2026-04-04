@@ -250,13 +250,16 @@ export const Comparison: React.FC = () => {
           </Card>
         )}
 
-        <div className={`grid gap-4 ${offersActive ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+        <div className={`grid gap-4 ${offersActive ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Geschätzt (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.estimated)}</div></CardContent></Card>
           {offersActive && (
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Angebot (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.offer)}</div></CardContent></Card>
           )}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Tatsächlich (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.actual)}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Differenz</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold ${totals.difference > 0 ? 'text-destructive' : 'text-green-600'}`}>{totals.difference > 0 ? '+' : ''}{formatCurrency(totals.difference)}</div></CardContent></Card>
+          {offersActive && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Δ Angebot/Soll</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold ${totals.offerVsEstimate > 0 ? 'text-destructive' : totals.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>{totals.offerVsEstimate > 0 ? '+' : ''}{formatCurrency(totals.offerVsEstimate)}</div></CardContent></Card>
+          )}
         </div>
 
         <Card>

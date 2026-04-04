@@ -1,100 +1,37 @@
 
 
-# Invoice-to-Estimate Allocation Plan (Refined)
+# Invoice Stabilization Plan (Refined)
 
-## What this does
+## Legacy Field Consolidation Rule
 
-Adds a new `invoice_allocations` table so invoices can be distributed across multiple cost groups and/or multiple estimate line items within the same cost group. Includes validation, a read-only summary in the invoice list, and an editor in the edit dialog.
+**Principle**: `invoice_payments` + derived `status` are the sole authority for payment state. Legacy fields (`is_paid`, `paid_by_profile_id`, `payment_date`) are only synchronized in one central place: `recalculateInvoiceStatus` in `useInvoicePayments.ts`. No other code path may write these fields independently.
 
-## Database
+## Changes
 
-**New table: `invoice_allocations`**
+### `src/hooks/useInvoices.ts`
+1. **Remove `markAsPaid`** — dead code that bypasses the payment model
+2. **Remove `is_paid` from `createInvoice`** — new invoices start as `status: 'draft'` with no payments; `is_paid` defaults to `false` in the DB and is only ever set by `recalculateInvoiceStatus`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid PK | |
-| invoice_id | uuid NOT NULL | FK to invoices |
-| kostengruppe_code | text NOT NULL | DIN 276 code |
-| estimate_item_id | uuid NULL | FK to architect_estimate_items (optional) |
-| amount | numeric NOT NULL | Allocated portion |
-| notes | text NULL | |
-| created_at | timestamptz | DEFAULT now() |
+### `src/hooks/useInvoicePayments.ts`
+3. **`recalculateInvoiceStatus` becomes the single sync point** for all legacy fields:
+   - Already syncs `is_paid` and `payment_date` — add `paid_by_profile_id` sync here too (set to the most recent payment's `profile_id` when paid, `null` when not)
+   - When `totalPaid` drops to 0, set status to `'approved'` instead of falling through to `'draft'`
 
-RLS: same JOIN-through-invoices pattern as invoice_splits/invoice_payments.
+### `src/pages/Invoices.tsx`
+4. **`handleRecordPayment`** (lines 225, 231): Remove the `updateInvoice({ paid_by_profile_id: ... })` calls — `recalculateInvoiceStatus` now handles this centrally
+5. **`handleResetPayments`** (line 242): Remove the manual `updateInvoice({ is_paid: false, paid_by_profile_id: null, payment_date: null, status: 'draft' })` — `deleteAllPayments` already calls `recalculateInvoiceStatus` which will set all these fields correctly (status → `approved`)
+6. **Restrict status dropdown**: Disable `paid` and `partially_paid` options in the edit dialog — these are payment-derived, not manually settable
+7. **Enforce cost group**: Require at least one cost group before saving in `handleUpdateInvoice`
+8. **Fix allocation editor grid**: Consistent column layout regardless of estimate item presence
 
-**Migration seed:** For every invoice with `kostengruppe_code` set, insert one allocation row with the full amount.
+### Unchanged
+- `useInvoicePayments` structure, `Comparison.tsx`, backup/restore, invoice splits, all other pages
 
-## Key rules
-
-1. **Multiple rows per cost group allowed** — two allocation rows can have the same `kostengruppe_code` but different `estimate_item_id` values (e.g. two different estimate positions within KG 300).
-
-2. **Consistency constraint (app-level):** If `estimate_item_id` is set, the referenced `architect_estimate_items` row must have the same `kostengruppe_code` as the allocation row. Enforced in the hook's save logic and in UI filtering (KostengruppenSelect filters estimate items to matching code).
-
-3. **No double-counting rule:** If `invoice_allocations` rows exist for an invoice, those are the sole source of cost group distribution. The legacy `invoices.kostengruppe_code` is only used as fallback when zero allocation rows exist. This rule applies in Comparison.tsx, useInvoiceAllocations, and any aggregation logic.
-
-4. **Allocation sum validation:** Sum of all allocation amounts for one invoice must equal `invoice.amount` (tolerance 0.01).
-
-## New hook: `src/hooks/useInvoiceAllocations.ts`
-
-- `fetchAllocationsForInvoice(invoiceId)`
-- `saveAllocations(invoiceId, allocations[])` — deletes old rows, inserts new; validates sum and kostengruppe-estimate consistency before saving
-- `getEffectiveAllocations(invoice)` — returns real allocations if any exist, else synthesizes one from legacy `kostengruppe_code`
-- `fetchAllAllocations()` — for Comparison page aggregation
-
-## New type in `src/lib/types.ts`
-
-```typescript
-export interface InvoiceAllocation {
-  id: string;
-  invoice_id: string;
-  kostengruppe_code: string;
-  estimate_item_id: string | null;
-  amount: number;
-  notes: string | null;
-  created_at: string;
-}
-```
-
-## UI changes
-
-### Invoice list (read-only summary)
-Each invoice row gets a small allocation indicator:
-- **Single KG**: shows the code as today (e.g. "KG 300")
-- **Multiple allocations**: shows e.g. "3 Zuordnungen" with a tooltip listing the cost groups and amounts
-- **Has estimate links**: small icon/badge indicating concrete estimate item references exist
-
-This is visible without opening any dialog.
-
-### Invoice edit dialog (editor)
-- Default: single cost group selector (current behavior, auto-creates one allocation on save)
-- Toggle "Aufteilen auf mehrere Positionen" reveals a multi-row editor
-- Each row: KostengruppenSelect + optional estimate item dropdown (filtered to items matching selected KG) + amount
-- Validation: total must match invoice amount
-- No new page or separate dialog
-
-### Comparison page
-- Replace grouping logic: use `getEffectiveAllocations` per invoice instead of reading `invoice.kostengruppe_code` directly
-- Distributed amounts appear correctly per cost group
-
-## Files changed
+## Files
 
 | File | Change |
 |------|--------|
-| DB migration | New `invoice_allocations` table + RLS + seed from existing data |
-| `src/lib/types.ts` | Add `InvoiceAllocation` |
-| `src/hooks/useInvoiceAllocations.ts` | New hook with CRUD, validation, consistency check, fallback logic |
-| `src/pages/Invoices.tsx` | Allocation summary column + editor in edit dialog |
-| `src/pages/Comparison.tsx` | Use allocations for cost group aggregation |
-| `src/utils/backup/export.ts` | Include `invoice_allocations` |
-| `src/utils/backup/import.ts` | Restore `invoice_allocations` |
-| `src/utils/backup/types.ts` | Add `BackupInvoiceAllocation` |
-
-## Unchanged
-
-- Invoice payments, payer splits, status model
-- Estimate versioning
-- Document handling
-- Auth, dashboard, contractors, construction journal
-- `invoices.kostengruppe_code` column (kept as legacy fallback, not removed)
-- No estimate version comparison
+| `src/hooks/useInvoices.ts` | Remove `markAsPaid`, remove `is_paid` from create |
+| `src/hooks/useInvoicePayments.ts` | Centralize all legacy field sync in `recalculateInvoiceStatus`; fix fallback to `approved` |
+| `src/pages/Invoices.tsx` | Remove ad-hoc legacy writes from handlers; restrict status dropdown; enforce KG; fix grid |
 

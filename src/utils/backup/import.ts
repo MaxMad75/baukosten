@@ -228,6 +228,26 @@ export async function restoreBackupZip(
     if (!error) counts.invoiceSplits++;
   }
 
+  // 8b. Restore invoice payments
+  for (const payment of backup.data.invoicePayments || []) {
+    const newInvoiceId = invoiceIdMap.get(payment.invoice_id);
+    const newProfileId = profileIdMap.get(payment.profile_id);
+    if (!newInvoiceId || !newProfileId) continue;
+
+    const { error } = await supabase
+      .from('invoice_payments')
+      .insert({
+        invoice_id: newInvoiceId,
+        profile_id: newProfileId,
+        amount: payment.amount,
+        payment_date: payment.payment_date,
+        notes: payment.notes,
+      });
+
+    if (!error) counts.invoicePayments++;
+  }
+  }
+
   // 9. Restore journal entries
   progress('Bautagebuch wiederherstellen…');
   for (const entry of backup.data.journalEntries) {

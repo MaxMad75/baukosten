@@ -89,6 +89,7 @@ function createInvoicesSheet(data: ExportData): any[][] {
       kg ? `${kg.code} - ${kg.name}` : inv.kostengruppe_code || '-',
       Number(inv.amount),
       inv.is_gross ? 'Brutto' : 'Netto',
+      (inv as any).status || (inv.is_paid ? 'paid' : 'draft'),
       inv.is_paid ? 'Ja' : 'Nein',
       inv.payment_date ? format(new Date(inv.payment_date), 'dd.MM.yyyy', { locale: de }) : '-',
       payerInfo,

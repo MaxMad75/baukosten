@@ -571,9 +571,14 @@ export const Invoices: React.FC = () => {
                 <Select value={editFormData.status} onValueChange={(v) => setEditFormData({ ...editFormData, status: v as InvoiceStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                      <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                    ))}
+                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+                      const isPaymentDerived = key === 'paid' || key === 'partially_paid';
+                      return (
+                        <SelectItem key={key} value={key} disabled={isPaymentDerived}>
+                          {cfg.label}{isPaymentDerived ? ' (automatisch)' : ''}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>

@@ -197,11 +197,3 @@ export interface InvoiceAllocation {
   notes: string | null;
   created_at: string;
 }
-  id: string;
-  invoice_id: string;
-  kostengruppe_code: string;
-  estimate_item_id: string | null;
-  amount: number;
-  notes: string | null;
-  created_at: string;
-}

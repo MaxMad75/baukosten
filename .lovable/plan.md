@@ -1,88 +1,53 @@
 
 
-# Offer Domain — Phase 1: Structured Entity + Management UI
+# Offer Comparison Layer — Implementation Plan (Refined)
 
-## Database Migration
+## Offer Aggregation and Display Rules
 
-Two new tables following existing patterns (household-scoped, RLS via `get_user_household_id()`):
+1. **Union of selected offers only**: The Angebot column is computed from the union of offer items across all selected offers. No unselected offer data is included.
+2. **No offers selected = inactive layer**:
+   - Per-row offer values render as "–"
+   - Offer total summary card is hidden
+   - Detail panel offer section is hidden
+3. **Sum per cost group**: When multiple selected offers contribute items to the same `kostengruppe_code`, their amounts are summed for that row.
+4. **Soll and Ist unchanged**: Selecting or deselecting offers has zero effect on Soll values, Ist values, difference, or percentage columns.
+5. **Purely additive column**: The Angebot column is display-only. It does not feed into the Soll/Ist difference or percentage calculations in this phase.
 
-### `offers`
-```sql
-create table public.offers (
-  id uuid primary key default gen_random_uuid(),
-  household_id uuid not null,
-  document_id uuid,
-  contractor_id uuid,
-  company_name text not null,
-  title text not null,
-  offer_date date,
-  total_amount numeric not null default 0,
-  is_gross boolean not null default true,
-  notes text,
-  created_by_profile_id uuid,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-alter table public.offers enable row level security;
--- Standard 4-policy CRUD on household_id = get_user_household_id()
--- updated_at trigger using update_updated_at_column()
-```
-
-### `offer_items`
-```sql
-create table public.offer_items (
-  id uuid primary key default gen_random_uuid(),
-  offer_id uuid not null,
-  kostengruppe_code text not null,
-  amount numeric not null default 0,
-  description text,
-  is_gross boolean not null default true,
-  created_at timestamptz default now()
-);
-alter table public.offer_items enable row level security;
--- RLS via join to offers → household_id = get_user_household_id() (same pattern as invoice_allocations)
-```
-
-## Code Changes
-
-### `src/lib/types.ts`
-Add `Offer` and `OfferItem` interfaces matching the table columns.
+## Changes
 
 ### `src/hooks/useOffers.ts`
-New hook following the `useContractors` pattern:
-- `fetchOffers()`, `createOffer()`, `updateOffer()`, `deleteOffer()`
-- `fetchOfferItems(offerId)`, `saveOfferItems(offerId, items[])`
-- Recalculate `total_amount` on the offer whenever items are saved
 
-### `src/pages/Offers.tsx`
-Minimal management page following the Contractors page pattern:
-- List of offers (company, title, date, total, item count)
-- Create/edit dialog: company name, title, offer date, contractor selector (from `useContractors`), notes
-- Offer item editor: rows of cost group (KostengruppenSelect) + amount + description, add/remove rows
-- Delete with confirmation
-- Search/filter bar
+Add bulk item loading alongside existing per-offer loader:
+- `allOfferItems: OfferItem[]` state, populated by `fetchAllOfferItems()` after `fetchOffers` completes
+- Single query: `select * from offer_items where offer_id in (...offerIds)`
+- Existing `fetchOfferItems(offerId)` and `saveOfferItems` remain unchanged
 
-### `src/components/Layout.tsx`
-Add nav entry `{ to: '/offers', icon: FileText, label: 'Angebote' }` between Kostenschätzung and Soll/Ist.
+### `src/pages/Comparison.tsx`
 
-### `src/App.tsx`
-Add route: `<Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />`
+Additive changes only:
+
+1. **Import & hook**: `useOffers()` — consume `offers`, `allOfferItems`
+2. **Selection state**: `selectedOfferIds: Set<string>`, default empty (inactive)
+3. **Selector UI**: Below estimate version selector, a card "Angebote einbeziehen" with checkboxes per offer (`company_name — title`). Hidden when `offers.length === 0`.
+4. **ComparisonRow extension**: Add `offerBrutto: number` and `offerItems: Array<{offer: Offer; amount: number; is_gross: boolean}>` fields
+5. **comparisons useMemo**: Filter `allOfferItems` to selected offer IDs, aggregate per `kostengruppe_code` using `toBrutto()`. When `selectedOfferIds` is empty, all `offerBrutto` = 0, all `offerItems` = [].
+6. **Table column**: "Angebot (brutto)" after Soll, before Ist. Renders value when offers selected, "–" otherwise.
+7. **Total card**: Fourth summary card for Angebot total. Hidden when no offers selected.
+8. **Detail panel**: Offer section showing per-offer breakdown (company + amount) for the selected cost group. Hidden when no offers selected.
 
 ## Files
 
 | File | Change |
 |------|--------|
-| New migration | Create `offers` + `offer_items` tables with RLS + trigger |
-| `src/lib/types.ts` | Add `Offer`, `OfferItem` |
-| `src/hooks/useOffers.ts` | New hook |
-| `src/pages/Offers.tsx` | New page |
-| `src/components/Layout.tsx` | Add nav entry |
-| `src/App.tsx` | Add route |
+| `src/hooks/useOffers.ts` | Add `allOfferItems` + `fetchAllOfferItems` |
+| `src/pages/Comparison.tsx` | Offer selector, column, totals card, detail section |
 
 ## Unchanged
-- `Comparison.tsx` — no offer column yet
-- `Documents.tsx` — no shortcut yet
+
 - Invoice payments, allocations, splits, status
-- Estimate versioning
-- Auth, dashboard, backup/restore, settings
+- Estimate version selection logic and Soll computation
+- Ist computation and difference/percentage columns
+- `Offers.tsx` management page
+- Database schema (no migration)
+- Auth, dashboard, documents, backup/restore
 

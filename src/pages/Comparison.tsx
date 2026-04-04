@@ -7,11 +7,13 @@ import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
 import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
-import { Invoice, ArchitectEstimateItem } from '@/lib/types';
+import { useOffers } from '@/hooks/useOffers';
+import { Invoice, ArchitectEstimateItem, Offer, OfferItem } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +21,12 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 
 const toBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
 const toNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
+
+interface OfferDetail {
+  offer: Offer;
+  amount: number;
+  is_gross: boolean;
+}
 
 interface ComparisonRow {
   code: string;
@@ -29,6 +37,8 @@ interface ComparisonRow {
   percentage: number;
   estimateItems: ArchitectEstimateItem[];
   invoiceItems: Array<{ invoice: Invoice; allocatedAmount: number }>;
+  offerBrutto: number;
+  offerItems: OfferDetail[];
 }
 
 export const Comparison: React.FC = () => {
@@ -38,11 +48,23 @@ export const Comparison: React.FC = () => {
   const { getSplitsForInvoice } = useInvoiceSplits();
   const { getEffectiveAllocations } = useInvoiceAllocations();
   const { data: profiles } = useHouseholdProfiles();
+  const { offers, allOfferItems } = useOffers();
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const { formatAmount } = usePrivacy();
 
+  // --- Offer selection state ---
+  const [selectedOfferIds, setSelectedOfferIds] = useState<Set<string>>(new Set());
+  const offersActive = selectedOfferIds.size > 0;
+
+  const toggleOffer = (id: string) => {
+    setSelectedOfferIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
   // --- Version selection state ---
-  // Group estimates into families by root ID
   const families = useMemo(() => {
     const map = new Map<string, typeof allEstimates>();
     for (const est of allEstimates) {
@@ -51,17 +73,14 @@ export const Comparison: React.FC = () => {
       list.push(est);
       map.set(rootId, list);
     }
-    // Sort versions within each family
     for (const [, versions] of map) {
       versions.sort((a, b) => a.version_number - b.version_number);
     }
     return map;
   }, [allEstimates]);
 
-  // Selected version per family (root ID → selected estimate ID)
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
 
-  // Initialize / update defaults when families change
   useEffect(() => {
     setSelectedVersions(prev => {
       const next: Record<string, string> = {};
@@ -77,7 +96,6 @@ export const Comparison: React.FC = () => {
     });
   }, [families]);
 
-  // Derive estimate items exclusively from selected versions
   const selectedEstimateItems = useMemo(() => {
     const ids = Object.values(selectedVersions);
     return ids.length > 0 ? getItemsByEstimateIds(ids) : [];
@@ -90,6 +108,13 @@ export const Comparison: React.FC = () => {
       return next;
     });
   };
+
+  // Build an offer lookup map: offerId → Offer
+  const offerMap = useMemo(() => {
+    const m = new Map<string, Offer>();
+    offers.forEach(o => m.set(o.id, o));
+    return m;
+  }, [offers]);
 
   const comparisons = useMemo((): ComparisonRow[] => {
     const allCodes = new Set<string>();
@@ -107,24 +132,41 @@ export const Comparison: React.FC = () => {
       }
     }
 
+    // Aggregate offer items by code (only selected offers)
+    const offerByCode = new Map<string, OfferDetail[]>();
+    if (offersActive) {
+      for (const item of allOfferItems) {
+        if (!selectedOfferIds.has(item.offer_id)) continue;
+        allCodes.add(item.kostengruppe_code);
+        const offer = offerMap.get(item.offer_id);
+        if (!offer) continue;
+        const existing = offerByCode.get(item.kostengruppe_code) || [];
+        existing.push({ offer, amount: Number(item.amount), is_gross: item.is_gross });
+        offerByCode.set(item.kostengruppe_code, existing);
+      }
+    }
+
     return Array.from(allCodes).map(code => {
       const kg = getKostengruppeByCode(code);
       const codeEstimates = selectedEstimateItems.filter(i => i.kostengruppe_code === code);
       const codeInvoiceItems = actualByCode.get(code) || [];
+      const codeOfferItems = offerByCode.get(code) || [];
 
       const estimatedBrutto = codeEstimates.reduce((s, i) => s + toBrutto(Number(i.estimated_amount), i.is_gross), 0);
       const actualBrutto = codeInvoiceItems.reduce((s, item) => s + toBrutto(item.allocatedAmount, item.invoice.is_gross), 0);
       const difference = actualBrutto - estimatedBrutto;
       const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;
+      const offerBrutto = codeOfferItems.reduce((s, d) => s + toBrutto(d.amount, d.is_gross), 0);
 
-      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems };
+      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems, offerBrutto, offerItems: codeOfferItems };
     }).sort((a, b) => a.code.localeCompare(b.code));
-  }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations]);
+  }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations, offersActive, allOfferItems, selectedOfferIds, offerMap]);
 
   const totals = useMemo(() => ({
     estimated: comparisons.reduce((s, c) => s + c.estimatedBrutto, 0),
     actual: comparisons.reduce((s, c) => s + c.actualBrutto, 0),
     difference: comparisons.reduce((s, c) => s + c.difference, 0),
+    offer: comparisons.reduce((s, c) => s + c.offerBrutto, 0),
   }), [comparisons]);
 
   const formatCurrency = (amount: number) => formatAmount(amount);
@@ -180,8 +222,34 @@ export const Comparison: React.FC = () => {
           </Card>
         )}
 
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* Offer selector */}
+        {offers.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Angebote einbeziehen</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-4">
+                {offers.map(offer => (
+                  <label key={offer.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={selectedOfferIds.has(offer.id)}
+                      onCheckedChange={() => toggleOffer(offer.id)}
+                    />
+                    <span>{offer.company_name} — {offer.title}</span>
+                    <span className="text-muted-foreground">({formatCurrency(offer.total_amount)})</span>
+                  </label>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className={`grid gap-4 ${offersActive ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Geschätzt (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.estimated)}</div></CardContent></Card>
+          {offersActive && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Angebot (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.offer)}</div></CardContent></Card>
+          )}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Tatsächlich (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.actual)}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Differenz</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold ${totals.difference > 0 ? 'text-destructive' : 'text-green-600'}`}>{totals.difference > 0 ? '+' : ''}{formatCurrency(totals.difference)}</div></CardContent></Card>
         </div>
@@ -196,6 +264,7 @@ export const Comparison: React.FC = () => {
                   <TableHead>Code</TableHead>
                   <TableHead>Kostengruppe</TableHead>
                   <TableHead className="text-right">Soll (brutto)</TableHead>
+                  {offersActive && <TableHead className="text-right">Angebot (brutto)</TableHead>}
                   <TableHead className="text-right">Ist (brutto)</TableHead>
                   <TableHead className="text-right">Differenz</TableHead>
                   <TableHead className="w-32">Status</TableHead>
@@ -213,6 +282,11 @@ export const Comparison: React.FC = () => {
                           <TableCell className="font-mono">{c.code}</TableCell>
                           <TableCell>{c.name}</TableCell>
                           <TableCell className="text-right">{formatCurrency(c.estimatedBrutto)}</TableCell>
+                          {offersActive && (
+                            <TableCell className="text-right">
+                              {c.offerBrutto > 0 ? formatCurrency(c.offerBrutto) : '–'}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right">{formatCurrency(c.actualBrutto)}</TableCell>
                           <TableCell className={`text-right font-medium ${c.difference > 0 ? 'text-destructive' : c.difference < 0 ? 'text-green-600' : ''}`}>{c.difference > 0 ? '+' : ''}{formatCurrency(c.difference)}</TableCell>
                           <TableCell>
@@ -225,8 +299,8 @@ export const Comparison: React.FC = () => {
                       </CollapsibleTrigger>
                       <CollapsibleContent asChild>
                         <TableRow>
-                          <TableCell colSpan={7} className="bg-muted/30 p-0">
-                            <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} />
+                          <TableCell colSpan={offersActive ? 8 : 7} className="bg-muted/30 p-0">
+                            <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} offersActive={offersActive} />
                           </TableCell>
                         </TableRow>
                       </CollapsibleContent>
@@ -242,11 +316,12 @@ export const Comparison: React.FC = () => {
   );
 };
 
-function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
+function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offersActive }: {
   row: ComparisonRow;
   formatCurrency: (n: number) => string;
   getSplitsForInvoice: (id: string) => any[];
   profiles: { id: string; name: string }[];
+  offersActive: boolean;
 }) {
   const estNetto = row.estimateItems.reduce((s, i) => s + toNetto(Number(i.estimated_amount), i.is_gross), 0);
   const estBrutto = row.estimatedBrutto;
@@ -256,9 +331,15 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
   const invBrutto = row.actualBrutto;
   const invMwst = invBrutto - invNetto;
 
+  const offerNetto = row.offerItems.reduce((s, d) => s + toNetto(d.amount, d.is_gross), 0);
+  const offerBrutto = row.offerBrutto;
+  const offerMwst = offerBrutto - offerNetto;
+
+  const cols = offersActive ? 'md:grid-cols-3' : 'md:grid-cols-2';
+
   return (
     <div className="p-4 space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={`grid gap-4 ${cols}`}>
         {/* Estimates */}
         <div>
           <h4 className="font-semibold text-sm mb-2">Kostenschätzungen ({row.estimateItems.length})</h4>
@@ -280,6 +361,30 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
             </div>
           )}
         </div>
+
+        {/* Offers — only when active */}
+        {offersActive && (
+          <div>
+            <h4 className="font-semibold text-sm mb-2">Angebote ({row.offerItems.length})</h4>
+            {row.offerItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Keine Angebote für diese Kostengruppe</p>
+            ) : (
+              <div className="space-y-1">
+                {row.offerItems.map((d, idx) => (
+                  <div key={`${d.offer.id}-${idx}`} className="flex justify-between text-sm">
+                    <span>{d.offer.company_name}</span>
+                    <span>{formatCurrency(d.amount)} <Badge variant="outline" className="ml-1 text-xs">{d.is_gross ? 'brutto' : 'netto'}</Badge></span>
+                  </div>
+                ))}
+                <div className="border-t pt-1 mt-2 space-y-0.5 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Netto</span><span>{formatCurrency(offerNetto)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">MwSt (19%)</span><span>{formatCurrency(offerMwst)}</span></div>
+                  <div className="flex justify-between font-medium"><span>Brutto</span><span>{formatCurrency(offerBrutto)}</span></div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Invoices */}
         <div>

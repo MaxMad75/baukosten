@@ -301,7 +301,8 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
                         {formatCurrency(allocatedAmount)}
                         {isPartial && <Badge variant="outline" className="text-xs">anteilig</Badge>}
                         <Badge variant="outline" className="text-xs">{inv.is_gross ? 'brutto' : 'netto'}</Badge>
-                        {inv.is_paid && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
+                        {inv.status === 'paid' && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
+                        {inv.status === 'partially_paid' && <Badge variant="secondary" className="text-xs">teilw. bezahlt</Badge>}
                       </span>
                     </div>
                     {splits.length > 0 && (

@@ -14,6 +14,7 @@ import Comparison from "./pages/Comparison";
 import Contractors from "./pages/Contractors";
 import Documents from "./pages/Documents";
 import ConstructionJournal from "./pages/ConstructionJournal";
+import Offers from "./pages/Offers";
 import Export from "./pages/Export";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -41,6 +42,7 @@ const App = () => (
               <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
               <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
               <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
+              <Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
               <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
               <Route path="/contractors" element={<ProtectedRoute><Contractors /></ProtectedRoute>} />
               <Route path="/journal" element={<ProtectedRoute><ConstructionJournal /></ProtectedRoute>} />

@@ -263,7 +263,7 @@ export function useEstimates() {
     updateEstimateItem,
     updateEstimateNotes,
     deleteEstimateItem,
-    getItemsByEstimate,
+    getItemsByEstimateIds,
     getAllEstimatedAmounts,
   };
 }

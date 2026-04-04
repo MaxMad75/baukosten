@@ -159,7 +159,9 @@ export const Comparison: React.FC = () => {
       const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;
       const offerBrutto = codeOfferItems.reduce((s, d) => s + toBrutto(d.amount, d.is_gross), 0);
 
-      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems, offerBrutto, offerItems: codeOfferItems };
+      const offerVsEstimate = offersActive ? (offerBrutto - estimatedBrutto) : 0;
+
+      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems, offerBrutto, offerItems: codeOfferItems, offerVsEstimate };
     }).sort((a, b) => a.code.localeCompare(b.code));
   }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations, offersActive, allOfferItems, selectedOfferIds, offerMap]);
 

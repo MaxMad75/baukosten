@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors } from '@/hooks/useContractors';
 import { useInvoices } from '@/hooks/useInvoices';
+import { useOffers } from '@/hooks/useOffers';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { extractTextFromExcel } from '@/utils/excelExtractor';
 import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';

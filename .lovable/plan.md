@@ -1,111 +1,116 @@
 
 
-# Rechnungsaufteilung auf mehrere Zahler
+# Invoice Domain Model Improvement
 
-## Uebersicht
+## Problem
+The current invoice model uses simplistic booleans (`is_paid`, `paid_by_profile_id`) for payment tracking, has no formal status workflow, and no support for partial payments. The payer split (who bears the cost internally) is conflated with actual payment events.
 
-Neue Tabelle `invoice_splits` speichert Kostenanteile pro Rechnung und Person. Die bestehende Einzelzahler-Logik (`paid_by_profile_id`) bleibt erhalten und wird als Fallback genutzt, wenn keine Splits existieren. Alle Auswertungen (Pie-Chart, Dashboard, Export, Soll/Ist) werden auf die neue Split-Logik umgestellt.
+## Current State
+- **invoices** table: `is_paid` boolean, `paid_by_profile_id`, `payment_date` — flat, single-payment model
+- **invoice_splits** table: cost distribution per household member (already exists, works)
+- **documents** table: linked via `invoice_id` (already exists)
+- UI: binary paid/unpaid toggle, single payer select or multi-split
+
+## Plan
+
+### Step 0: Fix Estimates.tsx TS1128 build error
+Re-write the last few lines of `src/pages/Estimates.tsx` to eliminate any invisible/corrupt characters causing the TS1128 error at line 1298.
+
+### Step 1: Database migration — add `invoice_status` and `invoice_payments` table
+
+**Add status column to invoices:**
+```text
+ALTER TABLE invoices ADD COLUMN status text NOT NULL DEFAULT 'draft';
+-- Migrate existing data:
+-- is_paid = true  → status = 'paid'
+-- is_paid = false → status = 'draft'
+```
+
+Valid statuses: `draft`, `review_needed`, `approved`, `partially_paid`, `paid`, `cancelled`
+
+**Add `net_amount` and `tax_amount` columns:**
+```text
+ALTER TABLE invoices ADD COLUMN net_amount numeric NULL;
+ALTER TABLE invoices ADD COLUMN tax_amount numeric NULL;
+```
+These are optional — `amount` remains the primary field (gross or net based on `is_gross`). When provided, validation ensures `net_amount + tax_amount ≈ gross amount` (within 0.02 tolerance).
+
+**New table `invoice_payments`:**
+```text
+invoice_payments
+  id             uuid PK DEFAULT gen_random_uuid()
+  invoice_id     uuid NOT NULL FK → invoices(id) ON DELETE CASCADE
+  profile_id     uuid NOT NULL FK → profiles(id)
+  amount         numeric NOT NULL
+  payment_date   date NOT NULL
+  notes          text NULL
+  created_at     timestamptz DEFAULT now()
+```
+RLS: same pattern as invoice_splits (JOIN on invoices.household_id).
+
+**Data migration for existing paid invoices:**
+- For each invoice where `is_paid = true`: insert one row into `invoice_payments` with `profile_id = paid_by_profile_id`, `amount = invoices.amount`, `payment_date = invoices.payment_date`.
+
+The old columns (`is_paid`, `paid_by_profile_id`, `payment_date`) remain for backward compatibility but become secondary — status is now the source of truth.
+
+### Step 2: Type updates (`src/lib/types.ts`)
+
+```text
++ InvoiceStatus = 'draft' | 'review_needed' | 'approved' | 'partially_paid' | 'paid' | 'cancelled'
+
+  Invoice: add status, net_amount, tax_amount fields
+
++ InvoicePayment { id, invoice_id, profile_id, amount, payment_date, notes, created_at }
+```
+
+### Step 3: New hook `src/hooks/useInvoicePayments.ts`
+
+- `fetchPaymentsForInvoice(invoiceId)` — loads payments for one invoice
+- `fetchAllPayments()` — loads all payments for household (for aggregations)
+- `addPayment(invoiceId, profileId, amount, date, notes?)` — inserts payment + auto-updates invoice status
+- `deletePayment(paymentId)` — removes payment + recalculates status
+- `deriveStatus(invoice, payments)` — helper: if total payments >= invoice amount → 'paid', if > 0 → 'partially_paid', else keep current status
+
+### Step 4: Validation utilities (`src/utils/invoiceValidation.ts`)
+
+- `validateNetTaxGross(net, tax, gross, tolerance = 0.02)` — returns boolean
+- `validateSplitsSum(splits, invoiceAmount, tolerance = 0.01)` — returns boolean (already exists inline, extract to shared util)
+
+### Step 5: Minimal UI changes in `src/pages/Invoices.tsx`
+
+- **Status column**: Replace binary paid/unpaid with a Badge showing the status (color-coded)
+- **Pay dialog**: Instead of toggling `is_paid`, insert a payment record via `useInvoicePayments.addPayment()`. Allow partial amount entry. Status auto-derives.
+- **Statistics cards**: Derive paid/open amounts from `status` field instead of `is_paid` boolean
+- **"Mark as unpaid"**: Delete all payments for the invoice, reset status to previous state (approved or draft)
+- Keep all existing UI structure, dialogs, table layout, pie chart logic intact
+
+### Step 6: Update dependent modules
+
+- **`src/hooks/useInvoices.ts`**: `markAsPaid` delegates to payment creation instead of setting `is_paid`. `fetchInvoices` includes `status` in returned data.
+- **`src/pages/Comparison.tsx`**: No changes needed — uses `invoices` array which still has `amount` and `kostengruppe_code`.
+- **`src/utils/excelExport.ts`**: Add payment status column to invoices sheet. No structural changes.
+- **`src/utils/backup/export.ts` and `import.ts`**: Add `invoice_payments` to backup/restore cycle.
+
+### What stays unchanged
+- Invoice splits (cost distribution) — already clean, stays on invoice level
+- Document-to-invoice linking — already works via `invoice_id`
+- Estimate versioning, contractors, construction journal, auth — untouched
+- Dashboard, comparison page structure — untouched
 
 ---
 
-## 1. Datenbank-Migration
+## Files changed
 
-Neue Tabelle `invoice_splits`:
-
-```text
-invoice_splits
-  id                uuid  PK  DEFAULT gen_random_uuid()
-  invoice_id        uuid  NOT NULL  FK -> invoices(id) ON DELETE CASCADE
-  profile_id        uuid  NOT NULL  FK -> profiles(id)
-  amount            numeric  NOT NULL
-  percentage        numeric  NULL
-  split_type        text  NOT NULL  DEFAULT 'manual'   -- 'equal', 'manual', 'percentage'
-  created_at        timestamptz  DEFAULT now()
-```
-
-RLS-Policies: SELECT/INSERT/UPDATE/DELETE ueber JOIN auf `invoices.household_id = get_user_household_id()`.
-
-## 2. Typ-Aenderungen (`src/lib/types.ts`)
-
-```text
-+ InvoiceSplit { id, invoice_id, profile_id, amount, percentage, split_type, created_at }
-```
-
-## 3. Neuer Hook (`src/hooks/useInvoiceSplits.ts`)
-
-- `fetchSplitsForInvoice(invoiceId)` — laedt alle Splits einer Rechnung
-- `saveSplits(invoiceId, splits[])` — loescht bestehende Splits und inserted neue (Transaktion)
-- `fetchAllSplits()` — laedt alle Splits des Haushalts (fuer Auswertungen)
-
-## 4. Neue Komponente (`src/components/InvoiceSplitEditor.tsx`)
-
-Eigenstaendige Komponente, die im Edit-Dialog und Pay-Dialog eingebettet wird:
-
-**Props**: `invoiceAmount: number`, `profiles: Profile[]`, `splits: SplitEntry[]`, `onChange: (splits) => void`
-
-**UI-Aufbau**:
-- Drei Tabs/Buttons oben: "Gleichmaessig" | "Manuell" | "Prozentual"
-- Darunter Liste der Personen mit jeweiligem Anteil
-- "Person hinzufuegen"-Button (Dropdown mit verfuegbaren Haushaltsmitgliedern)
-- Live-Anzeige: Gesamtbetrag | Verteilt | Restbetrag
-- Validierung: Fehlermeldung wenn Summe != Rechnungsbetrag, Speichern-Button disabled
-
-**Verhalten je Modus**:
-- Gleichmaessig: Betrag wird automatisch auf alle ausgewaehlten Personen aufgeteilt
-- Manuell: Freie Betrags-Eingabe pro Person
-- Prozentual: Prozent-Eingabe pro Person, Betrag wird berechnet
-
-## 5. UI-Aenderungen Rechnungsseite (`src/pages/Invoices.tsx`)
-
-### Edit-Dialog
-- Neuer Bereich "Kostenaufteilung" unterhalb der bestehenden Felder
-- Einbettung der `InvoiceSplitEditor`-Komponente
-- Beim Speichern: Rechnung updaten UND Splits speichern
-- Default bei bestehenden Rechnungen ohne Splits: Kein Split (Einzelzahler-Logik greift)
-
-### Pay-Dialog
-- Erweitern: Statt nur einen Zahler auszuwaehlen, kann optional die Split-Komponente genutzt werden
-- Toggle "Auf mehrere Personen aufteilen"
-- Wenn aktiv: InvoiceSplitEditor anzeigen
-- Wenn nicht aktiv: Bisherige Einzelzahler-Logik
-
-### Tabelle
-- Spalte "Status/Bezahlt von": Wenn Splits vorhanden, mehrere Namen anzeigen (z.B. "A: 60%, B: 40%")
-
-### Pie-Chart
-- Berechnung anpassen: Wenn Splits vorhanden, deren `amount` je Person verwenden. Ohne Splits: Fallback auf `paid_by_profile_id`.
-
-## 6. Dashboard (`src/pages/Dashboard.tsx`)
-
-- Keine strukturellen Aenderungen noetig; die Summen kommen weiterhin aus `invoices`
-- Falls spaeter gewuenscht: Aufschluesselung pro Person
-
-## 7. Soll/Ist-Vergleich (`src/pages/Comparison.tsx`)
-
-- In der Detail-Ansicht bei Rechnungen: Falls Splits vorhanden, die Aufteilung anzeigen (wer traegt welchen Anteil)
-
-## 8. Excel-Export (`src/utils/excelExport.ts`)
-
-- Sheet "Nach Zahler": Anstatt nur `paid_by_profile_id` zu nutzen, Splits beruecksichtigen
-- Neues Sheet oder erweiterte Spalten: "Anteil" pro Person bei aufgeteilten Rechnungen
-
-## 9. Bestehende Logik / Abwaertskompatibilitaet
-
-- `paid_by_profile_id` auf `invoices` bleibt bestehen
-- Rechnungen ohne Eintraege in `invoice_splits` funktionieren wie bisher
-- Hilfsfunktion `getEffectivePayerAmounts(invoice, splits)`: Gibt Map<profileId, amount> zurueck — nutzt Splits wenn vorhanden, sonst `paid_by_profile_id` mit vollem Betrag
-
----
-
-## Dateien
-
-| Datei | Aenderung |
-|-------|-----------|
-| DB-Migration | Neue Tabelle `invoice_splits` mit RLS |
-| `src/lib/types.ts` | Neuer Typ `InvoiceSplit` |
-| `src/hooks/useInvoiceSplits.ts` | Neuer Hook (CRUD fuer Splits) |
-| `src/components/InvoiceSplitEditor.tsx` | Neue Komponente (Aufteilungs-UI) |
-| `src/pages/Invoices.tsx` | Edit-Dialog + Pay-Dialog + Pie-Chart + Tabelle anpassen |
-| `src/pages/Comparison.tsx` | Detail-Panel: Splits anzeigen |
-| `src/utils/excelExport.ts` | Sheet "Nach Zahler" auf Splits umstellen |
+| File | Change |
+|------|--------|
+| DB migration | New table `invoice_payments`, add `status`/`net_amount`/`tax_amount` to invoices, migrate existing paid data |
+| `src/lib/types.ts` | Add `InvoiceStatus`, `InvoicePayment`, extend `Invoice` |
+| `src/hooks/useInvoicePayments.ts` | New hook for payment CRUD + status derivation |
+| `src/utils/invoiceValidation.ts` | New shared validation utilities |
+| `src/hooks/useInvoices.ts` | Adapt `markAsPaid` to use payments, include `status` |
+| `src/pages/Invoices.tsx` | Status badge, partial payment in pay dialog |
+| `src/utils/excelExport.ts` | Add status column |
+| `src/utils/backup/export.ts` | Include `invoice_payments` |
+| `src/utils/backup/import.ts` | Restore `invoice_payments` |
+| `src/pages/Estimates.tsx` | Fix TS1128 (re-write closing lines) |
 

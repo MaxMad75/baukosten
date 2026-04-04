@@ -162,7 +162,41 @@ export interface InvoiceSplit {
   created_at: string;
 }
 
+export interface Offer {
+  id: string;
+  household_id: string;
+  document_id: string | null;
+  contractor_id: string | null;
+  company_name: string;
+  title: string;
+  offer_date: string | null;
+  total_amount: number;
+  is_gross: boolean;
+  notes: string | null;
+  created_by_profile_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OfferItem {
+  id: string;
+  offer_id: string;
+  kostengruppe_code: string;
+  amount: number;
+  description: string | null;
+  is_gross: boolean;
+  created_at: string;
+}
+
 export interface InvoiceAllocation {
+  id: string;
+  invoice_id: string;
+  kostengruppe_code: string;
+  estimate_item_id: string | null;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}
   id: string;
   invoice_id: string;
   kostengruppe_code: string;

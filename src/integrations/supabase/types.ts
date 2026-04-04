@@ -631,6 +631,84 @@ export type Database = {
           },
         ]
       }
+      offer_items: {
+        Row: {
+          amount: number
+          created_at: string | null
+          description: string | null
+          id: string
+          is_gross: boolean
+          kostengruppe_code: string
+          offer_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_gross?: boolean
+          kostengruppe_code: string
+          offer_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_gross?: boolean
+          kostengruppe_code?: string
+          offer_id?: string
+        }
+        Relationships: []
+      }
+      offers: {
+        Row: {
+          company_name: string
+          contractor_id: string | null
+          created_at: string | null
+          created_by_profile_id: string | null
+          document_id: string | null
+          household_id: string
+          id: string
+          is_gross: boolean
+          notes: string | null
+          offer_date: string | null
+          title: string
+          total_amount: number
+          updated_at: string | null
+        }
+        Insert: {
+          company_name: string
+          contractor_id?: string | null
+          created_at?: string | null
+          created_by_profile_id?: string | null
+          document_id?: string | null
+          household_id: string
+          id?: string
+          is_gross?: boolean
+          notes?: string | null
+          offer_date?: string | null
+          title: string
+          total_amount?: number
+          updated_at?: string | null
+        }
+        Update: {
+          company_name?: string
+          contractor_id?: string | null
+          created_at?: string | null
+          created_by_profile_id?: string | null
+          document_id?: string | null
+          household_id?: string
+          id?: string
+          is_gross?: boolean
+          notes?: string | null
+          offer_date?: string | null
+          title?: string
+          total_amount?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

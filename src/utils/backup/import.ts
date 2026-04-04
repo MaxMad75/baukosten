@@ -10,6 +10,7 @@ export interface RestoreResult {
     invoices: number;
     invoiceSplits: number;
     invoicePayments: number;
+    invoiceAllocations: number;
     estimates: number;
     estimateItems: number;
     journalEntries: number;

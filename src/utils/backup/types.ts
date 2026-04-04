@@ -16,6 +16,7 @@ export interface BackupManifest {
     invoices: number;
     invoiceSplits: number;
     invoicePayments: number;
+    invoiceAllocations: number;
     estimates: number;
     estimateItems: number;
     contractors: number;

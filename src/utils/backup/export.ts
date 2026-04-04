@@ -214,6 +214,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       invoices: backupData.data.invoices.length,
       invoiceSplits: backupData.data.invoiceSplits.length,
       invoicePayments: backupData.data.invoicePayments.length,
+      invoiceAllocations: backupData.data.invoiceAllocations.length,
       estimates: backupData.data.estimates.length,
       estimateItems: backupData.data.estimateItems.length,
       contractors: backupData.data.contractors.length,

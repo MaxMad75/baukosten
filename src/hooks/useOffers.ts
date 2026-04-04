@@ -44,8 +44,17 @@ export function useOffers() {
   };
 
   useEffect(() => {
-    fetchOffers();
+    const load = async () => {
+      await fetchOffers();
+    };
+    load();
   }, [household]);
+
+  // Fetch all offer items whenever offers change
+  useEffect(() => {
+    const ids = offers.map(o => o.id);
+    fetchAllOfferItems(ids);
+  }, [offers]);
 
   const createOffer = async (data: {
     company_name: string;

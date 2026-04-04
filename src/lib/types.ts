@@ -161,3 +161,13 @@ export interface InvoiceSplit {
   split_type: 'equal' | 'manual' | 'percentage';
   created_at: string;
 }
+
+export interface InvoiceAllocation {
+  id: string;
+  invoice_id: string;
+  kostengruppe_code: string;
+  estimate_item_id: string | null;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}

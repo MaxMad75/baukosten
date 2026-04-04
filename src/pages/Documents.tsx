@@ -64,6 +64,7 @@ export const Documents: React.FC = () => {
   const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
   const { contractors, createContractor, fetchContractors } = useContractors();
   const { createInvoice, fetchInvoices } = useInvoices();
+  const { offers, createOffer } = useOffers();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 

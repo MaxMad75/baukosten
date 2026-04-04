@@ -273,6 +273,7 @@ export const Comparison: React.FC = () => {
                   <TableHead>Kostengruppe</TableHead>
                   <TableHead className="text-right">Soll (brutto)</TableHead>
                   {offersActive && <TableHead className="text-right">Angebot (brutto)</TableHead>}
+                  {offersActive && <TableHead className="text-right">Δ Angebot/Soll</TableHead>}
                   <TableHead className="text-right">Ist (brutto)</TableHead>
                   <TableHead className="text-right">Differenz</TableHead>
                   <TableHead className="w-32">Status</TableHead>

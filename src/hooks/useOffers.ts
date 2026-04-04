@@ -8,6 +8,7 @@ export function useOffers() {
   const { household, profile } = useAuth();
   const { toast } = useToast();
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [allOfferItems, setAllOfferItems] = useState<OfferItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchOffers = async () => {
@@ -27,9 +28,33 @@ export function useOffers() {
     setLoading(false);
   };
 
+  const fetchAllOfferItems = async (offerIds: string[]) => {
+    if (offerIds.length === 0) {
+      setAllOfferItems([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('offer_items')
+      .select('*')
+      .in('offer_id', offerIds);
+
+    if (!error && data) {
+      setAllOfferItems((data as unknown as OfferItem[]) || []);
+    }
+  };
+
   useEffect(() => {
-    fetchOffers();
+    const load = async () => {
+      await fetchOffers();
+    };
+    load();
   }, [household]);
+
+  // Fetch all offer items whenever offers change
+  useEffect(() => {
+    const ids = offers.map(o => o.id);
+    fetchAllOfferItems(ids);
+  }, [offers]);
 
   const createOffer = async (data: {
     company_name: string;
@@ -138,5 +163,5 @@ export function useOffers() {
     return true;
   };
 
-  return { offers, loading, fetchOffers, createOffer, updateOffer, deleteOffer, fetchOfferItems, saveOfferItems };
+  return { offers, allOfferItems, loading, fetchOffers, createOffer, updateOffer, deleteOffer, fetchOfferItems, saveOfferItems };
 }

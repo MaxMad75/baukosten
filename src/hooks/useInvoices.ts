@@ -135,6 +135,5 @@ export function useInvoices() {
     createInvoice,
     updateInvoice,
     deleteInvoice,
-    markAsPaid,
   };
 }

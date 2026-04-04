@@ -21,7 +21,7 @@ interface ExportContext {
  */
 export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
   const { householdId, onProgress } = ctx;
-  const steps = 9;
+  const steps = 10;
   let step = 0;
   const progress = (msg: string) => {
     step++;

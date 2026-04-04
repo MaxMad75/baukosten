@@ -344,3 +344,5 @@ async function uploadAttachmentFromZip(
     return null;
   }
 }
+
+}

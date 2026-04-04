@@ -11,13 +11,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors } from '@/hooks/useContractors';
 import { useInvoices } from '@/hooks/useInvoices';
+import { useOffers } from '@/hooks/useOffers';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { extractTextFromExcel } from '@/utils/excelExtractor';
 import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt
+  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt, FileCheck
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -63,6 +64,7 @@ export const Documents: React.FC = () => {
   const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
   const { contractors, createContractor, fetchContractors } = useContractors();
   const { createInvoice, fetchInvoices } = useInvoices();
+  const { offers, createOffer } = useOffers();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +133,23 @@ export const Documents: React.FC = () => {
     });
 
     return invoice?.id || null;
+  };
+
+  /**
+   * Manually create a structured offer from a document's metadata.
+   */
+  const createOfferFromDocument = async (doc: Document) => {
+    if (offers.some(o => o.document_id === doc.id)) {
+      toast({ title: 'Hinweis', description: 'Für dieses Dokument existiert bereits ein strukturiertes Angebot.' });
+      return;
+    }
+    const companyName = getContractorName(doc.contractor_id) || doc.title;
+    await createOffer({
+      company_name: companyName,
+      title: doc.title,
+      document_id: doc.id,
+      contractor_id: doc.contractor_id || undefined,
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -434,6 +453,14 @@ export const Documents: React.FC = () => {
           </div>
         </div>
       )}
+      {formData.document_type === 'Angebot' && (
+        <div className="col-span-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+          <div className="flex items-center gap-2 font-medium">
+            <FileCheck className="h-4 w-4" />
+            Angebot erkannt – kann nach dem Speichern als strukturiertes Angebot angelegt werden
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -559,6 +586,11 @@ export const Documents: React.FC = () => {
                                 <Receipt className="mr-1 h-3 w-3" />Rechnung
                               </Badge>
                             )}
+                            {offers.some(o => o.document_id === doc.id) && (
+                              <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700">
+                                <FileCheck className="mr-1 h-3 w-3" />Angebot
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">{doc.file_name}</div>
                           {doc.description && <div className="mt-1 text-xs text-muted-foreground line-clamp-1">{doc.description}</div>}
@@ -602,6 +634,18 @@ export const Documents: React.FC = () => {
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+                          {doc.document_type === 'Angebot' && !offers.some(o => o.document_id === doc.id) && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="icon" onClick={() => createOfferFromDocument(doc)}>
+                                    <FileCheck className="h-4 w-4 text-yellow-600" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Angebot strukturieren</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                           <Button variant="ghost" size="icon" onClick={() => handleDownload(doc)} title="Herunterladen">
                             <ExternalLink className="h-4 w-4" />
                           </Button>

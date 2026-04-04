@@ -634,6 +634,18 @@ export const Documents: React.FC = () => {
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+                          {doc.document_type === 'Angebot' && !offers.some(o => o.document_id === doc.id) && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="icon" onClick={() => createOfferFromDocument(doc)}>
+                                    <FileCheck className="h-4 w-4 text-yellow-600" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Angebot strukturieren</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                           <Button variant="ghost" size="icon" onClick={() => handleDownload(doc)} title="Herunterladen">
                             <ExternalLink className="h-4 w-4" />
                           </Button>

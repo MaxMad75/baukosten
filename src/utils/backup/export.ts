@@ -42,11 +42,12 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     .select('*')
     .eq('household_id', householdId);
 
-  // 3. Invoice splits
+  // 3. Invoice splits, payments, allocations
   progress('Kostenaufteilungen laden…');
   const invoiceIds = (invoices || []).map((i: any) => i.id);
   let splits: any[] = [];
   let payments: any[] = [];
+  let allocations: any[] = [];
   if (invoiceIds.length > 0) {
     const { data: splitsData } = await supabase
       .from('invoice_splits')
@@ -59,6 +60,12 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       .select('*')
       .in('invoice_id', invoiceIds);
     payments = paymentsData || [];
+
+    const { data: allocData } = await supabase
+      .from('invoice_allocations')
+      .select('*')
+      .in('invoice_id', invoiceIds);
+    allocations = allocData || [];
   }
 
   // 4. Estimates + items

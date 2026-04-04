@@ -50,7 +50,7 @@ export function useInvoices() {
         kostengruppe_code: invoiceData.kostengruppe_code || null,
         file_path: invoiceData.file_path || null,
         file_name: invoiceData.file_name || null,
-        is_paid: invoiceData.is_paid || false,
+        
         ai_extracted: invoiceData.ai_extracted || false,
         is_gross: invoiceData.is_gross ?? true,
         status: invoiceData.status || 'draft',
@@ -125,13 +125,8 @@ export function useInvoices() {
     return true;
   };
 
-  const markAsPaid = async (id: string, paidByProfileId: string, paymentDate: string) => {
-    return updateInvoice(id, {
-      is_paid: true,
-      paid_by_profile_id: paidByProfileId,
-      payment_date: paymentDate,
-    });
-  };
+
+
 
   return {
     invoices,
@@ -140,6 +135,5 @@ export function useInvoices() {
     createInvoice,
     updateInvoice,
     deleteInvoice,
-    markAsPaid,
   };
 }

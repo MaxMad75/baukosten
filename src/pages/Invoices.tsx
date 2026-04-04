@@ -145,6 +145,14 @@ export const Invoices: React.FC = () => {
       toast({ title: 'Fehler', description: 'Bitte füllen Sie alle Pflichtfelder aus', variant: 'destructive' });
       return;
     }
+    // Enforce cost group assignment
+    const hasKg = useMultiAllocation
+      ? editAllocations.some(a => !!a.kostengruppe_code)
+      : !!editFormData.kostengruppe_code;
+    if (!hasKg) {
+      toast({ title: 'Fehler', description: 'Bitte weisen Sie mindestens eine Kostengruppe zu', variant: 'destructive' });
+      return;
+    }
     if (editSplits.length > 0) {
       const totalAssigned = editSplits.reduce((s, e) => s + e.amount, 0);
       const invoiceAmt = parseFloat(editFormData.amount);
@@ -222,13 +230,11 @@ export const Invoices: React.FC = () => {
       }
       if (success) {
         await saveSplits(selectedInvoice, paySplits);
-        await updateInvoice(selectedInvoice, { paid_by_profile_id: paySplits[0].profile_id });
       }
     } else {
       if (!paymentData.paid_by_profile_id) return;
       const payAmount = paymentData.amount ? parseFloat(paymentData.amount) : Number(inv.amount);
       await addPayment(selectedInvoice, paymentData.paid_by_profile_id, payAmount, paymentData.payment_date);
-      await updateInvoice(selectedInvoice, { paid_by_profile_id: paymentData.paid_by_profile_id });
     }
 
     await fetchInvoices();
@@ -239,7 +245,6 @@ export const Invoices: React.FC = () => {
 
   const handleResetPayments = async (invoiceId: string) => {
     await deleteAllPayments(invoiceId);
-    await updateInvoice(invoiceId, { is_paid: false, paid_by_profile_id: null, payment_date: null, status: 'draft' });
     await saveSplits(invoiceId, []);
     await fetchInvoices();
   };
@@ -566,9 +571,14 @@ export const Invoices: React.FC = () => {
                 <Select value={editFormData.status} onValueChange={(v) => setEditFormData({ ...editFormData, status: v as InvoiceStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                      <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                    ))}
+                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+                      const isPaymentDerived = key === 'paid' || key === 'partially_paid';
+                      return (
+                        <SelectItem key={key} value={key} disabled={isPaymentDerived}>
+                          {cfg.label}{isPaymentDerived ? ' (automatisch)' : ''}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -614,14 +624,13 @@ export const Invoices: React.FC = () => {
                   {editAllocations.map((alloc, idx) => {
                     const matchingItems = getEstimateItemsForKg(alloc.kostengruppe_code);
                     return (
-                      <div key={idx} className="grid gap-2 grid-cols-[1fr_1fr_auto_auto] items-end">
+                      <div key={idx} className="grid gap-2 grid-cols-[1fr_1fr_100px_auto] items-end">
                         <div className="space-y-1">
                           <Label className="text-xs">Kostengruppe</Label>
                           <KostengruppenSelect
                             value={alloc.kostengruppe_code}
                             onValueChange={(v) => {
                               updateAllocationRow(idx, 'kostengruppe_code', v);
-                              // Reset estimate item when KG changes
                               updateAllocationRow(idx, 'estimate_item_id', null);
                             }}
                           />
@@ -646,30 +655,19 @@ export const Invoices: React.FC = () => {
                               </Select>
                             </>
                           ) : (
-                            <>
-                              <Label className="text-xs">Betrag</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={alloc.amount}
-                                onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
-                                className="h-9"
-                              />
-                            </>
+                            <div className="h-9" />
                           )}
                         </div>
-                        {matchingItems.length > 0 && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Betrag</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={alloc.amount}
-                              onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
-                              className="h-9 w-28"
-                            />
-                          </div>
-                        )}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Betrag</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={alloc.amount}
+                            onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
+                            className="h-9"
+                          />
+                        </div>
                         <Button size="icon" variant="ghost" onClick={() => removeAllocationRow(idx)} className="h-9 w-9">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>

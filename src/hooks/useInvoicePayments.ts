@@ -53,9 +53,10 @@ export function useInvoicePayments() {
     if (currentStatus === 'cancelled') return 'cancelled';
     if (totalPaid >= invoiceAmount - 0.01) return 'paid';
     if (totalPaid > 0) return 'partially_paid';
-    // If no payments, keep approved or draft
-    if (currentStatus === 'approved' || currentStatus === 'review_needed') return currentStatus;
-    return 'draft';
+    // No payments: if previously payment-derived, fall back to approved (not draft)
+    if (currentStatus === 'paid' || currentStatus === 'partially_paid') return 'approved';
+    // Otherwise keep current manual status
+    return currentStatus;
   };
 
   const addPayment = async (
@@ -125,23 +126,27 @@ export function useInvoicePayments() {
 
     if (!invoice) return;
 
-    // Get total payments
+    // Get all payments for this invoice
     const { data: payments } = await supabase
       .from('invoice_payments')
-      .select('amount')
-      .eq('invoice_id', invoiceId);
+      .select('amount, profile_id, payment_date')
+      .eq('invoice_id', invoiceId)
+      .order('payment_date', { ascending: false });
 
     const totalPaid = (payments || []).reduce((s, p) => s + Number(p.amount), 0);
     const newStatus = deriveStatus(invoice.status as InvoiceStatus, Number(invoice.amount), totalPaid);
     const isPaid = newStatus === 'paid';
+
+    // Centralized legacy field sync — this is the ONLY place these fields are written
+    const latestPayment = payments && payments.length > 0 ? payments[0] : null;
 
     await supabase
       .from('invoices')
       .update({
         status: newStatus,
         is_paid: isPaid,
-        // Keep backward compat fields in sync
-        payment_date: isPaid ? new Date().toISOString().split('T')[0] : null,
+        payment_date: isPaid && latestPayment ? latestPayment.payment_date : null,
+        paid_by_profile_id: isPaid && latestPayment ? latestPayment.profile_id : null,
       })
       .eq('id', invoiceId);
   };

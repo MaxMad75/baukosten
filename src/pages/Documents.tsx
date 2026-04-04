@@ -135,6 +135,23 @@ export const Documents: React.FC = () => {
     return invoice?.id || null;
   };
 
+  /**
+   * Manually create a structured offer from a document's metadata.
+   */
+  const createOfferFromDocument = async (doc: Document) => {
+    if (offers.some(o => o.document_id === doc.id)) {
+      toast({ title: 'Hinweis', description: 'Für dieses Dokument existiert bereits ein strukturiertes Angebot.' });
+      return;
+    }
+    const companyName = getContractorName(doc.contractor_id) || doc.title;
+    await createOffer({
+      company_name: companyName,
+      title: doc.title,
+      document_id: doc.id,
+      contractor_id: doc.contractor_id || undefined,
+    });
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

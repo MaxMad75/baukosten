@@ -165,12 +165,14 @@ export const Comparison: React.FC = () => {
     }).sort((a, b) => a.code.localeCompare(b.code));
   }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations, offersActive, allOfferItems, selectedOfferIds, offerMap]);
 
-  const totals = useMemo(() => ({
-    estimated: comparisons.reduce((s, c) => s + c.estimatedBrutto, 0),
-    actual: comparisons.reduce((s, c) => s + c.actualBrutto, 0),
-    difference: comparisons.reduce((s, c) => s + c.difference, 0),
-    offer: comparisons.reduce((s, c) => s + c.offerBrutto, 0),
-  }), [comparisons]);
+  const totals = useMemo(() => {
+    const estimated = comparisons.reduce((s, c) => s + c.estimatedBrutto, 0);
+    const actual = comparisons.reduce((s, c) => s + c.actualBrutto, 0);
+    const difference = comparisons.reduce((s, c) => s + c.difference, 0);
+    const offer = comparisons.reduce((s, c) => s + c.offerBrutto, 0);
+    const offerVsEstimate = comparisons.reduce((s, c) => s + c.offerVsEstimate, 0);
+    return { estimated, actual, difference, offer, offerVsEstimate };
+  }, [comparisons]);
 
   const formatCurrency = (amount: number) => formatAmount(amount);
 

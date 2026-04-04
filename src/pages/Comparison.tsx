@@ -39,6 +39,7 @@ interface ComparisonRow {
   invoiceItems: Array<{ invoice: Invoice; allocatedAmount: number }>;
   offerBrutto: number;
   offerItems: OfferDetail[];
+  offerVsEstimate: number;
 }
 
 export const Comparison: React.FC = () => {
@@ -158,16 +159,20 @@ export const Comparison: React.FC = () => {
       const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;
       const offerBrutto = codeOfferItems.reduce((s, d) => s + toBrutto(d.amount, d.is_gross), 0);
 
-      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems, offerBrutto, offerItems: codeOfferItems };
+      const offerVsEstimate = offersActive ? (offerBrutto - estimatedBrutto) : 0;
+
+      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems, offerBrutto, offerItems: codeOfferItems, offerVsEstimate };
     }).sort((a, b) => a.code.localeCompare(b.code));
   }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations, offersActive, allOfferItems, selectedOfferIds, offerMap]);
 
-  const totals = useMemo(() => ({
-    estimated: comparisons.reduce((s, c) => s + c.estimatedBrutto, 0),
-    actual: comparisons.reduce((s, c) => s + c.actualBrutto, 0),
-    difference: comparisons.reduce((s, c) => s + c.difference, 0),
-    offer: comparisons.reduce((s, c) => s + c.offerBrutto, 0),
-  }), [comparisons]);
+  const totals = useMemo(() => {
+    const estimated = comparisons.reduce((s, c) => s + c.estimatedBrutto, 0);
+    const actual = comparisons.reduce((s, c) => s + c.actualBrutto, 0);
+    const difference = comparisons.reduce((s, c) => s + c.difference, 0);
+    const offer = comparisons.reduce((s, c) => s + c.offerBrutto, 0);
+    const offerVsEstimate = comparisons.reduce((s, c) => s + c.offerVsEstimate, 0);
+    return { estimated, actual, difference, offer, offerVsEstimate };
+  }, [comparisons]);
 
   const formatCurrency = (amount: number) => formatAmount(amount);
 
@@ -245,13 +250,16 @@ export const Comparison: React.FC = () => {
           </Card>
         )}
 
-        <div className={`grid gap-4 ${offersActive ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+        <div className={`grid gap-4 ${offersActive ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Geschätzt (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.estimated)}</div></CardContent></Card>
           {offersActive && (
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Angebot (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.offer)}</div></CardContent></Card>
           )}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Tatsächlich (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.actual)}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Differenz</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold ${totals.difference > 0 ? 'text-destructive' : 'text-green-600'}`}>{totals.difference > 0 ? '+' : ''}{formatCurrency(totals.difference)}</div></CardContent></Card>
+          {offersActive && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Δ Angebot/Soll</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold ${totals.offerVsEstimate > 0 ? 'text-destructive' : totals.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>{totals.offerVsEstimate > 0 ? '+' : ''}{formatCurrency(totals.offerVsEstimate)}</div></CardContent></Card>
+          )}
         </div>
 
         <Card>
@@ -265,6 +273,7 @@ export const Comparison: React.FC = () => {
                   <TableHead>Kostengruppe</TableHead>
                   <TableHead className="text-right">Soll (brutto)</TableHead>
                   {offersActive && <TableHead className="text-right">Angebot (brutto)</TableHead>}
+                  {offersActive && <TableHead className="text-right">Δ Angebot/Soll</TableHead>}
                   <TableHead className="text-right">Ist (brutto)</TableHead>
                   <TableHead className="text-right">Differenz</TableHead>
                   <TableHead className="w-32">Status</TableHead>
@@ -287,6 +296,11 @@ export const Comparison: React.FC = () => {
                               {c.offerBrutto > 0 ? formatCurrency(c.offerBrutto) : '–'}
                             </TableCell>
                           )}
+                          {offersActive && (
+                            <TableCell className={`text-right font-medium ${c.offerVsEstimate > 0 ? 'text-destructive' : c.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>
+                              {c.offerBrutto > 0 || c.estimatedBrutto > 0 ? `${c.offerVsEstimate > 0 ? '+' : ''}${formatCurrency(c.offerVsEstimate)}` : '–'}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right">{formatCurrency(c.actualBrutto)}</TableCell>
                           <TableCell className={`text-right font-medium ${c.difference > 0 ? 'text-destructive' : c.difference < 0 ? 'text-green-600' : ''}`}>{c.difference > 0 ? '+' : ''}{formatCurrency(c.difference)}</TableCell>
                           <TableCell>
@@ -299,7 +313,7 @@ export const Comparison: React.FC = () => {
                       </CollapsibleTrigger>
                       <CollapsibleContent asChild>
                         <TableRow>
-                          <TableCell colSpan={offersActive ? 8 : 7} className="bg-muted/30 p-0">
+                          <TableCell colSpan={offersActive ? 9 : 7} className="bg-muted/30 p-0">
                             <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} offersActive={offersActive} />
                           </TableCell>
                         </TableRow>

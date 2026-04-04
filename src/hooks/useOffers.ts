@@ -8,6 +8,7 @@ export function useOffers() {
   const { household, profile } = useAuth();
   const { toast } = useToast();
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [allOfferItems, setAllOfferItems] = useState<OfferItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchOffers = async () => {

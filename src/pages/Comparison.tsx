@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useInvoices } from '@/hooks/useInvoices';
@@ -11,6 +11,7 @@ import { Invoice, ArchitectEstimateItem } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
@@ -32,13 +33,55 @@ interface ComparisonRow {
 
 export const Comparison: React.FC = () => {
   const { invoices, loading: invLoading } = useInvoices();
-  const { estimateItems, loading: estLoading } = useEstimates();
+  const { allEstimates, getItemsByEstimateIds, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getSplitsForInvoice } = useInvoiceSplits();
   const { getEffectiveAllocations } = useInvoiceAllocations();
   const { data: profiles } = useHouseholdProfiles();
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const { formatAmount } = usePrivacy();
+
+  // --- Version selection state ---
+  // Group estimates into families by root ID
+  const families = useMemo(() => {
+    const map = new Map<string, typeof allEstimates>();
+    for (const est of allEstimates) {
+      const rootId = est.parent_id || est.id;
+      const list = map.get(rootId) || [];
+      list.push(est);
+      map.set(rootId, list);
+    }
+    // Sort versions within each family
+    for (const [, versions] of map) {
+      versions.sort((a, b) => a.version_number - b.version_number);
+    }
+    return map;
+  }, [allEstimates]);
+
+  // Selected version per family (root ID → selected estimate ID)
+  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
+
+  // Initialize / update defaults when families change
+  useEffect(() => {
+    setSelectedVersions(prev => {
+      const next: Record<string, string> = {};
+      for (const [rootId, versions] of families) {
+        if (prev[rootId] && versions.some(v => v.id === prev[rootId])) {
+          next[rootId] = prev[rootId];
+        } else {
+          const active = versions.find(v => v.is_active);
+          next[rootId] = active ? active.id : versions[versions.length - 1].id;
+        }
+      }
+      return next;
+    });
+  }, [families]);
+
+  // Derive estimate items exclusively from selected versions
+  const selectedEstimateItems = useMemo(() => {
+    const ids = Object.values(selectedVersions);
+    return ids.length > 0 ? getItemsByEstimateIds(ids) : [];
+  }, [selectedVersions, getItemsByEstimateIds]);
 
   const toggleRow = (code: string) => {
     setOpenRows(prev => {
@@ -50,9 +93,8 @@ export const Comparison: React.FC = () => {
 
   const comparisons = useMemo((): ComparisonRow[] => {
     const allCodes = new Set<string>();
-    estimateItems.forEach(i => allCodes.add(i.kostengruppe_code));
+    selectedEstimateItems.forEach(i => allCodes.add(i.kostengruppe_code));
 
-    // Build per-KG actual amounts using allocations (no double-counting)
     const actualByCode = new Map<string, Array<{ invoice: Invoice; allocatedAmount: number }>>();
 
     for (const inv of invoices) {
@@ -67,20 +109,17 @@ export const Comparison: React.FC = () => {
 
     return Array.from(allCodes).map(code => {
       const kg = getKostengruppeByCode(code);
-      const codeEstimates = estimateItems.filter(i => i.kostengruppe_code === code);
+      const codeEstimates = selectedEstimateItems.filter(i => i.kostengruppe_code === code);
       const codeInvoiceItems = actualByCode.get(code) || [];
 
       const estimatedBrutto = codeEstimates.reduce((s, i) => s + toBrutto(Number(i.estimated_amount), i.is_gross), 0);
-      const actualBrutto = codeInvoiceItems.reduce((s, item) => {
-        // The allocated amount is already in the same unit as the invoice amount
-        return s + toBrutto(item.allocatedAmount, item.invoice.is_gross);
-      }, 0);
+      const actualBrutto = codeInvoiceItems.reduce((s, item) => s + toBrutto(item.allocatedAmount, item.invoice.is_gross), 0);
       const difference = actualBrutto - estimatedBrutto;
       const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;
 
       return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems };
     }).sort((a, b) => a.code.localeCompare(b.code));
-  }, [invoices, estimateItems, kostengruppen, getEffectiveAllocations]);
+  }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations]);
 
   const totals = useMemo(() => ({
     estimated: comparisons.reduce((s, c) => s + c.estimatedBrutto, 0),
@@ -101,6 +140,45 @@ export const Comparison: React.FC = () => {
           <h1 className="text-3xl font-bold">Soll/Ist-Vergleich</h1>
           <p className="text-muted-foreground">Budget vs. tatsächliche Kosten nach DIN 276 (alle Werte brutto inkl. 19% MwSt)</p>
         </div>
+
+        {/* Version selectors */}
+        {families.size > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Vergleichsbasis wählen</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-4">
+                {Array.from(families).map(([rootId, versions]) => {
+                  const rootEst = versions.find(v => v.id === rootId) || versions[0];
+                  const label = rootEst.file_name?.replace(/\.[^.]+$/, '') || `Schätzung`;
+                  return (
+                    <div key={rootId} className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">{label}</span>
+                      <Select
+                        value={selectedVersions[rootId] || ''}
+                        onValueChange={(val) => setSelectedVersions(prev => ({ ...prev, [rootId]: val }))}
+                      >
+                        <SelectTrigger className="w-[200px] h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {versions.map(v => (
+                            <SelectItem key={v.id} value={v.id}>
+                              V{v.version_number}
+                              {v.is_active && ' (aktiv)'}
+                              {v.notes ? ` – ${v.notes}` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 md:grid-cols-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Geschätzt (Brutto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(totals.estimated)}</div></CardContent></Card>

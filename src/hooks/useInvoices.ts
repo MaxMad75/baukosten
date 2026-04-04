@@ -125,13 +125,8 @@ export function useInvoices() {
     return true;
   };
 
-  const markAsPaid = async (id: string, paidByProfileId: string, paymentDate: string) => {
-    return updateInvoice(id, {
-      is_paid: true,
-      paid_by_profile_id: paidByProfileId,
-      payment_date: paymentDate,
-    });
-  };
+
+
 
   return {
     invoices,

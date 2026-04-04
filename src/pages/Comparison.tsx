@@ -5,6 +5,7 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
+import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { Invoice, ArchitectEstimateItem } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
@@ -26,7 +27,7 @@ interface ComparisonRow {
   difference: number;
   percentage: number;
   estimateItems: ArchitectEstimateItem[];
-  invoiceItems: Invoice[];
+  invoiceItems: Array<{ invoice: Invoice; allocatedAmount: number }>;
 }
 
 export const Comparison: React.FC = () => {
@@ -34,6 +35,7 @@ export const Comparison: React.FC = () => {
   const { estimateItems, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getSplitsForInvoice } = useInvoiceSplits();
+  const { getEffectiveAllocations } = useInvoiceAllocations();
   const { data: profiles } = useHouseholdProfiles();
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const { formatAmount } = usePrivacy();
@@ -49,21 +51,36 @@ export const Comparison: React.FC = () => {
   const comparisons = useMemo((): ComparisonRow[] => {
     const allCodes = new Set<string>();
     estimateItems.forEach(i => allCodes.add(i.kostengruppe_code));
-    invoices.forEach(i => i.kostengruppe_code && allCodes.add(i.kostengruppe_code));
+
+    // Build per-KG actual amounts using allocations (no double-counting)
+    const actualByCode = new Map<string, Array<{ invoice: Invoice; allocatedAmount: number }>>();
+
+    for (const inv of invoices) {
+      const allocs = getEffectiveAllocations(inv);
+      for (const alloc of allocs) {
+        allCodes.add(alloc.kostengruppe_code);
+        const existing = actualByCode.get(alloc.kostengruppe_code) || [];
+        existing.push({ invoice: inv, allocatedAmount: alloc.amount });
+        actualByCode.set(alloc.kostengruppe_code, existing);
+      }
+    }
 
     return Array.from(allCodes).map(code => {
       const kg = getKostengruppeByCode(code);
       const codeEstimates = estimateItems.filter(i => i.kostengruppe_code === code);
-      const codeInvoices = invoices.filter(i => i.kostengruppe_code === code);
+      const codeInvoiceItems = actualByCode.get(code) || [];
 
       const estimatedBrutto = codeEstimates.reduce((s, i) => s + toBrutto(Number(i.estimated_amount), i.is_gross), 0);
-      const actualBrutto = codeInvoices.reduce((s, i) => s + toBrutto(Number(i.amount), i.is_gross), 0);
+      const actualBrutto = codeInvoiceItems.reduce((s, item) => {
+        // The allocated amount is already in the same unit as the invoice amount
+        return s + toBrutto(item.allocatedAmount, item.invoice.is_gross);
+      }, 0);
       const difference = actualBrutto - estimatedBrutto;
       const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;
 
-      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoices };
+      return { code, name: kg?.name || code, estimatedBrutto, actualBrutto, difference, percentage, estimateItems: codeEstimates, invoiceItems: codeInvoiceItems };
     }).sort((a, b) => a.code.localeCompare(b.code));
-  }, [invoices, estimateItems, kostengruppen]);
+  }, [invoices, estimateItems, kostengruppen, getEffectiveAllocations]);
 
   const totals = useMemo(() => ({
     estimated: comparisons.reduce((s, c) => s + c.estimatedBrutto, 0),
@@ -157,7 +174,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
   const estBrutto = row.estimatedBrutto;
   const estMwst = estBrutto - estNetto;
 
-  const invNetto = row.invoiceItems.reduce((s, i) => s + toNetto(Number(i.amount), i.is_gross), 0);
+  const invNetto = row.invoiceItems.reduce((s, item) => s + toNetto(item.allocatedAmount, item.invoice.is_gross), 0);
   const invBrutto = row.actualBrutto;
   const invMwst = invBrutto - invNetto;
 
@@ -193,16 +210,18 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles }: {
             <p className="text-sm text-muted-foreground">Keine Rechnungen vorhanden</p>
           ) : (
             <div className="space-y-1">
-              {row.invoiceItems.map(inv => {
+              {row.invoiceItems.map(({ invoice: inv, allocatedAmount }, idx) => {
                 const splits = getSplitsForInvoice(inv.id);
+                const isPartial = allocatedAmount !== Number(inv.amount);
                 return (
-                  <div key={inv.id} className="text-sm">
+                  <div key={`${inv.id}-${idx}`} className="text-sm">
                     <div className="flex justify-between">
                       <span>
                         {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}
                       </span>
                       <span className="flex items-center gap-1">
-                        {formatCurrency(Number(inv.amount))}
+                        {formatCurrency(allocatedAmount)}
+                        {isPartial && <Badge variant="outline" className="text-xs">anteilig</Badge>}
                         <Badge variant="outline" className="text-xs">{inv.is_gross ? 'brutto' : 'netto'}</Badge>
                         {inv.is_paid && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
                       </span>

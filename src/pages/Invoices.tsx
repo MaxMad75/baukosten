@@ -8,7 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
+import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
+import { useEstimates } from '@/hooks/useEstimates';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
@@ -21,7 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import {
-  Loader2, CheckCircle2, XCircle, Euro, Trash2, Edit, Save, TrendingUp, Receipt, CreditCard,
+  Loader2, CheckCircle2, XCircle, Euro, Trash2, Edit, Save, TrendingUp, Receipt, CreditCard, Plus, Link2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -36,6 +38,9 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import {
+  Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const PIE_COLORS = ['hsl(220, 70%, 55%)', 'hsl(150, 60%, 45%)', 'hsl(35, 85%, 55%)', 'hsl(0, 70%, 55%)', 'hsl(270, 60%, 55%)', 'hsl(180, 50%, 45%)'];
 
@@ -48,10 +53,19 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; variant: 'default' |
   cancelled: { label: 'Storniert', variant: 'destructive', className: '' },
 };
 
+interface AllocationRow {
+  kostengruppe_code: string;
+  estimate_item_id: string | null;
+  amount: string;
+  notes: string;
+}
+
 export const Invoices: React.FC = () => {
   const { invoices, loading, updateInvoice, deleteInvoice, fetchInvoices } = useInvoices();
   const { getPaymentsForInvoice, getTotalPaid, addPayment, deleteAllPayments, fetchAllPayments } = useInvoicePayments();
+  const { getAllocationsForInvoice, getEffectiveAllocations, saveAllocations, fetchAllAllocations } = useInvoiceAllocations();
   const { getKostengruppeByCode } = useKostengruppen();
+  const { estimateItems: activeEstimateItems } = useEstimates();
   const { profile } = useAuth();
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
@@ -72,6 +86,10 @@ export const Invoices: React.FC = () => {
   // Split state for edit dialog
   const [editSplits, setEditSplits] = useState<SplitEntry[]>([]);
   const [editSplitMode, setEditSplitMode] = useState<SplitMode>('equal');
+
+  // Allocation state for edit dialog
+  const [useMultiAllocation, setUseMultiAllocation] = useState(false);
+  const [editAllocations, setEditAllocations] = useState<AllocationRow[]>([]);
 
   // Pay dialog state
   const [paymentData, setPaymentData] = useState({
@@ -103,6 +121,22 @@ export const Invoices: React.FC = () => {
       setEditSplits([]);
       setEditSplitMode('equal');
     }
+
+    // Load allocations
+    const existingAllocs = getAllocationsForInvoice(invoice.id);
+    if (existingAllocs.length > 1) {
+      setUseMultiAllocation(true);
+      setEditAllocations(existingAllocs.map(a => ({
+        kostengruppe_code: a.kostengruppe_code,
+        estimate_item_id: a.estimate_item_id,
+        amount: String(a.amount),
+        notes: a.notes || '',
+      })));
+    } else {
+      setUseMultiAllocation(false);
+      setEditAllocations([]);
+    }
+
     setIsEditOpen(true);
   };
 
@@ -120,19 +154,51 @@ export const Invoices: React.FC = () => {
       }
     }
 
+    const invoiceAmt = parseFloat(editFormData.amount);
+
+    // Determine the primary kostengruppe_code (for legacy column)
+    let primaryKg = editFormData.kostengruppe_code || null;
+    if (useMultiAllocation && editAllocations.length > 0) {
+      primaryKg = editAllocations[0].kostengruppe_code || null;
+    }
+
     const success = await updateInvoice(editingInvoice.id, {
       company_name: editFormData.company_name,
       invoice_number: editFormData.invoice_number || null,
       invoice_date: editFormData.invoice_date,
-      amount: parseFloat(editFormData.amount),
+      amount: invoiceAmt,
       description: editFormData.description || null,
-      kostengruppe_code: editFormData.kostengruppe_code || null,
+      kostengruppe_code: primaryKg,
       is_gross: editFormData.is_gross,
       status: editFormData.status,
     });
 
     if (success) {
       await saveSplits(editingInvoice.id, editSplits);
+
+      // Save allocations
+      if (useMultiAllocation && editAllocations.length > 0) {
+        const allocInputs = editAllocations.map(a => ({
+          kostengruppe_code: a.kostengruppe_code,
+          estimate_item_id: a.estimate_item_id || null,
+          amount: parseFloat(a.amount) || 0,
+          notes: a.notes || null,
+        }));
+        await saveAllocations(
+          editingInvoice.id,
+          allocInputs,
+          invoiceAmt,
+          activeEstimateItems.map(ei => ({ id: ei.id, kostengruppe_code: ei.kostengruppe_code }))
+        );
+      } else if (editFormData.kostengruppe_code) {
+        // Single allocation - save as one row
+        await saveAllocations(
+          editingInvoice.id,
+          [{ kostengruppe_code: editFormData.kostengruppe_code, amount: invoiceAmt }],
+          invoiceAmt
+        );
+      }
+
       setIsEditOpen(false);
       setEditingInvoice(null);
     }
@@ -149,7 +215,6 @@ export const Invoices: React.FC = () => {
         toast({ title: 'Fehler', description: 'Die Kostenaufteilung stimmt nicht mit dem Rechnungsbetrag überein', variant: 'destructive' });
         return;
       }
-      // Create a payment for each split payer
       let success = true;
       for (const split of paySplits) {
         const ok = await addPayment(selectedInvoice, split.profile_id, split.amount, paymentData.payment_date);
@@ -157,14 +222,12 @@ export const Invoices: React.FC = () => {
       }
       if (success) {
         await saveSplits(selectedInvoice, paySplits);
-        // Sync backward compat
         await updateInvoice(selectedInvoice, { paid_by_profile_id: paySplits[0].profile_id });
       }
     } else {
       if (!paymentData.paid_by_profile_id) return;
       const payAmount = paymentData.amount ? parseFloat(paymentData.amount) : Number(inv.amount);
       await addPayment(selectedInvoice, paymentData.paid_by_profile_id, payAmount, paymentData.payment_date);
-      // Sync backward compat
       await updateInvoice(selectedInvoice, { paid_by_profile_id: paymentData.paid_by_profile_id });
     }
 
@@ -202,6 +265,25 @@ export const Invoices: React.FC = () => {
     setIsPayDialogOpen(true);
   };
 
+  // Allocation editor helpers
+  const addAllocationRow = () => {
+    setEditAllocations(prev => [...prev, { kostengruppe_code: '', estimate_item_id: null, amount: '', notes: '' }]);
+  };
+
+  const updateAllocationRow = (idx: number, field: keyof AllocationRow, value: string | null) => {
+    setEditAllocations(prev => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+  };
+
+  const removeAllocationRow = (idx: number) => {
+    setEditAllocations(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // Get estimate items filtered by kostengruppe_code for a given allocation row
+  const getEstimateItemsForKg = (kgCode: string) => {
+    if (!kgCode) return [];
+    return activeEstimateItems.filter(ei => ei.kostengruppe_code === kgCode);
+  };
+
   // Statistics using status
   const totalAmount = invoices.reduce((s, i) => s + Number(i.amount), 0);
   const paidAmount = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.amount), 0);
@@ -232,6 +314,54 @@ export const Invoices: React.FC = () => {
 
   const selectedInvoiceObj = selectedInvoice ? invoices.find(i => i.id === selectedInvoice) : null;
   const selectedRemainingAmount = selectedInvoiceObj ? Number(selectedInvoiceObj.amount) - getTotalPaid(selectedInvoiceObj.id) : 0;
+
+  // Allocation summary helper for invoice list
+  const renderAllocationSummary = (invoice: Invoice) => {
+    const allocs = getAllocationsForInvoice(invoice.id);
+    if (allocs.length === 0) {
+      // Legacy fallback
+      const kg = getKostengruppeByCode(invoice.kostengruppe_code || '');
+      if (kg) return <span className="text-sm">{kg.code} - {kg.name}</span>;
+      return <span className="text-sm text-muted-foreground">–</span>;
+    }
+    if (allocs.length === 1) {
+      const kg = getKostengruppeByCode(allocs[0].kostengruppe_code);
+      const hasEstLink = !!allocs[0].estimate_item_id;
+      return (
+        <span className="text-sm flex items-center gap-1">
+          {kg ? `${kg.code} - ${kg.name}` : allocs[0].kostengruppe_code}
+          {hasEstLink && <Link2 className="h-3 w-3 text-muted-foreground" />}
+        </span>
+      );
+    }
+    // Multiple allocations
+    const hasEstLinks = allocs.some(a => a.estimate_item_id);
+    return (
+      <TooltipProvider>
+        <UiTooltip>
+          <TooltipTrigger asChild>
+            <span className="text-sm flex items-center gap-1 cursor-help">
+              <Badge variant="outline" className="text-xs">{allocs.length} Zuordnungen</Badge>
+              {hasEstLinks && <Link2 className="h-3 w-3 text-muted-foreground" />}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            <div className="space-y-1">
+              {allocs.map((a, idx) => {
+                const kg = getKostengruppeByCode(a.kostengruppe_code);
+                return (
+                  <div key={idx} className="text-xs flex justify-between gap-4">
+                    <span>{kg ? `${kg.code} ${kg.name}` : a.kostengruppe_code}</span>
+                    <span className="font-medium">{formatAmount(Number(a.amount))}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </TooltipContent>
+        </UiTooltip>
+      </TooltipProvider>
+    );
+  };
 
   return (
     <Layout>
@@ -348,7 +478,6 @@ export const Invoices: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {invoices.map((invoice) => {
-                    const kg = getKostengruppeByCode(invoice.kostengruppe_code || '');
                     const status = (invoice.status as InvoiceStatus) || 'draft';
                     const statusCfg = STATUS_CONFIG[status];
                     const totalPaid = getTotalPaid(invoice.id);
@@ -362,7 +491,7 @@ export const Invoices: React.FC = () => {
                           </div>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
-                          {kg ? <span className="text-sm">{kg.code} - {kg.name}</span> : <span className="text-sm text-muted-foreground">–</span>}
+                          {renderAllocationSummary(invoice)}
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           <div>
@@ -443,10 +572,12 @@ export const Invoices: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Kostengruppe (DIN 276)</Label>
-                <KostengruppenSelect value={editFormData.kostengruppe_code} onValueChange={(v) => setEditFormData({ ...editFormData, kostengruppe_code: v })} />
-              </div>
+              {!useMultiAllocation && (
+                <div className="space-y-2">
+                  <Label>Kostengruppe (DIN 276)</Label>
+                  <KostengruppenSelect value={editFormData.kostengruppe_code} onValueChange={(v) => setEditFormData({ ...editFormData, kostengruppe_code: v })} />
+                </div>
+              )}
               <div className="col-span-2 space-y-2">
                 <Label>Beschreibung</Label>
                 <Textarea value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} />
@@ -459,6 +590,108 @@ export const Invoices: React.FC = () => {
                 />
                 <Label htmlFor="edit-is-gross" className="cursor-pointer">Betrag inkl. MwSt (brutto)</Label>
               </div>
+            </div>
+
+            {/* Allocation Editor */}
+            <div className="space-y-3 border rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <Switch checked={useMultiAllocation} onCheckedChange={(checked) => {
+                  setUseMultiAllocation(checked);
+                  if (checked && editAllocations.length === 0) {
+                    // Initialize with current single KG if set
+                    if (editFormData.kostengruppe_code) {
+                      setEditAllocations([{ kostengruppe_code: editFormData.kostengruppe_code, estimate_item_id: null, amount: editFormData.amount, notes: '' }]);
+                    } else {
+                      setEditAllocations([{ kostengruppe_code: '', estimate_item_id: null, amount: editFormData.amount, notes: '' }]);
+                    }
+                  }
+                }} id="multi-alloc-toggle" />
+                <Label htmlFor="multi-alloc-toggle" className="cursor-pointer text-sm">Aufteilen auf mehrere Positionen</Label>
+              </div>
+
+              {useMultiAllocation && (
+                <div className="space-y-2">
+                  {editAllocations.map((alloc, idx) => {
+                    const matchingItems = getEstimateItemsForKg(alloc.kostengruppe_code);
+                    return (
+                      <div key={idx} className="grid gap-2 grid-cols-[1fr_1fr_auto_auto] items-end">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Kostengruppe</Label>
+                          <KostengruppenSelect
+                            value={alloc.kostengruppe_code}
+                            onValueChange={(v) => {
+                              updateAllocationRow(idx, 'kostengruppe_code', v);
+                              // Reset estimate item when KG changes
+                              updateAllocationRow(idx, 'estimate_item_id', null);
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          {matchingItems.length > 0 ? (
+                            <>
+                              <Label className="text-xs">Schätzposition</Label>
+                              <Select
+                                value={alloc.estimate_item_id || 'none'}
+                                onValueChange={(v) => updateAllocationRow(idx, 'estimate_item_id', v === 'none' ? null : v)}
+                              >
+                                <SelectTrigger className="h-9"><SelectValue placeholder="Optional" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Keine</SelectItem>
+                                  {matchingItems.map(ei => (
+                                    <SelectItem key={ei.id} value={ei.id}>
+                                      {formatAmount(Number(ei.estimated_amount))} {ei.notes ? `– ${ei.notes}` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </>
+                          ) : (
+                            <>
+                              <Label className="text-xs">Betrag</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={alloc.amount}
+                                onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
+                                className="h-9"
+                              />
+                            </>
+                          )}
+                        </div>
+                        {matchingItems.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Betrag</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={alloc.amount}
+                              onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
+                              className="h-9 w-28"
+                            />
+                          </div>
+                        )}
+                        <Button size="icon" variant="ghost" onClick={() => removeAllocationRow(idx)} className="h-9 w-9">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  <div className="flex items-center justify-between">
+                    <Button size="sm" variant="outline" onClick={addAllocationRow}>
+                      <Plus className="h-4 w-4 mr-1" /> Position
+                    </Button>
+                    {editAllocations.length > 0 && (
+                      <span className={`text-xs ${
+                        Math.abs(editAllocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0) - (parseFloat(editFormData.amount) || 0)) < 0.01
+                          ? 'text-green-600' : 'text-destructive'
+                      }`}>
+                        Summe: {formatAmount(editAllocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0))}
+                        {' / '}{formatAmount(parseFloat(editFormData.amount) || 0)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Split Editor in Edit Dialog */}

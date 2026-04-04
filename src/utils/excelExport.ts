@@ -64,7 +64,7 @@ function createSummarySheet(data: ExportData): any[][] {
 function createInvoicesSheet(data: ExportData): any[][] {
   const header = [
     'Rechnungsnr.', 'Datum', 'Firma', 'Beschreibung', 'Kostengruppe',
-    'Betrag', 'Brutto/Netto', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
+    'Betrag', 'Brutto/Netto', 'Status', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
   ];
 
   const rows = data.invoices.map(inv => {

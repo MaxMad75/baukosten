@@ -453,6 +453,14 @@ export const Documents: React.FC = () => {
           </div>
         </div>
       )}
+      {formData.document_type === 'Angebot' && (
+        <div className="col-span-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+          <div className="flex items-center gap-2 font-medium">
+            <FileCheck className="h-4 w-4" />
+            Angebot erkannt – kann nach dem Speichern als strukturiertes Angebot angelegt werden
+          </div>
+        </div>
+      )}
     </div>
   );
 

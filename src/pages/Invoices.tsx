@@ -145,6 +145,14 @@ export const Invoices: React.FC = () => {
       toast({ title: 'Fehler', description: 'Bitte füllen Sie alle Pflichtfelder aus', variant: 'destructive' });
       return;
     }
+    // Enforce cost group assignment
+    const hasKg = useMultiAllocation
+      ? editAllocations.some(a => !!a.kostengruppe_code)
+      : !!editFormData.kostengruppe_code;
+    if (!hasKg) {
+      toast({ title: 'Fehler', description: 'Bitte weisen Sie mindestens eine Kostengruppe zu', variant: 'destructive' });
+      return;
+    }
     if (editSplits.length > 0) {
       const totalAssigned = editSplits.reduce((s, e) => s + e.amount, 0);
       const invoiceAmt = parseFloat(editFormData.amount);

@@ -14,6 +14,7 @@ import Comparison from "./pages/Comparison";
 import Contractors from "./pages/Contractors";
 import Documents from "./pages/Documents";
 import ConstructionJournal from "./pages/ConstructionJournal";
+import Offers from "./pages/Offers";
 import Export from "./pages/Export";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";

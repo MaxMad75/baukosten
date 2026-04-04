@@ -19,6 +19,7 @@ const navItems = [
   { to: '/', icon: Home, label: 'Dashboard' },
   { to: '/invoices', icon: FileText, label: 'Rechnungen' },
   { to: '/estimates', icon: Calculator, label: 'Kostenschätzung' },
+  { to: '/offers', icon: FileText, label: 'Angebote' },
   { to: '/comparison', icon: BarChart3, label: 'Soll/Ist' },
   { to: '/documents', icon: FolderOpen, label: 'Dokumente' },
   { to: '/contractors', icon: Users, label: 'Firmen' },

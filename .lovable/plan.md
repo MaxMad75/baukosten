@@ -1,51 +1,88 @@
 
 
-# Estimate Version Comparison — Stabilization Plan
+# Offer Domain — Phase 1: Structured Entity + Management UI
 
-## Findings
+## Database Migration
 
-### 1. Comparison.tsx JSX — Structurally sound
-The JSX is clean. Version selector, comparison table, and detail panel all render correctly. No broken fragments or mismatched elements.
+Two new tables following existing patterns (household-scoped, RLS via `get_user_household_id()`):
 
-### 2. Version selector state — Correct
-- `selectedVersions` is initialized per family via `useEffect` on `families`, defaulting to `is_active` version.
-- Previous selections are preserved if the version still exists; otherwise falls back to active or latest.
-- One version per family is enforced by the `Record<string, string>` structure.
-- No issues found.
+### `offers`
+```sql
+create table public.offers (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null,
+  document_id uuid,
+  contractor_id uuid,
+  company_name text not null,
+  title text not null,
+  offer_date date,
+  total_amount numeric not null default 0,
+  is_gross boolean not null default true,
+  notes text,
+  created_by_profile_id uuid,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.offers enable row level security;
+-- Standard 4-policy CRUD on household_id = get_user_household_id()
+-- updated_at trigger using update_updated_at_column()
+```
 
-### 3. Soll values — Exclusively from selected versions
-- `selectedEstimateItems` derives from `getItemsByEstimateIds(Object.values(selectedVersions))` — correct.
-- `comparisons` useMemo uses only `selectedEstimateItems` — no mixing with `activeEstimateItems`.
-- Totals derive from `comparisons` — clean.
-- No issues found.
+### `offer_items`
+```sql
+create table public.offer_items (
+  id uuid primary key default gen_random_uuid(),
+  offer_id uuid not null,
+  kostengruppe_code text not null,
+  amount numeric not null default 0,
+  description text,
+  is_gross boolean not null default true,
+  created_at timestamptz default now()
+);
+alter table public.offer_items enable row level security;
+-- RLS via join to offers → household_id = get_user_household_id() (same pattern as invoice_allocations)
+```
 
-### 4. Actual values — Unchanged
-- Uses `getEffectiveAllocations(inv)` from the allocations hook — correct and untouched.
+## Code Changes
 
-### 5. Detail panel — Legacy `is_paid` usage (BUG)
-**Line 304**: `{inv.is_paid && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}`
+### `src/lib/types.ts`
+Add `Offer` and `OfferItem` interfaces matching the table columns.
 
-This uses the legacy `is_paid` boolean instead of the current `status` field. Should use `inv.status === 'paid'` (or include `'partially_paid'`).
+### `src/hooks/useOffers.ts`
+New hook following the `useContractors` pattern:
+- `fetchOffers()`, `createOffer()`, `updateOffer()`, `deleteOffer()`
+- `fetchOfferItems(offerId)`, `saveOfferItems(offerId, items[])`
+- Recalculate `total_amount` on the offer whenever items are saved
 
-### 6. useEstimates.ts — Both helpers present and correct
-- `getItemsByEstimate(estimateId)` — line 234, filters `estimateItems` (all items).
-- `getItemsByEstimateIds(ids)` — line 238, filters `estimateItems` (all items).
-- Both operate on the full item set, which is correct for version comparison.
+### `src/pages/Offers.tsx`
+Minimal management page following the Contractors page pattern:
+- List of offers (company, title, date, total, item count)
+- Create/edit dialog: company name, title, offer date, contractor selector (from `useContractors`), notes
+- Offer item editor: rows of cost group (KostengruppenSelect) + amount + description, add/remove rows
+- Delete with confirmation
+- Search/filter bar
 
-## Stabilization Change
+### `src/components/Layout.tsx`
+Add nav entry `{ to: '/offers', icon: FileText, label: 'Angebote' }` between Kostenschätzung and Soll/Ist.
 
-### `src/pages/Comparison.tsx`
-- **Line 304**: Replace `inv.is_paid` with `inv.status === 'paid' || inv.status === 'partially_paid'`, and show the appropriate label (`bezahlt` / `teilweise bezahlt`).
+### `src/App.tsx`
+Add route: `<Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />`
 
-That is the only issue found. Everything else is structurally sound.
+## Files
 
 | File | Change |
 |------|--------|
-| `src/pages/Comparison.tsx` | Replace legacy `is_paid` with status-based badge in detail panel |
+| New migration | Create `offers` + `offer_items` tables with RLS + trigger |
+| `src/lib/types.ts` | Add `Offer`, `OfferItem` |
+| `src/hooks/useOffers.ts` | New hook |
+| `src/pages/Offers.tsx` | New page |
+| `src/components/Layout.tsx` | Add nav entry |
+| `src/App.tsx` | Add route |
 
 ## Unchanged
-- `useEstimates.ts` (clean)
-- Version selector logic (correct)
-- Soll/Ist computation (correct)
-- All other files
+- `Comparison.tsx` — no offer column yet
+- `Documents.tsx` — no shortcut yet
+- Invoice payments, allocations, splits, status
+- Estimate versioning
+- Auth, dashboard, backup/restore, settings
 

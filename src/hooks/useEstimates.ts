@@ -235,6 +235,11 @@ export function useEstimates() {
     return estimateItems.filter(item => item.estimate_id === estimateId);
   };
 
+  const getItemsByEstimateIds = (ids: string[]): ArchitectEstimateItem[] => {
+    const idSet = new Set(ids);
+    return estimateItems.filter(item => idSet.has(item.estimate_id));
+  };
+
   const getAllEstimatedAmounts = () => {
     const totals: Record<string, number> = {};
     activeEstimateItems.forEach(item => {
@@ -259,6 +264,7 @@ export function useEstimates() {
     updateEstimateNotes,
     deleteEstimateItem,
     getItemsByEstimate,
+    getItemsByEstimateIds,
     getAllEstimatedAmounts,
   };
 }

@@ -1,37 +1,51 @@
 
 
-# Estimate Version Comparison Plan (Refined)
+# Estimate Version Comparison — Stabilization Plan
 
-## Comparison-Selection Rules
+## Findings
 
-1. **Union of selected versions**: The Soll column is computed from the union of estimate items across all selected versions — one selected version per family.
-2. **One version per family**: Component state holds a `Record<string, string>` mapping root estimate ID → selected version ID. Exactly one version is selected per family at all times.
-3. **Default = active**: On mount, each family's selection defaults to whichever version has `is_active === true`.
-4. **Empty versions are valid**: A selected version with zero estimate items contributes nothing to Soll but remains selectable in the dropdown.
-5. **Actuals unchanged**: The invoice/allocation side is completely untouched — same `getEffectiveAllocations` logic as today.
-6. **Exclusive source**: Soll values come exclusively from the selected versions' items. No mixing with the global `activeEstimateItems`. The `comparisons` useMemo replaces its current `estimateItems` input with items fetched via `getItemsByEstimateIds(Object.values(selectedVersions))`.
+### 1. Comparison.tsx JSX — Structurally sound
+The JSX is clean. Version selector, comparison table, and detail panel all render correctly. No broken fragments or mismatched elements.
 
-## Changes
+### 2. Version selector state — Correct
+- `selectedVersions` is initialized per family via `useEffect` on `families`, defaulting to `is_active` version.
+- Previous selections are preserved if the version still exists; otherwise falls back to active or latest.
+- One version per family is enforced by the `Record<string, string>` structure.
+- No issues found.
 
-### `src/hooks/useEstimates.ts`
-- Add `getItemsByEstimateIds(ids: string[]): ArchitectEstimateItem[]` — filters `allEstimateItems` (the full set, not just active) by the given estimate IDs
+### 3. Soll values — Exclusively from selected versions
+- `selectedEstimateItems` derives from `getItemsByEstimateIds(Object.values(selectedVersions))` — correct.
+- `comparisons` useMemo uses only `selectedEstimateItems` — no mixing with `activeEstimateItems`.
+- Totals derive from `comparisons` — clean.
+- No issues found.
+
+### 4. Actual values — Unchanged
+- Uses `getEffectiveAllocations(inv)` from the allocations hook — correct and untouched.
+
+### 5. Detail panel — Legacy `is_paid` usage (BUG)
+**Line 304**: `{inv.is_paid && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}`
+
+This uses the legacy `is_paid` boolean instead of the current `status` field. Should use `inv.status === 'paid'` (or include `'partially_paid'`).
+
+### 6. useEstimates.ts — Both helpers present and correct
+- `getItemsByEstimate(estimateId)` — line 234, filters `estimateItems` (all items).
+- `getItemsByEstimateIds(ids)` — line 238, filters `estimateItems` (all items).
+- Both operate on the full item set, which is correct for version comparison.
+
+## Stabilization Change
 
 ### `src/pages/Comparison.tsx`
-- Derive estimate families from `allEstimates` (group by `parent_id || id`)
-- Add local state: `selectedVersions: Record<string, string>` initialized from active versions
-- Render a version selector per family above the comparison table (small Select dropdowns showing version number + file name)
-- Replace the current `estimateItems` usage in the `comparisons` useMemo with items from `getItemsByEstimateIds(Object.values(selectedVersions))`
-- All per-KG and total Soll values derive solely from this filtered set
+- **Line 304**: Replace `inv.is_paid` with `inv.status === 'paid' || inv.status === 'partially_paid'`, and show the appropriate label (`bezahlt` / `teilweise bezahlt`).
 
-## Files
+That is the only issue found. Everything else is structurally sound.
 
 | File | Change |
 |------|--------|
-| `src/hooks/useEstimates.ts` | Add `getItemsByEstimateIds` helper |
-| `src/pages/Comparison.tsx` | Version selector UI + derive Soll from selected versions only |
+| `src/pages/Comparison.tsx` | Replace legacy `is_paid` with status-based badge in detail panel |
 
 ## Unchanged
-- Invoice payments, allocations, splits, status model
-- Estimate DB schema, `is_active` semantics, Estimates page
-- Dashboard, auth, backup/restore, documents, all other pages
+- `useEstimates.ts` (clean)
+- Version selector logic (correct)
+- Soll/Ist computation (correct)
+- All other files
 

@@ -402,6 +402,51 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_payments: {
+        Row: {
+          amount: number
+          created_at: string | null
+          id: string
+          invoice_id: string
+          notes: string | null
+          payment_date: string
+          profile_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          id?: string
+          invoice_id: string
+          notes?: string | null
+          payment_date: string
+          profile_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          id?: string
+          invoice_id?: string
+          notes?: string | null
+          payment_date?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_payments_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_splits: {
         Row: {
           amount: number
@@ -464,8 +509,11 @@ export type Database = {
           is_gross: boolean
           is_paid: boolean
           kostengruppe_code: string | null
+          net_amount: number | null
           paid_by_profile_id: string | null
           payment_date: string | null
+          status: string
+          tax_amount: number | null
           updated_at: string
         }
         Insert: {
@@ -484,8 +532,11 @@ export type Database = {
           is_gross?: boolean
           is_paid?: boolean
           kostengruppe_code?: string | null
+          net_amount?: number | null
           paid_by_profile_id?: string | null
           payment_date?: string | null
+          status?: string
+          tax_amount?: number | null
           updated_at?: string
         }
         Update: {
@@ -504,8 +555,11 @@ export type Database = {
           is_gross?: boolean
           is_paid?: boolean
           kostengruppe_code?: string | null
+          net_amount?: number | null
           paid_by_profile_id?: string | null
           payment_date?: string | null
+          status?: string
+          tax_amount?: number | null
           updated_at?: string
         }
         Relationships: [

@@ -53,6 +53,9 @@ export function useInvoices() {
         is_paid: invoiceData.is_paid || false,
         ai_extracted: invoiceData.ai_extracted || false,
         is_gross: invoiceData.is_gross ?? true,
+        status: invoiceData.status || 'draft',
+        net_amount: invoiceData.net_amount ?? null,
+        tax_amount: invoiceData.tax_amount ?? null,
         household_id: household.id,
         created_by_profile_id: profile.id,
       })

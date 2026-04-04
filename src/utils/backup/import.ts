@@ -9,6 +9,7 @@ export interface RestoreResult {
     contractors: number;
     invoices: number;
     invoiceSplits: number;
+    invoicePayments: number;
     estimates: number;
     estimateItems: number;
     journalEntries: number;
@@ -77,7 +78,7 @@ export async function restoreBackupZip(
     return { success: false, message: 'Ungültige Backup-Struktur.' };
   }
 
-  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, estimates: 0, estimateItems: 0, journalEntries: 0, documents: 0, attachments: 0 };
+  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, estimates: 0, estimateItems: 0, journalEntries: 0, documents: 0, attachments: 0 };
 
   // ID mapping: old ID -> new ID (for referential integrity)
   const contractorIdMap = new Map<string, string>();
@@ -228,6 +229,25 @@ export async function restoreBackupZip(
     if (!error) counts.invoiceSplits++;
   }
 
+  // 8b. Restore invoice payments
+  for (const payment of backup.data.invoicePayments || []) {
+    const newInvoiceId = invoiceIdMap.get(payment.invoice_id);
+    const newProfileId = profileIdMap.get(payment.profile_id);
+    if (!newInvoiceId || !newProfileId) continue;
+
+    const { error } = await supabase
+      .from('invoice_payments')
+      .insert({
+        invoice_id: newInvoiceId,
+        profile_id: newProfileId,
+        amount: payment.amount,
+        payment_date: payment.payment_date,
+        notes: payment.notes,
+      });
+
+    if (!error) counts.invoicePayments++;
+  }
+
   // 9. Restore journal entries
   progress('Bautagebuch wiederherstellen…');
   for (const entry of backup.data.journalEntries) {
@@ -323,3 +343,4 @@ async function uploadAttachmentFromZip(
     return null;
   }
 }
+

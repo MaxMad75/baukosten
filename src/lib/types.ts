@@ -23,11 +23,15 @@ export interface DIN276Kostengruppe {
   created_at: string;
 }
 
+export type InvoiceStatus = 'draft' | 'review_needed' | 'approved' | 'partially_paid' | 'paid' | 'cancelled';
+
 export interface Invoice {
   id: string;
   household_id: string;
   invoice_number: string | null;
   amount: number;
+  net_amount: number | null;
+  tax_amount: number | null;
   invoice_date: string;
   company_name: string;
   description: string | null;
@@ -39,9 +43,20 @@ export interface Invoice {
   paid_by_profile_id: string | null;
   ai_extracted: boolean;
   is_gross: boolean;
+  status: InvoiceStatus;
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface InvoicePayment {
+  id: string;
+  invoice_id: string;
+  profile_id: string;
+  amount: number;
+  payment_date: string;
+  notes: string | null;
+  created_at: string;
 }
 
 export interface ArchitectEstimate {

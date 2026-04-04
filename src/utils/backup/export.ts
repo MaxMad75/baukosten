@@ -21,7 +21,7 @@ interface ExportContext {
  */
 export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
   const { householdId, onProgress } = ctx;
-  const steps = 9;
+  const steps = 10;
   let step = 0;
   const progress = (msg: string) => {
     step++;
@@ -46,12 +46,19 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
   progress('Kostenaufteilungen laden…');
   const invoiceIds = (invoices || []).map((i: any) => i.id);
   let splits: any[] = [];
+  let payments: any[] = [];
   if (invoiceIds.length > 0) {
-    const { data } = await supabase
+    const { data: splitsData } = await supabase
       .from('invoice_splits')
       .select('*')
       .in('invoice_id', invoiceIds);
-    splits = data || [];
+    splits = splitsData || [];
+
+    const { data: paymentsData } = await supabase
+      .from('invoice_payments')
+      .select('*')
+      .in('invoice_id', invoiceIds);
+    payments = paymentsData || [];
   }
 
   // 4. Estimates + items
@@ -174,6 +181,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       })),
       invoices: (invoices || []).map((i: any) => stripHouseholdId(i)),
       invoiceSplits: splits.map((s: any) => ({ ...s })),
+      invoicePayments: payments.map((p: any) => ({ ...p })),
       estimates: (estimates || []).map((e: any) => stripHouseholdId(e)),
       estimateItems: estimateItems.map((i: any) => ({ ...i })),
       contractors: (contractors || []).map((c: any) => stripHouseholdId(c)),
@@ -197,6 +205,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       profiles: backupData.data.profiles.length,
       invoices: backupData.data.invoices.length,
       invoiceSplits: backupData.data.invoiceSplits.length,
+      invoicePayments: backupData.data.invoicePayments.length,
       estimates: backupData.data.estimates.length,
       estimateItems: backupData.data.estimateItems.length,
       contractors: backupData.data.contractors.length,

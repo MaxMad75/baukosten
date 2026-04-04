@@ -247,7 +247,6 @@ export async function restoreBackupZip(
 
     if (!error) counts.invoicePayments++;
   }
-  }
 
   // 9. Restore journal entries
   progress('Bautagebuch wiederherstellen…');

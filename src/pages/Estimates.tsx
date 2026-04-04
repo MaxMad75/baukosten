@@ -438,11 +438,6 @@ export const Estimates: React.FC = () => {
   };
 
 
-    if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
-      setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false })));
-    }
-    setShowNotEstimateWarning(false);
-  };
 
   const handleSaveExtractedItems = async () => {
     if (!pendingEstimateId || extractedItems.length === 0) return;

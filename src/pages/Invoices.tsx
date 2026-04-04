@@ -624,14 +624,13 @@ export const Invoices: React.FC = () => {
                   {editAllocations.map((alloc, idx) => {
                     const matchingItems = getEstimateItemsForKg(alloc.kostengruppe_code);
                     return (
-                      <div key={idx} className="grid gap-2 grid-cols-[1fr_1fr_auto_auto] items-end">
+                      <div key={idx} className="grid gap-2 grid-cols-[1fr_1fr_100px_auto] items-end">
                         <div className="space-y-1">
                           <Label className="text-xs">Kostengruppe</Label>
                           <KostengruppenSelect
                             value={alloc.kostengruppe_code}
                             onValueChange={(v) => {
                               updateAllocationRow(idx, 'kostengruppe_code', v);
-                              // Reset estimate item when KG changes
                               updateAllocationRow(idx, 'estimate_item_id', null);
                             }}
                           />
@@ -656,30 +655,19 @@ export const Invoices: React.FC = () => {
                               </Select>
                             </>
                           ) : (
-                            <>
-                              <Label className="text-xs">Betrag</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={alloc.amount}
-                                onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
-                                className="h-9"
-                              />
-                            </>
+                            <div className="h-9" />
                           )}
                         </div>
-                        {matchingItems.length > 0 && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Betrag</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={alloc.amount}
-                              onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
-                              className="h-9 w-28"
-                            />
-                          </div>
-                        )}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Betrag</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={alloc.amount}
+                            onChange={(e) => updateAllocationRow(idx, 'amount', e.target.value)}
+                            className="h-9"
+                          />
+                        </div>
                         <Button size="icon" variant="ghost" onClick={() => removeAllocationRow(idx)} className="h-9 w-9">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>

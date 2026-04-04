@@ -53,9 +53,9 @@ export function useInvoicePayments() {
     if (currentStatus === 'cancelled') return 'cancelled';
     if (totalPaid >= invoiceAmount - 0.01) return 'paid';
     if (totalPaid > 0) return 'partially_paid';
-    // If no payments, keep approved or draft
-    if (currentStatus === 'approved' || currentStatus === 'review_needed') return currentStatus;
-    return 'draft';
+    // No payments: preserve approved/review_needed, otherwise fallback to approved (not draft)
+    if (currentStatus === 'approved' || currentStatus === 'review_needed' || currentStatus === 'draft') return currentStatus === 'draft' ? 'approved' : currentStatus;
+    return 'approved';
   };
 
   const addPayment = async (

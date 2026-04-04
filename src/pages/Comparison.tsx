@@ -296,6 +296,11 @@ export const Comparison: React.FC = () => {
                               {c.offerBrutto > 0 ? formatCurrency(c.offerBrutto) : '–'}
                             </TableCell>
                           )}
+                          {offersActive && (
+                            <TableCell className={`text-right font-medium ${c.offerVsEstimate > 0 ? 'text-destructive' : c.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>
+                              {c.offerBrutto > 0 || c.estimatedBrutto > 0 ? `${c.offerVsEstimate > 0 ? '+' : ''}${formatCurrency(c.offerVsEstimate)}` : '–'}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right">{formatCurrency(c.actualBrutto)}</TableCell>
                           <TableCell className={`text-right font-medium ${c.difference > 0 ? 'text-destructive' : c.difference < 0 ? 'text-green-600' : ''}`}>{c.difference > 0 ? '+' : ''}{formatCurrency(c.difference)}</TableCell>
                           <TableCell>

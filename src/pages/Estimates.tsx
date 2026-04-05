@@ -128,6 +128,8 @@ interface AnalysisResult {
 
 export const Estimates: React.FC = () => {
   const { 
+    versions,
+    activeVersion,
     estimates, 
     allEstimates,
     estimateItems, 
@@ -135,9 +137,9 @@ export const Estimates: React.FC = () => {
     loading, 
     createEstimate, 
     addEstimateItems,
-    replaceEstimate,
-    getVersions,
     setActiveVersion,
+    createVersion,
+    updateVersionName,
     updateEstimateItem,
     updateEstimateNotes,
     deleteEstimateItem,

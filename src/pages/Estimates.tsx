@@ -1104,7 +1104,8 @@ export const Estimates: React.FC = () => {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              {estimateItems.length} Kostenpositionen in {estimates.length} Schätzung(en)
+              {estimateItems.length} Kostenpositionen in {estimateFamilies.length} Schätzfamilie(n)
+              {estimateFamilies.length > 0 && ' — nur aktive Versionen'}
             </p>
           </CardContent>
         </Card>

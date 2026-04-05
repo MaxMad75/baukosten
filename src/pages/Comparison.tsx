@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 
 const toBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
 const toNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
+const toBruttoTaxStatus = (amount: number, taxStatus: TaxStatus) => taxStatus === 'net' ? amount * 1.19 : amount;
 
 interface OfferDetail {
   offer: Offer;

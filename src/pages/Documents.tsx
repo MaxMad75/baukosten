@@ -145,12 +145,15 @@ export const Documents: React.FC = () => {
       return;
     }
     const companyName = getContractorName(doc.contractor_id) || doc.title;
-    await createOffer({
+    const result = await createOffer({
       company_name: companyName,
       title: doc.title,
       document_id: doc.id,
       contractor_id: doc.contractor_id || undefined,
     });
+    if (result) {
+      navigate('/offers?edit=' + result.id);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -70,10 +70,17 @@ export const Offers: React.FC = () => {
   // Auto-open edit dialog when navigated with ?edit=<offerId>
   useEffect(() => {
     const editId = searchParams.get('edit');
+    const itemsId = searchParams.get('items');
     if (editId && offers.length > 0) {
       const match = offers.find(o => o.id === editId);
       if (match) {
         openEdit(match);
+        setSearchParams({}, { replace: true });
+      }
+    } else if (itemsId && offers.length > 0) {
+      const match = offers.find(o => o.id === itemsId);
+      if (match) {
+        openItemEditor(match.id);
         setSearchParams({}, { replace: true });
       }
     }

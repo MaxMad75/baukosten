@@ -153,7 +153,7 @@ export const Documents: React.FC = () => {
       contractor_id: doc.contractor_id || undefined,
     });
     if (result) {
-      navigate('/offers?edit=' + result.id);
+      navigate('/offers?items=' + result.id);
     }
   };
 

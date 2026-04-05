@@ -81,6 +81,7 @@ export interface ArchitectEstimate {
   version_number: number;
   is_active: boolean;
   notes: string | null;
+  version_id: string | null;
 }
 
 export interface ArchitectEstimateItem {

@@ -13,11 +13,11 @@ export const useHouseholdProfiles = () => {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, user_id, household_id, name, created_at, updated_at')
         .eq('household_id', household.id);
 
       if (error) throw error;
-      return data as Profile[];
+      return (data as unknown as Profile[]);
     },
     enabled: !!household?.id,
   });

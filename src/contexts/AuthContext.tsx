@@ -97,18 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const redirectUrl = `${window.location.origin}/`;
 
-      // First create the household
-      // NOTE: We don't request the inserted row back here because SELECT on households
-      // is restricted to household members. During signup the user is still anonymous.
-      const householdId = crypto.randomUUID();
-      const { error: householdError } = await supabase
-        .from('households')
-        .insert({ id: householdId, name: 'Mein Haushalt' });
-
-      if (householdError) {
-        return { error: new Error(householdError.message) };
-      }
-      // Sign up the user
+      // Sign up the user first (must be authenticated before creating household)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -118,12 +107,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (authError) {
-        // Try to clean up household if auth failed (may be blocked by RLS; ignore in that case)
-        await supabase.from('households').delete().eq('id', householdId);
         return { error: authError };
       }
 
       if (authData.user) {
+        // Now authenticated — create household and profile
+        const householdId = crypto.randomUUID();
+        const { error: householdError } = await supabase
+          .from('households')
+          .insert({ id: householdId, name: 'Mein Haushalt' });
+
+        if (householdError) {
+          return { error: new Error(householdError.message) };
+        }
+
         // Create profile
         const { error: profileError } = await supabase
           .from('profiles')

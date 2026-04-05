@@ -84,42 +84,26 @@ export const Comparison: React.FC = () => {
     });
   };
 
-  // --- Version selection state ---
-  const families = useMemo(() => {
-    const map = new Map<string, typeof allEstimates>();
-    for (const est of allEstimates) {
-      const rootId = est.parent_id || est.id;
-      const list = map.get(rootId) || [];
-      list.push(est);
-      map.set(rootId, list);
-    }
-    for (const [, versions] of map) {
-      versions.sort((a, b) => a.version_number - b.version_number);
-    }
-    return map;
-  }, [allEstimates]);
-
-  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
+  // --- Single version selector ---
+  const [selectedVersionId, setSelectedVersionId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    setSelectedVersions(prev => {
-      const next: Record<string, string> = {};
-      for (const [rootId, versions] of families) {
-        if (prev[rootId] && versions.some(v => v.id === prev[rootId])) {
-          next[rootId] = prev[rootId];
-        } else {
-          const active = versions.find(v => v.is_active);
-          next[rootId] = active ? active.id : versions[versions.length - 1].id;
-        }
-      }
-      return next;
-    });
-  }, [families]);
+    if (!selectedVersionId && activeVersion) {
+      setSelectedVersionId(activeVersion.id);
+    }
+  }, [activeVersion, selectedVersionId]);
 
   const selectedEstimateItems = useMemo(() => {
-    const ids = Object.values(selectedVersions);
-    return ids.length > 0 ? getItemsByEstimateIds(ids) : [];
-  }, [selectedVersions, getItemsByEstimateIds]);
+    if (!selectedVersionId) return [];
+    // Block-linked items: block belongs to selected version
+    const versionBlockIds = new Set(allBlocks.filter(b => b.version_id === selectedVersionId).map(b => b.id));
+    // Legacy items: estimate belongs to selected version
+    const versionEstimateIds = new Set(allEstimates.filter(e => e.version_id === selectedVersionId).map(e => e.id));
+    return allEstimateItems.filter(i =>
+      (i.block_id && versionBlockIds.has(i.block_id)) ||
+      (!i.block_id && versionEstimateIds.has(i.estimate_id))
+    );
+  }, [selectedVersionId, allBlocks, allEstimates, allEstimateItems]);
 
   const toggleRow = (code: string) => {
     setOpenRows(prev => {

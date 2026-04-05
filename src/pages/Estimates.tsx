@@ -217,7 +217,7 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
-    is_gross: false,
+    tax_status: 'net' as TaxStatus,
   });
 
   // Auto-select active version when versions load

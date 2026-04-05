@@ -743,10 +743,12 @@ export const Estimates: React.FC = () => {
 
   const formatCurrency = (amount: number) => formatAmount(amount);
 
+  // Helper to derive tax_status from an item
+  const itemTaxStatus = (i: ArchitectEstimateItem): TaxStatus => (i.tax_status as TaxStatus) || (i.is_gross ? 'gross' : 'net');
+  const toVatInput = (i: ArchitectEstimateItem) => ({ estimated_amount: Number(i.estimated_amount), tax_status: itemTaxStatus(i) });
+
   // VAT summary
-  const globalVat = computeVatSummary(
-    displayedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
-  );
+  const globalVat = computeVatSummary(displayedItems.map(toVatInput));
 
   // Render item table (shared between blocks and legacy estimates)
   const renderItemTable = (items: ArchitectEstimateItem[]) => (

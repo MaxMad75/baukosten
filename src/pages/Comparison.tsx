@@ -61,7 +61,7 @@ interface TradeComparisonGroup {
 
 export const Comparison: React.FC = () => {
   const { invoices, loading: invLoading } = useInvoices();
-  const { allEstimates, getItemsByEstimateIds, loading: estLoading } = useEstimates();
+  const { allEstimates, allEstimateItems, allBlocks, versions, activeVersion, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getSplitsForInvoice } = useInvoiceSplits();
   const { getEffectiveAllocations } = useInvoiceAllocations();

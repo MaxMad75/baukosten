@@ -234,40 +234,32 @@ export const Comparison: React.FC = () => {
           </p>
         </div>
 
-        {/* Version selectors */}
-        {families.size > 0 && (
+        {/* Version selector */}
+        {versions.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Vergleichsbasis wählen</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-4">
-                {Array.from(families).map(([rootId, versions]) => {
-                  const rootEst = versions.find(v => v.id === rootId) || versions[0];
-                  const label = rootEst.file_name?.replace(/\.[^.]+$/, '') || `Schätzung`;
-                  return (
-                    <div key={rootId} className="flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">{label}</span>
-                      <Select
-                        value={selectedVersions[rootId] || ''}
-                        onValueChange={(val) => setSelectedVersions(prev => ({ ...prev, [rootId]: val }))}
-                      >
-                        <SelectTrigger className="w-[200px] h-8 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {versions.map(v => (
-                            <SelectItem key={v.id} value={v.id}>
-                              V{v.version_number}
-                              {v.is_active && ' (aktiv)'}
-                              {v.notes ? ` – ${v.notes}` : ''}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  );
-                })}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">Schätzungsversion</span>
+                <Select
+                  value={selectedVersionId || ''}
+                  onValueChange={(val) => setSelectedVersionId(val)}
+                >
+                  <SelectTrigger className="w-[280px] h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {versions.map(v => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name}
+                        {v.is_active && ' (aktiv)'}
+                        {v.notes ? ` – ${v.notes}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>

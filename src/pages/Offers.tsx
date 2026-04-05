@@ -67,6 +67,18 @@ export const Offers: React.FC = () => {
 
   const resetForm = () => setFormData(emptyForm);
 
+  // Auto-open edit dialog when navigated with ?edit=<offerId>
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId && offers.length > 0) {
+      const match = offers.find(o => o.id === editId);
+      if (match) {
+        openEdit(match);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, offers]);
+
   const handleCreate = async () => {
     if (!formData.company_name || !formData.title) return;
     const result = await createOffer({

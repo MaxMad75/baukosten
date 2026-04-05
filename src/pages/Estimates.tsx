@@ -1273,7 +1273,7 @@ export const Estimates: React.FC = () => {
                           </TableRow>
                         );
                       })}
-                      <VatSummaryRows items={extractedItems} colSpan={3} />
+                      <VatSummaryRows items={extractedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), tax_status: (i as any).tax_status || (i.is_gross ? 'gross' : 'net') as TaxStatus }))} colSpan={3} />
                     </TableBody>
                   </Table>
 

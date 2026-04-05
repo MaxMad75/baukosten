@@ -1,66 +1,60 @@
 
 
-# Fix Estimate Version Assignment and Family Grouping
+# Phase 1: Version-Centric Estimates (Refined Active-Version Rule)
 
-## Root cause
+## Goal
 
-`handleFileUpload` and `handleDocumentSelect` in `Estimates.tsx` always call `createEstimate(filePath, fileName)` without a `parentId`, creating a new standalone active estimate every time. Only `handleReplaceUpload` correctly uses `replaceEstimate`.
+Introduce `estimate_versions` table as the primary version layer. Make the Estimates page version-centric. Establish a single source of truth for "active version."
 
-## Changes — 3 items, all in `src/pages/Estimates.tsx`
+## Active-version rule (refined)
 
-### 1. Upload flow: ask "new or version?"
+1. `estimate_versions.is_active` is the sole source of truth. Exactly one row per household is active.
+2. `architect_estimates.is_active` is kept for backward compatibility but is **never read as authoritative**. It is only synchronized as a side effect.
+3. `setActiveVersion(versionId)` does:
+   - `UPDATE estimate_versions SET is_active = false WHERE household_id = ?`
+   - `UPDATE estimate_versions SET is_active = true WHERE id = versionId`
+   - Then sync: `UPDATE architect_estimates SET is_active = (version_id = versionId) WHERE version_id IN (SELECT id FROM estimate_versions WHERE household_id = ?)`
+4. The hook's `estimates` / `estimateItems` / `getAllEstimatedAmounts` filter by joining through `estimate_versions.is_active`, not by reading `architect_estimates.is_active`.
+5. The Estimates page and version selector read `estimate_versions.is_active` only.
 
-After a file is uploaded to storage (or a document is selected), but before creating the estimate record:
+## Database migration
 
-- If no existing estimate families exist: create standalone immediately (current behavior)
-- If families exist: show a small dialog with two choices:
-  - **"Neue eigenständige Schätzung"** → calls `createEstimate(path, name)` (standalone)
-  - **"Neue Version von: [family name]"** (select from list) → calls `replaceEstimate(selectedEstimateId, path, name)`
+**New table `estimate_versions`:**
+- `id uuid PK DEFAULT gen_random_uuid()`
+- `household_id uuid NOT NULL`
+- `version_number integer NOT NULL DEFAULT 1`
+- `name text NOT NULL` (e.g. "V1", "V2 nach Umplanung")
+- `is_active boolean NOT NULL DEFAULT true`
+- `notes text`
+- `created_at timestamptz DEFAULT now()`
+- RLS: `household_id = get_user_household_id()` for all operations
 
-Implementation: add a `pendingUpload: { filePath: string; fileName: string } | null` state. Set it after successful storage upload. Show a dialog when `pendingUpload` is set and families exist. On choice, call the appropriate function and clear `pendingUpload`.
+**Alter `architect_estimates`:**
+- Add `version_id uuid` (nullable)
 
-Same logic applies to `handleDocumentSelect`.
+**Data migration (same SQL file):**
+- For each household, group existing `architect_estimates` by family root (`COALESCE(parent_id, id)`)
+- For each family, create one `estimate_versions` row per distinct version_number
+- Set the version's `is_active` based on whether any estimate in that group has `is_active = true`
+- Set `architect_estimates.version_id` to the corresponding version row
+- Standalone estimates get their own single version row
 
-### 2. Family grouping in accordion
-
-Group `estimates` by family root (`parent_id || id`) before rendering:
-
-```ts
-const estimateFamilies = useMemo(() => {
-  const seen = new Set<string>();
-  return estimates.filter(est => {
-    const rootId = est.parent_id || est.id;
-    if (seen.has(rootId)) return false;
-    seen.add(rootId);
-    return true;
-  }).map(est => ({
-    rootId: est.parent_id || est.id,
-    activeVersion: est,
-    versions: getVersions(est.id),
-  }));
-}, [estimates, allEstimates]);
-```
-
-Render one accordion entry per family. Show version badge ("v2 von 3") when versions > 1.
-
-### 3. Summary description
-
-Change from `"{n} Schätzung(en)"` to `"{n} Schätzfamilie(n)"`. The actual numeric summary (`estimateItems` from hook = active-only items) is already correct and unchanged.
-
-## Explicitly not included
-
-- No post-hoc reassignment action — `replaceEstimate` is designed for new uploads, not reparenting existing records. Reassignment would need dedicated logic in a future phase.
-
-## Files
+## Files to change
 
 | File | Change |
 |------|--------|
-| `src/pages/Estimates.tsx` | Pending-upload state + choice dialog, family grouping in accordion, summary text |
+| Migration SQL | Create `estimate_versions`, add `version_id` to `architect_estimates`, migrate data, RLS policies |
+| `src/lib/types.ts` | Add `EstimateVersion` interface |
+| `src/hooks/useEstimates.ts` | Fetch versions. Filter active estimates by joining through `estimate_versions.is_active` (not `architect_estimates.is_active`). Expose `versions`, `activeVersion`, `setActiveVersion`, `createVersion`, `updateVersionName`. `setActiveVersion` activates one version row, deactivates others, then syncs `architect_estimates.is_active`. `createEstimate` accepts optional `versionId`. |
+| `src/pages/Estimates.tsx` | Version selector at top. Upload/add creates estimates under selected version. Summary shows active version totals. "Set as active" button on non-active versions. Remove or simplify the pending-upload-choice dialog (user is already within a version context). |
 
 ## Unchanged
 
-- `useEstimates.ts` — hook logic and active filtering already correct
-- Database schema — no migration
-- `Comparison.tsx`, invoice logic, offer logic
-- Auth, dashboard, backup/restore, all other pages
+- `architect_estimate_items` — no schema change
+- `Comparison.tsx` — consumes `estimateItems` and `getAllEstimatedAmounts()` from hook (same contract, now backed by version-level filtering)
+- Dashboard — same hook API
+- Invoice, offer, allocation logic
+- Backup/restore — not changed this phase (`version_id` is nullable, old backups still import)
+- Edge functions, auth, contractors, construction journal, documents
+- `tradeMapping.ts`
 

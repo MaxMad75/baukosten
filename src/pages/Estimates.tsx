@@ -1229,8 +1229,14 @@ export const Estimates: React.FC = () => {
                       </div>
                       <Input type="number" step="0.01" placeholder="Betrag" value={manualItem.estimated_amount} onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })} />
                       <div className="flex items-center gap-2">
-                        <Checkbox id="manual-item-gross" checked={manualItem.is_gross} onCheckedChange={(checked) => setManualItem({ ...manualItem, is_gross: !!checked })} />
-                        <Label htmlFor="manual-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                        <Select value={manualItem.tax_status} onValueChange={(v) => setManualItem({ ...manualItem, tax_status: v as TaxStatus })}>
+                          <SelectTrigger className="w-28 h-9 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="net">Netto</SelectItem>
+                            <SelectItem value="gross">Brutto</SelectItem>
+                            <SelectItem value="tax_free">Steuerfrei</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <Button onClick={addManualItemToList} variant="outline"><Plus className="h-4 w-4" /></Button>
                     </div>

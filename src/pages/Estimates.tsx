@@ -19,7 +19,7 @@ import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate, EstimateVersion } from '@/lib/types';
+import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate, EstimateVersion, EstimateBlock } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Plus, 
@@ -37,6 +37,7 @@ import {
   Layers,
   Star,
   Pencil,
+  Package,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -127,6 +128,7 @@ export const Estimates: React.FC = () => {
     activeVersion,
     estimates, 
     allEstimates,
+    allBlocks,
     estimateItems, 
     allEstimateItems,
     loading, 
@@ -138,7 +140,12 @@ export const Estimates: React.FC = () => {
     updateEstimateItem,
     updateEstimateNotes,
     deleteEstimateItem,
-    getItemsByEstimate 
+    getItemsByEstimate,
+    getItemsByBlock,
+    createBlock,
+    addBlockItems,
+    deleteBlock,
+    copyBlocksToVersion,
   } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getDocumentUrl, uploadDocument, createDocument, checkDuplicate } = useDocuments();
@@ -153,10 +160,34 @@ export const Estimates: React.FC = () => {
   const [editingVersionNameValue, setEditingVersionNameValue] = useState('');
   const [isCreateVersionOpen, setIsCreateVersionOpen] = useState(false);
   const [newVersionName, setNewVersionName] = useState('');
+  const [copyBlockIds, setCopyBlockIds] = useState<string[]>([]);
+  const [pendingNewVersionId, setPendingNewVersionId] = useState<string | null>(null);
+  const [isCopyBlocksOpen, setIsCopyBlocksOpen] = useState(false);
+
+  // Block management
+  const [isAddBlockOpen, setIsAddBlockOpen] = useState(false);
+  const [newBlockLabel, setNewBlockLabel] = useState('');
+  const [newBlockType, setNewBlockType] = useState<'imported' | 'manual'>('manual');
+  const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
+
+  // Manual block items
+  const [isManualBlockItemsOpen, setIsManualBlockItemsOpen] = useState(false);
+  const [pendingBlockId, setPendingBlockId] = useState<string | null>(null);
+  const [manualBlockItems, setManualBlockItems] = useState<Array<{
+    kostengruppe_code: string;
+    estimated_amount: string;
+    notes: string;
+    is_gross: boolean;
+  }>>([]);
+  const [newBlockItem, setNewBlockItem] = useState({
+    kostengruppe_code: '',
+    estimated_amount: '',
+    notes: '',
+    is_gross: false,
+  });
 
   // Upload/analysis state
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isManualOpen, setIsManualOpen] = useState(false);
   const [isDocPickerOpen, setIsDocPickerOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -165,6 +196,7 @@ export const Estimates: React.FC = () => {
   const [uploadedFile, setUploadedFile] = useState<{ path: string; name: string } | null>(null);
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingImportBlockId, setPendingImportBlockId] = useState<string | null>(null);
 
   // Pre-analysis result
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -180,22 +212,7 @@ export const Estimates: React.FC = () => {
     is_gross: false,
   });
 
-  // Manual estimate form state
-  const [manualEstimateName, setManualEstimateName] = useState('');
-  const [manualItems, setManualItems] = useState<Array<{
-    kostengruppe_code: string;
-    estimated_amount: string;
-    notes: string;
-    is_gross: boolean;
-  }>>([]);
-  const [newManualItem, setNewManualItem] = useState({
-    kostengruppe_code: '',
-    estimated_amount: '',
-    notes: '',
-    is_gross: false,
-  });
-
-  // Manual item form (for upload dialog)
+  // Manual estimate form state (for upload dialog)
   const [manualItem, setManualItem] = useState({
     kostengruppe_code: '',
     estimated_amount: '',
@@ -214,27 +231,55 @@ export const Estimates: React.FC = () => {
   // The currently displayed version
   const displayedVersion = versions.find(v => v.id === selectedVersionId) || activeVersion;
 
-  // Estimates for the displayed version
+  // Blocks for the displayed version
+  const displayedBlocks = useMemo(() => {
+    if (!displayedVersion) return [];
+    return allBlocks.filter(b => b.version_id === displayedVersion.id);
+  }, [allBlocks, displayedVersion]);
+
+  // Legacy estimates for the displayed version (those without block linkage)
   const displayedEstimates = useMemo(() => {
     if (!displayedVersion) return [];
     return allEstimates.filter(e => e.version_id === displayedVersion.id);
   }, [allEstimates, displayedVersion]);
+
+  // Items for the displayed version (both block-linked and legacy)
+  const displayedItems = useMemo(() => {
+    if (!displayedVersion) return [];
+    const blockIds = new Set(displayedBlocks.map(b => b.id));
+    const estIds = new Set(displayedEstimates.map(e => e.id));
+    return allEstimateItems.filter(i =>
+      (i.block_id && blockIds.has(i.block_id)) ||
+      (!i.block_id && estIds.has(i.estimate_id))
+    );
+  }, [displayedBlocks, displayedEstimates, allEstimateItems, displayedVersion]);
+
+  // Legacy estimates that have items NOT linked to any block
+  const legacyEstimatesWithItems = useMemo(() => {
+    return displayedEstimates.filter(est => {
+      const items = allEstimateItems.filter(i => i.estimate_id === est.id && !i.block_id);
+      return items.length > 0;
+    });
+  }, [displayedEstimates, allEstimateItems]);
+
+  // Previous version (for block copying)
+  const previousVersion = useMemo(() => {
+    if (!displayedVersion) return null;
+    const sorted = [...versions].sort((a, b) => a.version_number - b.version_number);
+    const idx = sorted.findIndex(v => v.id === displayedVersion.id);
+    return idx > 0 ? sorted[idx - 1] : null;
+  }, [versions, displayedVersion]);
 
   const resetForm = () => {
     setExtractedItems([]);
     setUploadedFile(null);
     setPendingEstimateId(null);
     setPendingFile(null);
+    setPendingImportBlockId(null);
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
     setPendingAnalysisPayload(null);
-  };
-
-  const resetManualForm = () => {
-    setManualEstimateName('');
-    setManualItems([]);
-    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
   };
 
   // Convert ArrayBuffer to Base64
@@ -345,10 +390,15 @@ export const Estimates: React.FC = () => {
       setUploadedFile({ path: filePath, name: file.name });
       setPendingFile(file);
 
+      // Create an imported block for the file
+      const block = await createBlock(versionId, 'imported', file.name, filePath, file.name);
+
+      // Also create legacy estimate record
       const estimate = await createEstimate(filePath, file.name, versionId);
       if (!estimate) throw new Error('Could not create estimate');
       
       setPendingEstimateId(estimate.id);
+      if (block) setPendingImportBlockId(block.id);
 
       setAnalyzing(true);
       const payload = await processFileForAnalysis(file, file.name);
@@ -390,10 +440,14 @@ export const Estimates: React.FC = () => {
       
       const blob = await response.blob();
 
+      // Create imported block
+      const block = await createBlock(versionId, 'imported', doc.file_name, doc.file_path, doc.file_name);
+
       const estimate = await createEstimate(doc.file_path, doc.file_name, versionId);
       if (!estimate) throw new Error('Could not create estimate');
       
       setPendingEstimateId(estimate.id);
+      if (block) setPendingImportBlockId(block.id);
       setUploadedFile({ path: doc.file_path, name: doc.file_name });
 
       const payload = await processFileForAnalysis(blob, doc.file_name);
@@ -425,48 +479,52 @@ export const Estimates: React.FC = () => {
   const handleSaveExtractedItems = async () => {
     if (!pendingEstimateId || extractedItems.length === 0) return;
 
-    const success = await addEstimateItems(pendingEstimateId, extractedItems);
-    if (success) {
-      toast({
-        title: 'Erfolg',
-        description: 'Kostenschätzung wurde gespeichert.',
-      });
+    // If we have a block, link items to it; otherwise legacy path
+    if (pendingImportBlockId) {
+      const success = await addBlockItems(pendingImportBlockId, pendingEstimateId, extractedItems);
+      if (success) {
+        // Mark block as processed
+        await supabase.from('estimate_blocks').update({ processed: true }).eq('id', pendingImportBlockId);
+        // Also mark legacy estimate
+        await supabase.from('architect_estimates').update({ processed: true }).eq('id', pendingEstimateId);
 
-      if (pendingFile) {
-        try {
-          const hash = await computeFileHash(pendingFile);
-          const duplicate = checkDuplicate(hash);
-
-          if (duplicate) {
-            toast({
-              title: 'Hinweis',
-              description: 'Dieses Dokument existiert bereits in der Dokumentenbibliothek.',
-            });
-          } else {
-            const uploaded = await uploadDocument(pendingFile);
-            if (uploaded) {
-              await createDocument({
-                file_path: uploaded.path,
-                file_name: uploaded.name,
-                file_size: uploaded.size,
-                title: pendingFile.name,
-                document_type: 'Kostenschätzung',
-                file_hash: hash,
-              });
-              toast({
-                title: 'Dokument abgelegt',
-                description: 'Die Kostenschätzung wurde auch in der Dokumentenbibliothek gespeichert.',
-              });
-            }
-          }
-        } catch (err) {
-          console.error('Error storing estimate as document:', err);
-        }
+        toast({ title: 'Erfolg', description: 'Kostenschätzung wurde gespeichert.' });
       }
-
-      resetForm();
-      setIsUploadOpen(false);
+    } else {
+      const success = await addEstimateItems(pendingEstimateId, extractedItems);
+      if (success) {
+        toast({ title: 'Erfolg', description: 'Kostenschätzung wurde gespeichert.' });
+      }
     }
+
+    // Also store as document if possible
+    if (pendingFile) {
+      try {
+        const hash = await computeFileHash(pendingFile);
+        const duplicate = checkDuplicate(hash);
+        if (duplicate) {
+          toast({ title: 'Hinweis', description: 'Dieses Dokument existiert bereits in der Dokumentenbibliothek.' });
+        } else {
+          const uploaded = await uploadDocument(pendingFile);
+          if (uploaded) {
+            await createDocument({
+              file_path: uploaded.path,
+              file_name: uploaded.name,
+              file_size: uploaded.size,
+              title: pendingFile.name,
+              document_type: 'Kostenschätzung',
+              file_hash: hash,
+            });
+            toast({ title: 'Dokument abgelegt', description: 'Die Kostenschätzung wurde auch in der Dokumentenbibliothek gespeichert.' });
+          }
+        }
+      } catch (err) {
+        console.error('Error storing estimate as document:', err);
+      }
+    }
+
+    resetForm();
+    setIsUploadOpen(false);
   };
 
   const updateExtractedItem = (index: number, field: string, value: string | number | boolean) => {
@@ -481,11 +539,7 @@ export const Estimates: React.FC = () => {
 
   const addManualItemToList = () => {
     if (!manualItem.kostengruppe_code || !manualItem.estimated_amount) {
-      toast({
-        title: 'Fehler',
-        description: 'Bitte Kostengruppe und Betrag angeben',
-        variant: 'destructive',
-      });
+      toast({ title: 'Fehler', description: 'Bitte Kostengruppe und Betrag angeben', variant: 'destructive' });
       return;
     }
 
@@ -499,51 +553,68 @@ export const Estimates: React.FC = () => {
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
   };
 
-  const addNewManualItem = () => {
-    if (!newManualItem.kostengruppe_code || !newManualItem.estimated_amount) {
-      toast({
-        title: 'Fehler',
-        description: 'Bitte Kostengruppe und Betrag angeben',
-        variant: 'destructive',
-      });
-      return;
-    }
+  // ── Block handlers ──
 
-    setManualItems(prev => [...prev, {
-      kostengruppe_code: newManualItem.kostengruppe_code,
-      estimated_amount: newManualItem.estimated_amount,
-      notes: newManualItem.notes,
-      is_gross: newManualItem.is_gross,
-    }]);
-
-    setNewManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
-  };
-
-  const removeManualItem = (index: number) => {
-    setManualItems(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleCreateManualEstimate = async () => {
-    if (!household) return;
-
-    if (manualItems.length === 0) {
-      toast({
-        title: 'Fehler',
-        description: 'Bitte mindestens eine Kostenposition hinzufügen',
-        variant: 'destructive',
-      });
+  const handleCreateManualBlock = async () => {
+    if (!newBlockLabel.trim()) {
+      toast({ title: 'Fehler', description: 'Bitte einen Namen eingeben', variant: 'destructive' });
       return;
     }
 
     const versionId = await ensureVersion();
     if (!versionId) return;
 
-    const estimate = await createEstimate('', manualEstimateName || `Manuelle Schätzung ${format(new Date(), 'dd.MM.yyyy')}`, versionId);
-    if (!estimate) return;
+    const block = await createBlock(versionId, 'manual', newBlockLabel.trim());
+    if (block) {
+      toast({ title: 'Erfolg', description: `Block „${block.label}" erstellt.` });
+      setNewBlockLabel('');
+      setIsAddBlockOpen(false);
 
-    const success = await addEstimateItems(
-      estimate.id,
-      manualItems.map(item => ({
+      // Open manual items dialog for the new block
+      setPendingBlockId(block.id);
+      setManualBlockItems([]);
+      setIsManualBlockItemsOpen(true);
+    }
+  };
+
+  const handleCreateImportedBlock = () => {
+    setIsAddBlockOpen(false);
+    setIsUploadOpen(true);
+  };
+
+  const addNewBlockItem = () => {
+    if (!newBlockItem.kostengruppe_code || !newBlockItem.estimated_amount) {
+      toast({ title: 'Fehler', description: 'Bitte Kostengruppe und Betrag angeben', variant: 'destructive' });
+      return;
+    }
+
+    setManualBlockItems(prev => [...prev, {
+      kostengruppe_code: newBlockItem.kostengruppe_code,
+      estimated_amount: newBlockItem.estimated_amount,
+      notes: newBlockItem.notes,
+      is_gross: newBlockItem.is_gross,
+    }]);
+    setNewBlockItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+  };
+
+  const handleSaveBlockItems = async () => {
+    if (!pendingBlockId || manualBlockItems.length === 0) return;
+
+    const versionId = displayedVersion?.id;
+    if (!versionId || !household) return;
+
+    // Need an estimate record for the FK
+    let est = allEstimates.find(e => e.version_id === versionId);
+    if (!est) {
+      const created = await createEstimate('', 'Block-Container', versionId);
+      if (!created) return;
+      est = created;
+    }
+
+    const success = await addBlockItems(
+      pendingBlockId,
+      est.id,
+      manualBlockItems.map(item => ({
         kostengruppe_code: item.kostengruppe_code,
         estimated_amount: parseFloat(item.estimated_amount),
         notes: item.notes || undefined,
@@ -552,14 +623,85 @@ export const Estimates: React.FC = () => {
     );
 
     if (success) {
-      toast({
-        title: 'Erfolg',
-        description: 'Kostenschätzung wurde erstellt.',
-      });
-      resetManualForm();
-      setIsManualOpen(false);
+      toast({ title: 'Erfolg', description: 'Positionen wurden gespeichert.' });
+      setManualBlockItems([]);
+      setPendingBlockId(null);
+      setIsManualBlockItemsOpen(false);
     }
   };
+
+  const handleDeleteBlock = async () => {
+    if (!deleteBlockId) return;
+    const success = await deleteBlock(deleteBlockId);
+    if (success) {
+      toast({ title: 'Erfolg', description: 'Block wurde gelöscht.' });
+    }
+    setDeleteBlockId(null);
+  };
+
+  // ── Version handlers ──
+
+  const handleCreateVersion = async () => {
+    const name = newVersionName.trim() || `V${(versions.length || 0) + 1}`;
+    const v = await createVersion(name);
+    if (v) {
+      setSelectedVersionId(v.id);
+
+      // Check if the previous version has manual blocks to copy
+      const prevVersion = versions.length > 0
+        ? [...versions].sort((a, b) => b.version_number - a.version_number)[0]
+        : null;
+      if (prevVersion) {
+        const prevManualBlocks = allBlocks.filter(b => b.version_id === prevVersion.id && b.block_type === 'manual');
+        if (prevManualBlocks.length > 0) {
+          setPendingNewVersionId(v.id);
+          setCopyBlockIds(prevManualBlocks.map(b => b.id));
+          setIsCopyBlocksOpen(true);
+        } else {
+          toast({ title: 'Erfolg', description: `Version „${v.name}" erstellt und aktiviert.` });
+        }
+      } else {
+        toast({ title: 'Erfolg', description: `Version „${v.name}" erstellt und aktiviert.` });
+      }
+    }
+    setNewVersionName('');
+    setIsCreateVersionOpen(false);
+  };
+
+  const handleCopyBlocks = async () => {
+    if (!pendingNewVersionId) return;
+
+    const prevVersion = versions.length > 1
+      ? [...versions].sort((a, b) => b.version_number - a.version_number)[1]
+      : null;
+    if (!prevVersion) return;
+
+    if (copyBlockIds.length > 0) {
+      await copyBlocksToVersion(prevVersion.id, pendingNewVersionId, copyBlockIds);
+      toast({ title: 'Erfolg', description: `${copyBlockIds.length} Block(e) übernommen.` });
+    }
+
+    setPendingNewVersionId(null);
+    setCopyBlockIds([]);
+    setIsCopyBlocksOpen(false);
+  };
+
+  const handleActivateVersion = async (versionId: string) => {
+    const success = await setActiveVersion(versionId);
+    if (success) {
+      setSelectedVersionId(versionId);
+      toast({ title: 'Erfolg', description: 'Version aktiviert.' });
+    }
+  };
+
+  const handleSaveVersionName = async () => {
+    if (!editingVersionId || !editingVersionNameValue.trim()) return;
+    await updateVersionName(editingVersionId, editingVersionNameValue.trim());
+    setEditingVersionId(null);
+    setEditingVersionNameValue('');
+  };
+
+  // ── Edit handlers ──
 
   const startEditing = (item: ArchitectEstimateItem) => {
     setEditingItemId(item.id);
@@ -578,19 +720,14 @@ export const Estimates: React.FC = () => {
 
   const saveEditing = async () => {
     if (!editingItemId) return;
-
     const success = await updateEstimateItem(editingItemId, {
       kostengruppe_code: editFormData.kostengruppe_code,
       estimated_amount: parseFloat(editFormData.estimated_amount) || 0,
       notes: editFormData.notes || null,
       is_gross: editFormData.is_gross,
     });
-
     if (success) {
-      toast({
-        title: 'Erfolg',
-        description: 'Position wurde aktualisiert.',
-      });
+      toast({ title: 'Erfolg', description: 'Position wurde aktualisiert.' });
       cancelEditing();
     }
   };
@@ -603,44 +740,78 @@ export const Estimates: React.FC = () => {
 
   const formatCurrency = (amount: number) => formatAmount(amount);
 
-  // Handle creating a new version
-  const handleCreateVersion = async () => {
-    if (!newVersionName.trim()) return;
-    const v = await createVersion(newVersionName.trim());
-    if (v) {
-      setSelectedVersionId(v.id);
-      toast({ title: 'Erfolg', description: `Version "${v.name}" erstellt und aktiviert.` });
-    }
-    setNewVersionName('');
-    setIsCreateVersionOpen(false);
-  };
-
-  // Handle activating a version
-  const handleActivateVersion = async (versionId: string) => {
-    const success = await setActiveVersion(versionId);
-    if (success) {
-      setSelectedVersionId(versionId);
-      toast({ title: 'Erfolg', description: 'Version aktiviert.' });
-    }
-  };
-
-  // Handle renaming a version
-  const handleSaveVersionName = async () => {
-    if (!editingVersionId || !editingVersionNameValue.trim()) return;
-    await updateVersionName(editingVersionId, editingVersionNameValue.trim());
-    setEditingVersionId(null);
-    setEditingVersionNameValue('');
-  };
-
-  // Compute VAT summary for displayed version items
-  const displayedItems = useMemo(() => {
-    if (!displayedVersion) return [];
-    const estIds = new Set(displayedEstimates.map(e => e.id));
-    return allEstimateItems.filter(i => estIds.has(i.estimate_id));
-  }, [displayedEstimates, allEstimateItems, displayedVersion]);
-
+  // VAT summary
   const globalVat = computeVatSummary(
     displayedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
+  );
+
+  // Render item table (shared between blocks and legacy estimates)
+  const renderItemTable = (items: ArchitectEstimateItem[]) => (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Code</TableHead>
+          <TableHead>Kostengruppe</TableHead>
+          <TableHead>Notizen</TableHead>
+          <TableHead className="text-center">inkl. MwSt</TableHead>
+          <TableHead className="text-right">Betrag</TableHead>
+          <TableHead className="w-24">Aktionen</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {items.map((item) => {
+          const kg = getKostengruppeByCode(item.kostengruppe_code);
+          const isEditing = editingItemId === item.id;
+
+          if (isEditing) {
+            return (
+              <TableRow key={item.id}>
+                <TableCell>
+                  <Input value={editFormData.kostengruppe_code} onChange={(e) => setEditFormData({ ...editFormData, kostengruppe_code: e.target.value })} className="w-24" />
+                </TableCell>
+                <TableCell>
+                  <KostengruppenSelect value={editFormData.kostengruppe_code} onValueChange={(value) => setEditFormData({ ...editFormData, kostengruppe_code: value })} placeholder="Kostengruppe" />
+                </TableCell>
+                <TableCell>
+                  <Input value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} placeholder="Notiz" />
+                </TableCell>
+                <TableCell className="text-center">
+                  <Checkbox checked={editFormData.is_gross} onCheckedChange={(checked) => setEditFormData({ ...editFormData, is_gross: !!checked })} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Input type="number" step="0.01" value={editFormData.estimated_amount} onChange={(e) => setEditFormData({ ...editFormData, estimated_amount: e.target.value })} className="w-32 text-right" />
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={saveEditing}><Save className="h-4 w-4 text-primary" /></Button>
+                    <Button size="sm" variant="ghost" onClick={cancelEditing}><X className="h-4 w-4 text-muted-foreground" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          }
+
+          return (
+            <TableRow key={item.id}>
+              <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
+              <TableCell>{kg?.name || '-'}</TableCell>
+              <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
+              <TableCell className="text-center">
+                <span className="text-xs text-muted-foreground">{item.is_gross ? 'brutto' : 'netto'}</span>
+              </TableCell>
+              <TableCell className="text-right font-medium">{formatCurrency(Number(item.estimated_amount))}</TableCell>
+              <TableCell>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => startEditing(item)}><Edit className="h-4 w-4" /></Button>
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleteId(item.id)}><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+        <VatSummaryRows items={items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))} colSpan={4} />
+      </TableBody>
+    </Table>
   );
 
   if (loading) {
@@ -662,19 +833,19 @@ export const Estimates: React.FC = () => {
             <p className="text-muted-foreground">Architekten-Kalkulation verwalten</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {/* Upload Dialog */}
-            <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) resetForm(); }}>
+            {/* Add Block */}
+            <Dialog open={isAddBlockOpen} onOpenChange={setIsAddBlockOpen}>
               <DialogTrigger asChild>
                 <Button>
-                  <Upload className="mr-2 h-4 w-4" />
-                  PDF hochladen
+                  <Plus className="mr-2 h-4 w-4" />
+                  Block hinzufügen
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Kostenschätzung hochladen</DialogTitle>
+                  <DialogTitle>Neuen Kostenblock hinzufügen</DialogTitle>
                   <DialogDescription>
-                    Laden Sie die Kostenkalkulation Ihres Architekten als PDF hoch. Gescannte PDFs werden automatisch per OCR erkannt.
+                    Wählen Sie, ob Sie eine PDF importieren oder manuell Kosten erfassen möchten.
                     {displayedVersion && (
                       <span className="block mt-1 font-medium text-foreground">
                         → wird in Version „{displayedVersion.name}" angelegt
@@ -682,187 +853,25 @@ export const Estimates: React.FC = () => {
                     )}
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
-                  {/* Upload area */}
-                  {extractedItems.length === 0 && !showNotEstimateWarning && (
-                    <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept=".pdf,.png,.jpg,.jpeg"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                      {uploading || analyzing ? (
-                        <div className="text-center">
-                          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {analyzing ? 'KI analysiert Dokument...' : 'Hochladen...'}
-                          </p>
-                          {analyzing && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Prüfe ob es eine Kostenschätzung ist und extrahiere Kosten...
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <>
-                          <Calculator className="h-12 w-12 text-muted-foreground" />
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            PDF oder Bild hier ablegen oder klicken
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Auch gescannte PDFs werden erkannt (OCR)
-                          </p>
-                          <Button
-                            variant="outline"
-                            className="mt-4"
-                            onClick={() => fileInputRef.current?.click()}
-                          >
-                            Datei auswählen
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Not-an-estimate warning */}
-                  {showNotEstimateWarning && analysisResult && (
-                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
-                        <div>
-                          <p className="font-medium text-destructive">Keine Kostenschätzung erkannt</p>
-                          <p className="text-sm text-muted-foreground mt-1">{analysisResult.reason}</p>
-                          <p className="text-xs text-muted-foreground mt-1">Konfidenz: {analysisResult.confidence}</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => { resetForm(); }}>
-                          Abbrechen
-                        </Button>
-                        <Button size="sm" onClick={handleForceAnalysis}>
-                          Trotzdem analysieren
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Analysis result info */}
-                  {analysisResult && analysisResult.is_estimate && extractedItems.length > 0 && (
-                    <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-primary" />
-                        <span className="font-medium">Kostenschätzung erkannt</span>
-                        <span className="text-muted-foreground">(Konfidenz: {analysisResult.confidence})</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{analysisResult.reason}</p>
-                      <p className="mt-1">✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.</p>
-                    </div>
-                  )}
-
-                  {extractedItems.length > 0 && (
-                    <div className="space-y-4">
-                      {/* Manual add form */}
-                      <div className="rounded-lg border p-4">
-                        <h4 className="mb-3 font-medium">Position hinzufügen</h4>
-                        <div className="grid gap-3 md:grid-cols-5">
-                          <div className="md:col-span-2">
-                            <KostengruppenSelect
-                              value={manualItem.kostengruppe_code}
-                              onValueChange={(value) => setManualItem({ ...manualItem, kostengruppe_code: value })}
-                              placeholder="Kostengruppe"
-                            />
-                          </div>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Betrag"
-                            value={manualItem.estimated_amount}
-                            onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })}
-                          />
-                          <div className="flex items-center gap-2">
-                            <Checkbox
-                              id="manual-item-gross"
-                              checked={manualItem.is_gross}
-                              onCheckedChange={(checked) => setManualItem({ ...manualItem, is_gross: !!checked })}
-                            />
-                            <Label htmlFor="manual-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
-                          </div>
-                          <Button onClick={addManualItemToList} variant="outline">
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Kostengruppe</TableHead>
-                            <TableHead>Bezeichnung</TableHead>
-                            <TableHead className="text-center">inkl. MwSt</TableHead>
-                            <TableHead className="text-right">Betrag</TableHead>
-                            <TableHead className="w-16"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {extractedItems.map((item, index) => {
-                            const kg = getKostengruppeByCode(item.kostengruppe_code);
-                            return (
-                              <TableRow key={index}>
-                                <TableCell>
-                                  <Input
-                                    value={item.kostengruppe_code}
-                                    onChange={(e) => updateExtractedItem(index, 'kostengruppe_code', e.target.value)}
-                                    className="w-24"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  {kg?.name || item.notes || '-'}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <Checkbox
-                                    checked={item.is_gross}
-                                    onCheckedChange={(checked) => updateExtractedItem(index, 'is_gross', !!checked)}
-                                  />
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={item.estimated_amount}
-                                    onChange={(e) => updateExtractedItem(index, 'estimated_amount', parseFloat(e.target.value) || 0)}
-                                    className="w-32 text-right"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-destructive"
-                                    onClick={() => removeExtractedItem(index)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                          <VatSummaryRows items={extractedItems} colSpan={3} />
-                        </TableBody>
-                      </Table>
-
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => { resetForm(); setIsUploadOpen(false); }}>
-                          Abbrechen
-                        </Button>
-                        <Button onClick={handleSaveExtractedItems}>
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          Speichern
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-4 py-2">
+                  <div className="space-y-2">
+                    <Label>Bezeichnung</Label>
+                    <Input
+                      value={newBlockLabel}
+                      onChange={(e) => setNewBlockLabel(e.target.value)}
+                      placeholder="z.B. Grundstück, Architekt KS, Bodengutachten"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button className="flex-1" variant="outline" onClick={handleCreateImportedBlock}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      PDF importieren
+                    </Button>
+                    <Button className="flex-1" onClick={handleCreateManualBlock} disabled={!newBlockLabel.trim()}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Manuell erfassen
+                    </Button>
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>
@@ -872,139 +881,6 @@ export const Estimates: React.FC = () => {
               <FolderOpen className="mr-2 h-4 w-4" />
               Aus Dokumenten
             </Button>
-
-            {/* Manual Entry Dialog */}
-            <Dialog open={isManualOpen} onOpenChange={(open) => { setIsManualOpen(open); if (!open) resetManualForm(); }}>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Manuell erfassen
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Kostenschätzung manuell erfassen</DialogTitle>
-                  <DialogDescription>
-                    Erstellen Sie eine neue Kostenschätzung und fügen Sie Positionen hinzu.
-                    {displayedVersion && (
-                      <span className="block mt-1 font-medium text-foreground">
-                        → wird in Version „{displayedVersion.name}" angelegt
-                      </span>
-                    )}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Bezeichnung</Label>
-                    <Input
-                      value={manualEstimateName}
-                      onChange={(e) => setManualEstimateName(e.target.value)}
-                      placeholder="z.B. Kostenschätzung Architekt Müller"
-                    />
-                  </div>
-
-                  {/* Add item form */}
-                  <div className="rounded-lg border p-4">
-                    <h4 className="mb-3 font-medium">Position hinzufügen</h4>
-                    <div className="grid gap-3 md:grid-cols-6">
-                      <div className="md:col-span-2">
-                        <KostengruppenSelect
-                          value={newManualItem.kostengruppe_code}
-                          onValueChange={(value) => setNewManualItem({ ...newManualItem, kostengruppe_code: value })}
-                          placeholder="Kostengruppe"
-                        />
-                      </div>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Betrag (EUR)"
-                        value={newManualItem.estimated_amount}
-                        onChange={(e) => setNewManualItem({ ...newManualItem, estimated_amount: e.target.value })}
-                      />
-                      <Input
-                        placeholder="Notiz (optional)"
-                        value={newManualItem.notes}
-                        onChange={(e) => setNewManualItem({ ...newManualItem, notes: e.target.value })}
-                      />
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="new-manual-gross"
-                          checked={newManualItem.is_gross}
-                          onCheckedChange={(checked) => setNewManualItem({ ...newManualItem, is_gross: !!checked })}
-                        />
-                        <Label htmlFor="new-manual-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
-                      </div>
-                      <Button onClick={addNewManualItem} variant="outline">
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Items list */}
-                  {manualItems.length > 0 && (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Kostengruppe</TableHead>
-                          <TableHead>Bezeichnung</TableHead>
-                          <TableHead>Notiz</TableHead>
-                          <TableHead className="text-center">inkl. MwSt</TableHead>
-                          <TableHead className="text-right">Betrag</TableHead>
-                          <TableHead className="w-16"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {manualItems.map((item, index) => {
-                          const kg = getKostengruppeByCode(item.kostengruppe_code);
-                          return (
-                            <TableRow key={index}>
-                              <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
-                              <TableCell>{kg?.name || '-'}</TableCell>
-                              <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
-                              <TableCell className="text-center">
-                                <Checkbox
-                                  checked={item.is_gross}
-                                  onCheckedChange={(checked) => {
-                                    setManualItems(prev => prev.map((it, i) => i === index ? { ...it, is_gross: !!checked } : it));
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell className="text-right font-medium">
-                                {formatCurrency(parseFloat(item.estimated_amount) || 0)}
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-destructive"
-                                  onClick={() => removeManualItem(index)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        <VatSummaryRows
-                          items={manualItems.map(i => ({ estimated_amount: parseFloat(i.estimated_amount) || 0, is_gross: i.is_gross }))}
-                          colSpan={4}
-                        />
-                      </TableBody>
-                    </Table>
-                  )}
-
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => { resetManualForm(); setIsManualOpen(false); }}>
-                      Abbrechen
-                    </Button>
-                    <Button onClick={handleCreateManualEstimate} disabled={manualItems.length === 0}>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Schätzung speichern
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
           </div>
         </div>
 
@@ -1028,7 +904,7 @@ export const Estimates: React.FC = () => {
                     <DialogHeader>
                       <DialogTitle>Neue Version erstellen</DialogTitle>
                       <DialogDescription>
-                        Eine neue Version wird erstellt und als aktive Version gesetzt. Alle Uploads und manuellen Schätzungen werden dieser Version zugeordnet.
+                        Eine neue Version wird erstellt und als aktive Version gesetzt. Manuelle Blöcke können optional aus der vorherigen Version übernommen werden.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
@@ -1066,12 +942,8 @@ export const Estimates: React.FC = () => {
                           }}
                           autoFocus
                         />
-                        <Button size="sm" variant="ghost" onClick={handleSaveVersionName} className="h-8 w-8 p-0">
-                          <Save className="h-3 w-3" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditingVersionId(null)} className="h-8 w-8 p-0">
-                          <X className="h-3 w-3" />
-                        </Button>
+                        <Button size="sm" variant="ghost" onClick={handleSaveVersionName} className="h-8 w-8 p-0"><Save className="h-3 w-3" /></Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingVersionId(null)} className="h-8 w-8 p-0"><X className="h-3 w-3" /></Button>
                       </div>
                     ) : (
                       <Button
@@ -1090,15 +962,7 @@ export const Estimates: React.FC = () => {
                       </Button>
                     )}
                     {selectedVersionId === v.id && editingVersionId !== v.id && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        onClick={() => {
-                          setEditingVersionId(v.id);
-                          setEditingVersionNameValue(v.name);
-                        }}
-                      >
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setEditingVersionId(v.id); setEditingVersionNameValue(v.name); }}>
                         <Pencil className="h-3 w-3" />
                       </Button>
                     )}
@@ -1148,46 +1012,112 @@ export const Estimates: React.FC = () => {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              {displayedItems.length} Kostenpositionen in {displayedEstimates.length} Schätzblock(en)
+              {displayedItems.length} Kostenpositionen in {displayedBlocks.length} Block(en)
+              {legacyEstimatesWithItems.length > 0 && ` + ${legacyEstimatesWithItems.length} Schätzung(en)`}
               {versions.length > 1 && ` — ${versions.length} Versionen gesamt`}
             </p>
           </CardContent>
         </Card>
 
-        {/* Estimates List for displayed version */}
-        {displayedEstimates.length === 0 ? (
+        {/* Blocks + Legacy Estimates */}
+        {displayedBlocks.length === 0 && legacyEstimatesWithItems.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Calculator className="h-12 w-12 text-muted-foreground" />
               <h3 className="mt-4 text-lg font-medium">
                 {versions.length === 0
                   ? 'Keine Kostenschätzungen vorhanden'
-                  : `Keine Schätzungen in ${displayedVersion?.name || 'dieser Version'}`}
+                  : `Keine Blöcke in ${displayedVersion?.name || 'dieser Version'}`}
               </h3>
-              <p className="text-muted-foreground">Laden Sie die Kalkulation Ihres Architekten hoch oder erfassen Sie sie manuell.</p>
+              <p className="text-muted-foreground">Fügen Sie einen Kostenblock hinzu (PDF oder manuell).</p>
             </CardContent>
           </Card>
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Schätzungen — {displayedVersion?.name || 'Aktuell'}</CardTitle>
+              <CardTitle>Kostenblöcke — {displayedVersion?.name || 'Aktuell'}</CardTitle>
             </CardHeader>
             <CardContent>
               <Accordion type="single" collapsible className="w-full">
-                {displayedEstimates.map((estimate) => {
-                  const items = getItemsByEstimate(estimate.id);
+                {/* Render blocks */}
+                {displayedBlocks.map((block) => {
+                  const items = getItemsByBlock(block.id);
+                  const blockVat = computeVatSummary(
+                    items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
+                  );
+                  
+                  return (
+                    <AccordionItem key={block.id} value={`block-${block.id}`}>
+                      <AccordionTrigger>
+                        <div className="flex w-full items-center justify-between pr-4">
+                          <div className="flex items-center gap-3">
+                            <Package className="h-5 w-5 text-muted-foreground" />
+                            <div className="text-left">
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{block.label}</p>
+                                <Badge variant={block.block_type === 'imported' ? 'default' : 'secondary'} className="text-xs">
+                                  {block.block_type === 'imported' ? 'Import' : 'Manuell'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {format(new Date(block.created_at), 'dd.MM.yyyy', { locale: de })}
+                                {block.notes && <span className="ml-2">— {block.notes}</span>}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="font-medium">{formatCurrency(blockVat.brutto)}</p>
+                              <p className="text-sm text-muted-foreground">{items.length} Positionen</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive h-8 w-8 p-0"
+                              onClick={(e) => { e.stopPropagation(); setDeleteBlockId(block.id); }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        {items.length > 0 ? renderItemTable(items) : (
+                          <p className="text-sm text-muted-foreground py-4 text-center">Keine Positionen in diesem Block.</p>
+                        )}
+                        <div className="mt-2 flex justify-end">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            setPendingBlockId(block.id);
+                            setManualBlockItems([]);
+                            setIsManualBlockItemsOpen(true);
+                          }}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Position hinzufügen
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  );
+                })}
+
+                {/* Render legacy estimates (items without block_id) */}
+                {legacyEstimatesWithItems.map((estimate) => {
+                  const items = allEstimateItems.filter(i => i.estimate_id === estimate.id && !i.block_id);
                   const estVat = computeVatSummary(
                     items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
                   );
                   
                   return (
-                    <AccordionItem key={estimate.id} value={estimate.id}>
+                    <AccordionItem key={estimate.id} value={`legacy-${estimate.id}`}>
                       <AccordionTrigger>
                         <div className="flex w-full items-center justify-between pr-4">
                           <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-muted-foreground" />
                             <div className="text-left">
-                              <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
+                                <Badge variant="outline" className="text-xs">Legacy</Badge>
+                              </div>
                               <p className="text-sm text-muted-foreground">
                                 {format(new Date(estimate.uploaded_at), 'dd.MM.yyyy', { locale: de })}
                                 {estimate.notes && <span className="ml-2">— {estimate.notes}</span>}
@@ -1201,118 +1131,7 @@ export const Estimates: React.FC = () => {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Code</TableHead>
-                              <TableHead>Kostengruppe</TableHead>
-                              <TableHead>Notizen</TableHead>
-                              <TableHead className="text-center">inkl. MwSt</TableHead>
-                              <TableHead className="text-right">Betrag</TableHead>
-                              <TableHead className="w-24">Aktionen</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {items.map((item) => {
-                              const kg = getKostengruppeByCode(item.kostengruppe_code);
-                              const isEditing = editingItemId === item.id;
-
-                              if (isEditing) {
-                                return (
-                                  <TableRow key={item.id}>
-                                    <TableCell>
-                                      <Input
-                                        value={editFormData.kostengruppe_code}
-                                        onChange={(e) => setEditFormData({ ...editFormData, kostengruppe_code: e.target.value })}
-                                        className="w-24"
-                                      />
-                                    </TableCell>
-                                    <TableCell>
-                                      <KostengruppenSelect
-                                        value={editFormData.kostengruppe_code}
-                                        onValueChange={(value) => setEditFormData({ ...editFormData, kostengruppe_code: value })}
-                                        placeholder="Kostengruppe"
-                                      />
-                                    </TableCell>
-                                    <TableCell>
-                                      <Input
-                                        value={editFormData.notes}
-                                        onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
-                                        placeholder="Notiz"
-                                      />
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                      <Checkbox
-                                        checked={editFormData.is_gross}
-                                        onCheckedChange={(checked) => setEditFormData({ ...editFormData, is_gross: !!checked })}
-                                      />
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      <Input
-                                        type="number"
-                                        step="0.01"
-                                        value={editFormData.estimated_amount}
-                                        onChange={(e) => setEditFormData({ ...editFormData, estimated_amount: e.target.value })}
-                                        className="w-32 text-right"
-                                      />
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="flex gap-1">
-                                        <Button size="sm" variant="ghost" onClick={saveEditing}>
-                                          <Save className="h-4 w-4 text-primary" />
-                                        </Button>
-                                        <Button size="sm" variant="ghost" onClick={cancelEditing}>
-                                          <X className="h-4 w-4 text-muted-foreground" />
-                                        </Button>
-                                      </div>
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              }
-
-                              return (
-                                <TableRow key={item.id}>
-                                  <TableCell className="font-mono">{item.kostengruppe_code}</TableCell>
-                                  <TableCell>{kg?.name || '-'}</TableCell>
-                                  <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
-                                  <TableCell className="text-center">
-                                    {(item.is_gross) ? (
-                                      <span className="text-xs text-muted-foreground">brutto</span>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">netto</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {formatCurrency(Number(item.estimated_amount))}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex gap-1">
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => startEditing(item)}
-                                      >
-                                        <Edit className="h-4 w-4" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="text-destructive"
-                                        onClick={() => setDeleteId(item.id)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                            <VatSummaryRows
-                              items={items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))}
-                              colSpan={4}
-                            />
-                          </TableBody>
-                        </Table>
+                        {renderItemTable(items)}
                       </AccordionContent>
                     </AccordionItem>
                   );
@@ -1322,20 +1141,278 @@ export const Estimates: React.FC = () => {
           </Card>
         )}
 
-        {/* Delete Confirmation */}
+        {/* Upload Dialog (for imported blocks) */}
+        <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) resetForm(); }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Kostenschätzung importieren</DialogTitle>
+              <DialogDescription>
+                Laden Sie eine PDF-Datei hoch. Gescannte PDFs werden automatisch per OCR erkannt.
+                {displayedVersion && (
+                  <span className="block mt-1 font-medium text-foreground">
+                    → wird in Version „{displayedVersion.name}" angelegt
+                  </span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Upload area */}
+              {extractedItems.length === 0 && !showNotEstimateWarning && (
+                <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8">
+                  <input type="file" ref={fileInputRef} accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileUpload} className="hidden" />
+                  {uploading || analyzing ? (
+                    <div className="text-center">
+                      <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                      <p className="mt-2 text-sm text-muted-foreground">{analyzing ? 'KI analysiert Dokument...' : 'Hochladen...'}</p>
+                      {analyzing && <p className="mt-1 text-xs text-muted-foreground">Prüfe ob es eine Kostenschätzung ist und extrahiere Kosten...</p>}
+                    </div>
+                  ) : (
+                    <>
+                      <Calculator className="h-12 w-12 text-muted-foreground" />
+                      <p className="mt-2 text-sm text-muted-foreground">PDF oder Bild hier ablegen oder klicken</p>
+                      <p className="text-xs text-muted-foreground">Auch gescannte PDFs werden erkannt (OCR)</p>
+                      <Button variant="outline" className="mt-4" onClick={() => fileInputRef.current?.click()}>Datei auswählen</Button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Not-an-estimate warning */}
+              {showNotEstimateWarning && analysisResult && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
+                    <div>
+                      <p className="font-medium text-destructive">Keine Kostenschätzung erkannt</p>
+                      <p className="text-sm text-muted-foreground mt-1">{analysisResult.reason}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Konfidenz: {analysisResult.confidence}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => resetForm()}>Abbrechen</Button>
+                    <Button size="sm" onClick={handleForceAnalysis}>Trotzdem analysieren</Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Analysis result info */}
+              {analysisResult && analysisResult.is_estimate && extractedItems.length > 0 && (
+                <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    <span className="font-medium">Kostenschätzung erkannt</span>
+                    <span className="text-muted-foreground">(Konfidenz: {analysisResult.confidence})</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{analysisResult.reason}</p>
+                  <p className="mt-1">✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.</p>
+                </div>
+              )}
+
+              {extractedItems.length > 0 && (
+                <div className="space-y-4">
+                  {/* Manual add form */}
+                  <div className="rounded-lg border p-4">
+                    <h4 className="mb-3 font-medium">Position hinzufügen</h4>
+                    <div className="grid gap-3 md:grid-cols-5">
+                      <div className="md:col-span-2">
+                        <KostengruppenSelect value={manualItem.kostengruppe_code} onValueChange={(value) => setManualItem({ ...manualItem, kostengruppe_code: value })} placeholder="Kostengruppe" />
+                      </div>
+                      <Input type="number" step="0.01" placeholder="Betrag" value={manualItem.estimated_amount} onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })} />
+                      <div className="flex items-center gap-2">
+                        <Checkbox id="manual-item-gross" checked={manualItem.is_gross} onCheckedChange={(checked) => setManualItem({ ...manualItem, is_gross: !!checked })} />
+                        <Label htmlFor="manual-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                      </div>
+                      <Button onClick={addManualItemToList} variant="outline"><Plus className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Kostengruppe</TableHead>
+                        <TableHead>Bezeichnung</TableHead>
+                        <TableHead className="text-center">inkl. MwSt</TableHead>
+                        <TableHead className="text-right">Betrag</TableHead>
+                        <TableHead className="w-16"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {extractedItems.map((item, index) => {
+                        const kg = getKostengruppeByCode(item.kostengruppe_code);
+                        return (
+                          <TableRow key={index}>
+                            <TableCell>
+                              <Input value={item.kostengruppe_code} onChange={(e) => updateExtractedItem(index, 'kostengruppe_code', e.target.value)} className="w-24" />
+                            </TableCell>
+                            <TableCell>{kg?.name || item.notes || '-'}</TableCell>
+                            <TableCell className="text-center">
+                              <Checkbox checked={item.is_gross} onCheckedChange={(checked) => updateExtractedItem(index, 'is_gross', !!checked)} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input type="number" step="0.01" value={item.estimated_amount} onChange={(e) => updateExtractedItem(index, 'estimated_amount', parseFloat(e.target.value) || 0)} className="w-32 text-right" />
+                            </TableCell>
+                            <TableCell>
+                              <Button size="sm" variant="ghost" className="text-destructive" onClick={() => removeExtractedItem(index)}><Trash2 className="h-4 w-4" /></Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      <VatSummaryRows items={extractedItems} colSpan={3} />
+                    </TableBody>
+                  </Table>
+
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { resetForm(); setIsUploadOpen(false); }}>Abbrechen</Button>
+                    <Button onClick={handleSaveExtractedItems}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Speichern
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Manual Block Items Dialog */}
+        <Dialog open={isManualBlockItemsOpen} onOpenChange={(open) => { setIsManualBlockItemsOpen(open); if (!open) { setPendingBlockId(null); setManualBlockItems([]); } }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Kostenpositionen erfassen</DialogTitle>
+              <DialogDescription>Fügen Sie Positionen zum Block hinzu.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-lg border p-4">
+                <h4 className="mb-3 font-medium">Position hinzufügen</h4>
+                <div className="grid gap-3 md:grid-cols-6">
+                  <div className="md:col-span-2">
+                    <KostengruppenSelect value={newBlockItem.kostengruppe_code} onValueChange={(value) => setNewBlockItem({ ...newBlockItem, kostengruppe_code: value })} placeholder="Kostengruppe" />
+                  </div>
+                  <Input type="number" step="0.01" placeholder="Betrag" value={newBlockItem.estimated_amount} onChange={(e) => setNewBlockItem({ ...newBlockItem, estimated_amount: e.target.value })} />
+                  <Input placeholder="Notiz" value={newBlockItem.notes} onChange={(e) => setNewBlockItem({ ...newBlockItem, notes: e.target.value })} />
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="block-item-gross" checked={newBlockItem.is_gross} onCheckedChange={(checked) => setNewBlockItem({ ...newBlockItem, is_gross: !!checked })} />
+                    <Label htmlFor="block-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                  </div>
+                  <Button onClick={addNewBlockItem} variant="outline"><Plus className="h-4 w-4" /></Button>
+                </div>
+              </div>
+
+              {manualBlockItems.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Kostengruppe</TableHead>
+                      <TableHead>Notiz</TableHead>
+                      <TableHead className="text-center">inkl. MwSt</TableHead>
+                      <TableHead className="text-right">Betrag</TableHead>
+                      <TableHead className="w-16"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {manualBlockItems.map((item, index) => {
+                      const kg = getKostengruppeByCode(item.kostengruppe_code);
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>{item.kostengruppe_code} — {kg?.name || '-'}</TableCell>
+                          <TableCell>{item.notes || '-'}</TableCell>
+                          <TableCell className="text-center">{item.is_gross ? 'Ja' : 'Nein'}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(parseFloat(item.estimated_amount) || 0)}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setManualBlockItems(prev => prev.filter((_, i) => i !== index))}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setIsManualBlockItemsOpen(false); setPendingBlockId(null); setManualBlockItems([]); }}>Abbrechen</Button>
+                <Button onClick={handleSaveBlockItems} disabled={manualBlockItems.length === 0}>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Speichern
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Copy Blocks Dialog (when creating new version) */}
+        <Dialog open={isCopyBlocksOpen} onOpenChange={(open) => { if (!open) { setIsCopyBlocksOpen(false); setPendingNewVersionId(null); setCopyBlockIds([]); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Blöcke übernehmen</DialogTitle>
+              <DialogDescription>
+                Wählen Sie manuelle Blöcke aus der vorherigen Version, die in die neue Version kopiert werden sollen.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {(() => {
+                const prevVersion = versions.length > 1
+                  ? [...versions].sort((a, b) => b.version_number - a.version_number)[1]
+                  : null;
+                if (!prevVersion) return null;
+                const prevManualBlocks = allBlocks.filter(b => b.version_id === prevVersion.id && b.block_type === 'manual');
+                return prevManualBlocks.map(block => (
+                  <div key={block.id} className="flex items-center gap-3">
+                    <Checkbox
+                      checked={copyBlockIds.includes(block.id)}
+                      onCheckedChange={(checked) => {
+                        setCopyBlockIds(prev => checked
+                          ? [...prev, block.id]
+                          : prev.filter(id => id !== block.id)
+                        );
+                      }}
+                    />
+                    <div>
+                      <p className="font-medium">{block.label}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {getItemsByBlock(block.id).length} Positionen
+                      </p>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setIsCopyBlocksOpen(false); setPendingNewVersionId(null); setCopyBlockIds([]); toast({ title: 'Erfolg', description: 'Version erstellt (ohne Kopie).' }); }}>
+                Überspringen
+              </Button>
+              <Button onClick={handleCopyBlocks} disabled={copyBlockIds.length === 0}>
+                {copyBlockIds.length} Block(e) übernehmen
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Item Confirmation */}
         <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Position löschen?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Diese Aktion kann nicht rückgängig gemacht werden.
-              </AlertDialogDescription>
+              <AlertDialogDescription>Diese Aktion kann nicht rückgängig gemacht werden.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteItem} className="bg-destructive text-destructive-foreground">
-                Löschen
-              </AlertDialogAction>
+              <AlertDialogAction onClick={handleDeleteItem} className="bg-destructive text-destructive-foreground">Löschen</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Block Confirmation */}
+        <AlertDialog open={!!deleteBlockId} onOpenChange={() => setDeleteBlockId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Block löschen?</AlertDialogTitle>
+              <AlertDialogDescription>Der Block und alle seine Positionen werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteBlock} className="bg-destructive text-destructive-foreground">Löschen</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -1345,11 +1422,8 @@ export const Estimates: React.FC = () => {
           open={isDocPickerOpen}
           onOpenChange={setIsDocPickerOpen}
           onSelect={handleDocumentSelect}
-          loading={analyzing}
         />
       </div>
     </Layout>
   );
 };
-
-export default Estimates;

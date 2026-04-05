@@ -87,6 +87,7 @@ export interface ArchitectEstimate {
 export interface ArchitectEstimateItem {
   id: string;
   estimate_id: string;
+  block_id: string | null;
   kostengruppe_code: string;
   estimated_amount: number;
   notes: string | null;
@@ -196,6 +197,20 @@ export interface OfferItem {
   amount: number;
   description: string | null;
   is_gross: boolean;
+  created_at: string;
+}
+
+export interface EstimateBlock {
+  id: string;
+  version_id: string;
+  block_type: 'imported' | 'manual';
+  label: string;
+  file_path: string | null;
+  file_name: string | null;
+  source_block_id: string | null;
+  processed: boolean;
+  notes: string | null;
+  sort_order: number;
   created_at: string;
 }
 

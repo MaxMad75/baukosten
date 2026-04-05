@@ -85,6 +85,21 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     estimateItems = data || [];
   }
 
+  // 4b. Estimate blocks (via versions)
+  const { data: versionRows } = await supabase
+    .from('estimate_versions')
+    .select('id')
+    .eq('household_id', householdId);
+  const versionIds = (versionRows || []).map((v: any) => v.id);
+  let estimateBlocks: any[] = [];
+  if (versionIds.length > 0) {
+    const { data } = await supabase
+      .from('estimate_blocks')
+      .select('*')
+      .in('version_id', versionIds);
+    estimateBlocks = data || [];
+  }
+
   // 5. Contractors
   progress('Firmen laden…');
   const { data: contractors } = await supabase
@@ -195,6 +210,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       contractors: (contractors || []).map((c: any) => stripHouseholdId(c)),
       journalEntries: (journalEntries || []).map((j: any) => stripHouseholdId(j)),
       documents: (documents || []).map((d: any) => stripHouseholdId(d)),
+      estimateBlocks: estimateBlocks.map((b: any) => ({ ...b })),
     },
     attachments,
   };
@@ -221,6 +237,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       journalEntries: backupData.data.journalEntries.length,
       documents: backupData.data.documents.length,
       attachments: attachments.length,
+      estimateBlocks: backupData.data.estimateBlocks.length,
     },
   };
 

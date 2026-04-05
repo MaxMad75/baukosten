@@ -3,7 +3,7 @@
  * Schema version follows semver — bump major on breaking changes.
  */
 
-export const BACKUP_SCHEMA_VERSION = '1.0.0';
+export const BACKUP_SCHEMA_VERSION = '1.1.0';
 
 export interface BackupManifest {
   schemaVersion: string;
@@ -23,6 +23,7 @@ export interface BackupManifest {
     journalEntries: number;
     documents: number;
     attachments: number;
+    estimateBlocks: number;
   };
   checksums?: {
     backupJson: string;
@@ -96,6 +97,21 @@ export interface BackupEstimateItem {
   estimated_amount: number;
   notes: string | null;
   is_gross: boolean;
+  block_id: string | null;
+  created_at: string;
+}
+
+export interface BackupEstimateBlock {
+  id: string;
+  version_id: string;
+  block_type: string;
+  label: string;
+  file_path: string | null;
+  file_name: string | null;
+  source_block_id: string | null;
+  processed: boolean;
+  notes: string | null;
+  sort_order: number;
   created_at: string;
 }
 
@@ -183,6 +199,7 @@ export interface BackupData {
     contractors: BackupContractor[];
     journalEntries: BackupJournalEntry[];
     documents: BackupDocument[];
+    estimateBlocks: BackupEstimateBlock[];
   };
   attachments: BackupAttachmentRef[];
 }

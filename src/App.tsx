@@ -9,7 +9,7 @@ import { PrivacyProvider } from "@/contexts/PrivacyContext";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Invoices from "./pages/Invoices";
-import Estimates from "./pages/Estimates";
+import { Estimates } from "./pages/Estimates";
 import Comparison from "./pages/Comparison";
 import Contractors from "./pages/Contractors";
 import Documents from "./pages/Documents";

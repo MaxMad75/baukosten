@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/button';
 const toBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
 const toNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
 const toBruttoTaxStatus = (amount: number, taxStatus: TaxStatus) => taxStatus === 'net' ? amount * 1.19 : amount;
+const toNettoTaxStatus = (amount: number, taxStatus: TaxStatus) => taxStatus === 'gross' ? amount / 1.19 : amount;
+const taxStatusLabel = (ts: TaxStatus) => ts === 'tax_free' ? 'steuerfrei' : ts === 'gross' ? 'brutto' : 'netto';
 
 interface OfferDetail {
   offer: Offer;
@@ -59,7 +61,7 @@ interface TradeComparisonGroup {
 
 export const Comparison: React.FC = () => {
   const { invoices, loading: invLoading } = useInvoices();
-  const { allEstimates, getItemsByEstimateIds, loading: estLoading } = useEstimates();
+  const { allEstimates, allEstimateItems, allBlocks, versions, activeVersion, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getSplitsForInvoice } = useInvoiceSplits();
   const { getEffectiveAllocations } = useInvoiceAllocations();
@@ -82,42 +84,26 @@ export const Comparison: React.FC = () => {
     });
   };
 
-  // --- Version selection state ---
-  const families = useMemo(() => {
-    const map = new Map<string, typeof allEstimates>();
-    for (const est of allEstimates) {
-      const rootId = est.parent_id || est.id;
-      const list = map.get(rootId) || [];
-      list.push(est);
-      map.set(rootId, list);
-    }
-    for (const [, versions] of map) {
-      versions.sort((a, b) => a.version_number - b.version_number);
-    }
-    return map;
-  }, [allEstimates]);
-
-  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
+  // --- Single version selector ---
+  const [selectedVersionId, setSelectedVersionId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    setSelectedVersions(prev => {
-      const next: Record<string, string> = {};
-      for (const [rootId, versions] of families) {
-        if (prev[rootId] && versions.some(v => v.id === prev[rootId])) {
-          next[rootId] = prev[rootId];
-        } else {
-          const active = versions.find(v => v.is_active);
-          next[rootId] = active ? active.id : versions[versions.length - 1].id;
-        }
-      }
-      return next;
-    });
-  }, [families]);
+    if (!selectedVersionId && activeVersion) {
+      setSelectedVersionId(activeVersion.id);
+    }
+  }, [activeVersion, selectedVersionId]);
 
   const selectedEstimateItems = useMemo(() => {
-    const ids = Object.values(selectedVersions);
-    return ids.length > 0 ? getItemsByEstimateIds(ids) : [];
-  }, [selectedVersions, getItemsByEstimateIds]);
+    if (!selectedVersionId) return [];
+    // Block-linked items: block belongs to selected version
+    const versionBlockIds = new Set(allBlocks.filter(b => b.version_id === selectedVersionId).map(b => b.id));
+    // Legacy items: estimate belongs to selected version
+    const versionEstimateIds = new Set(allEstimates.filter(e => e.version_id === selectedVersionId).map(e => e.id));
+    return allEstimateItems.filter(i =>
+      (i.block_id && versionBlockIds.has(i.block_id)) ||
+      (!i.block_id && versionEstimateIds.has(i.estimate_id))
+    );
+  }, [selectedVersionId, allBlocks, allEstimates, allEstimateItems]);
 
   const toggleRow = (code: string) => {
     setOpenRows(prev => {
@@ -248,40 +234,32 @@ export const Comparison: React.FC = () => {
           </p>
         </div>
 
-        {/* Version selectors */}
-        {families.size > 0 && (
+        {/* Version selector */}
+        {versions.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Vergleichsbasis wählen</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-4">
-                {Array.from(families).map(([rootId, versions]) => {
-                  const rootEst = versions.find(v => v.id === rootId) || versions[0];
-                  const label = rootEst.file_name?.replace(/\.[^.]+$/, '') || `Schätzung`;
-                  return (
-                    <div key={rootId} className="flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">{label}</span>
-                      <Select
-                        value={selectedVersions[rootId] || ''}
-                        onValueChange={(val) => setSelectedVersions(prev => ({ ...prev, [rootId]: val }))}
-                      >
-                        <SelectTrigger className="w-[200px] h-8 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {versions.map(v => (
-                            <SelectItem key={v.id} value={v.id}>
-                              V{v.version_number}
-                              {v.is_active && ' (aktiv)'}
-                              {v.notes ? ` – ${v.notes}` : ''}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  );
-                })}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">Schätzungsversion</span>
+                <Select
+                  value={selectedVersionId || ''}
+                  onValueChange={(val) => setSelectedVersionId(val)}
+                >
+                  <SelectTrigger className="w-[280px] h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {versions.map(v => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name}
+                        {v.is_active && ' (aktiv)'}
+                        {v.notes ? ` – ${v.notes}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
@@ -515,7 +493,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
   profiles: { id: string; name: string }[];
   offersActive: boolean;
 }) {
-  const estNetto = row.estimateItems.reduce((s, i) => s + toNetto(Number(i.estimated_amount), i.is_gross), 0);
+  const estNetto = row.estimateItems.reduce((s, i) => s + toNettoTaxStatus(Number(i.estimated_amount), (i.tax_status as TaxStatus) || (i.is_gross ? 'gross' : 'net')), 0);
   const estBrutto = row.estimatedBrutto;
   const estMwst = estBrutto - estNetto;
 
@@ -541,7 +519,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
             <div className="space-y-1">
               {row.estimateItems.map(item => (
                 <div key={item.id} className="flex justify-between text-sm">
-                  <span>{formatCurrency(Number(item.estimated_amount))} <Badge variant="outline" className="ml-1 text-xs">{item.is_gross ? 'brutto' : 'netto'}</Badge></span>
+                  <span>{formatCurrency(Number(item.estimated_amount))} <Badge variant="outline" className="ml-1 text-xs">{taxStatusLabel((item.tax_status as TaxStatus) || (item.is_gross ? 'gross' : 'net'))}</Badge></span>
                   {item.notes && <span className="text-muted-foreground truncate ml-2">{item.notes}</span>}
                 </div>
               ))}

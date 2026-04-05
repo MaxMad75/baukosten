@@ -19,7 +19,7 @@ import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate, EstimateVersion, EstimateBlock } from '@/lib/types';
+import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate, EstimateVersion, EstimateBlock, TaxStatus } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Plus, 
@@ -69,9 +69,9 @@ import {
 // Minimum text length to consider text extraction successful
 const MIN_TEXT_LENGTH = 50;
 
-// MwSt helpers
-const calcNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
-const calcBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
+// MwSt helpers — now tax_status-aware
+const calcNetto = (amount: number, taxStatus: TaxStatus) => taxStatus === 'gross' ? amount / 1.19 : amount;
+const calcBrutto = (amount: number, taxStatus: TaxStatus) => taxStatus === 'net' ? amount * 1.19 : amount;
 
 interface VatSummary {
   netto: number;
@@ -79,18 +79,18 @@ interface VatSummary {
   brutto: number;
 }
 
-function computeVatSummary(items: Array<{ estimated_amount: number; is_gross: boolean }>): VatSummary {
+function computeVatSummary(items: Array<{ estimated_amount: number; tax_status: TaxStatus }>): VatSummary {
   let netto = 0;
   let brutto = 0;
   for (const item of items) {
     const amt = Number(item.estimated_amount);
-    netto += calcNetto(amt, item.is_gross);
-    brutto += calcBrutto(amt, item.is_gross);
+    netto += calcNetto(amt, item.tax_status);
+    brutto += calcBrutto(amt, item.tax_status);
   }
   return { netto, mwst: brutto - netto, brutto };
 }
 
-function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: number; is_gross: boolean }>; colSpan: number }) {
+function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: number; tax_status: TaxStatus }>; colSpan: number }) {
   const { netto, mwst, brutto } = computeVatSummary(items);
   const { formatAmount } = usePrivacy();
   return (
@@ -177,13 +177,13 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: string;
     estimated_amount: string;
     notes: string;
-    is_gross: boolean;
+    tax_status: TaxStatus;
   }>>([]);
   const [newBlockItem, setNewBlockItem] = useState({
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
-    is_gross: false,
+    tax_status: 'net' as TaxStatus,
   });
 
   // Upload/analysis state
@@ -209,7 +209,7 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
-    is_gross: false,
+    tax_status: 'net' as TaxStatus,
   });
 
   // Manual estimate form state (for upload dialog)
@@ -217,7 +217,7 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
-    is_gross: false,
+    tax_status: 'net' as TaxStatus,
   });
 
   // Auto-select active version when versions load
@@ -276,7 +276,7 @@ export const Estimates: React.FC = () => {
     setPendingEstimateId(null);
     setPendingFile(null);
     setPendingImportBlockId(null);
-    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
     setPendingAnalysisPayload(null);
@@ -317,7 +317,7 @@ export const Estimates: React.FC = () => {
     setAnalysisResult(result);
     
     if (result.is_estimate && result.items && result.items.length > 0) {
-      setExtractedItems(result.items.map(item => ({ ...item, is_gross: false })));
+      setExtractedItems(result.items.map(item => ({ ...item, is_gross: false, tax_status: 'net' as TaxStatus })));
       toast({
         title: 'Kostenschätzung erkannt',
         description: `${result.items.length} Kostenpositionen extrahiert (Konfidenz: ${result.confidence}).`,
@@ -471,7 +471,7 @@ export const Estimates: React.FC = () => {
 
   const handleForceAnalysis = () => {
     if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
-      setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false })));
+      setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false, tax_status: 'net' as TaxStatus })));
     }
     setShowNotEstimateWarning(false);
   };
@@ -547,10 +547,11 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: manualItem.kostengruppe_code,
       estimated_amount: parseFloat(manualItem.estimated_amount),
       notes: manualItem.notes || '',
-      is_gross: manualItem.is_gross,
+      is_gross: manualItem.tax_status === 'gross',
+      tax_status: manualItem.tax_status,
     }]);
 
-    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
   };
 
   // ── Block handlers ──
@@ -592,9 +593,9 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: newBlockItem.kostengruppe_code,
       estimated_amount: newBlockItem.estimated_amount,
       notes: newBlockItem.notes,
-      is_gross: newBlockItem.is_gross,
+      tax_status: newBlockItem.tax_status,
     }]);
-    setNewBlockItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setNewBlockItem({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
   };
 
   const handleSaveBlockItems = async () => {
@@ -618,7 +619,8 @@ export const Estimates: React.FC = () => {
         kostengruppe_code: item.kostengruppe_code,
         estimated_amount: parseFloat(item.estimated_amount),
         notes: item.notes || undefined,
-        is_gross: item.is_gross,
+        is_gross: item.tax_status === 'gross',
+        tax_status: item.tax_status,
       }))
     );
 
@@ -709,13 +711,13 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: item.kostengruppe_code,
       estimated_amount: String(item.estimated_amount),
       notes: item.notes || '',
-      is_gross: item.is_gross ?? false,
+      tax_status: (item.tax_status as TaxStatus) || (item.is_gross ? 'gross' : 'net'),
     });
   };
 
   const cancelEditing = () => {
     setEditingItemId(null);
-    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
   };
 
   const saveEditing = async () => {
@@ -724,8 +726,9 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: editFormData.kostengruppe_code,
       estimated_amount: parseFloat(editFormData.estimated_amount) || 0,
       notes: editFormData.notes || null,
-      is_gross: editFormData.is_gross,
-    });
+      is_gross: editFormData.tax_status === 'gross',
+      tax_status: editFormData.tax_status,
+    } as any);
     if (success) {
       toast({ title: 'Erfolg', description: 'Position wurde aktualisiert.' });
       cancelEditing();
@@ -740,10 +743,12 @@ export const Estimates: React.FC = () => {
 
   const formatCurrency = (amount: number) => formatAmount(amount);
 
+  // Helper to derive tax_status from an item
+  const itemTaxStatus = (i: ArchitectEstimateItem): TaxStatus => (i.tax_status as TaxStatus) || (i.is_gross ? 'gross' : 'net');
+  const toVatInput = (i: ArchitectEstimateItem) => ({ estimated_amount: Number(i.estimated_amount), tax_status: itemTaxStatus(i) });
+
   // VAT summary
-  const globalVat = computeVatSummary(
-    displayedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
-  );
+  const globalVat = computeVatSummary(displayedItems.map(toVatInput));
 
   // Render item table (shared between blocks and legacy estimates)
   const renderItemTable = (items: ArchitectEstimateItem[]) => (
@@ -753,7 +758,7 @@ export const Estimates: React.FC = () => {
           <TableHead>Code</TableHead>
           <TableHead>Kostengruppe</TableHead>
           <TableHead>Notizen</TableHead>
-          <TableHead className="text-center">inkl. MwSt</TableHead>
+          <TableHead className="text-center">Steuer</TableHead>
           <TableHead className="text-right">Betrag</TableHead>
           <TableHead className="w-24">Aktionen</TableHead>
         </TableRow>
@@ -776,7 +781,14 @@ export const Estimates: React.FC = () => {
                   <Input value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} placeholder="Notiz" />
                 </TableCell>
                 <TableCell className="text-center">
-                  <Checkbox checked={editFormData.is_gross} onCheckedChange={(checked) => setEditFormData({ ...editFormData, is_gross: !!checked })} />
+                  <Select value={editFormData.tax_status} onValueChange={(v) => setEditFormData({ ...editFormData, tax_status: v as TaxStatus })}>
+                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="net">Netto</SelectItem>
+                      <SelectItem value="gross">Brutto</SelectItem>
+                      <SelectItem value="tax_free">Steuerfrei</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell className="text-right">
                   <Input type="number" step="0.01" value={editFormData.estimated_amount} onChange={(e) => setEditFormData({ ...editFormData, estimated_amount: e.target.value })} className="w-32 text-right" />
@@ -797,7 +809,9 @@ export const Estimates: React.FC = () => {
               <TableCell>{kg?.name || '-'}</TableCell>
               <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
               <TableCell className="text-center">
-                <span className="text-xs text-muted-foreground">{item.is_gross ? 'brutto' : 'netto'}</span>
+                <span className="text-xs text-muted-foreground">
+                  {itemTaxStatus(item) === 'tax_free' ? 'steuerfrei' : itemTaxStatus(item) === 'gross' ? 'brutto' : 'netto'}
+                </span>
               </TableCell>
               <TableCell className="text-right font-medium">{formatCurrency(Number(item.estimated_amount))}</TableCell>
               <TableCell>
@@ -809,7 +823,7 @@ export const Estimates: React.FC = () => {
             </TableRow>
           );
         })}
-        <VatSummaryRows items={items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))} colSpan={4} />
+        <VatSummaryRows items={items.map(toVatInput)} colSpan={4} />
       </TableBody>
     </Table>
   );
@@ -1042,9 +1056,7 @@ export const Estimates: React.FC = () => {
                 {/* Render blocks */}
                 {displayedBlocks.map((block) => {
                   const items = getItemsByBlock(block.id);
-                  const blockVat = computeVatSummary(
-                    items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
-                  );
+                  const blockVat = computeVatSummary(items.map(toVatInput));
                   
                   return (
                     <AccordionItem key={block.id} value={`block-${block.id}`}>
@@ -1103,9 +1115,7 @@ export const Estimates: React.FC = () => {
                 {/* Render legacy estimates (items without block_id) */}
                 {legacyEstimatesWithItems.map((estimate) => {
                   const items = allEstimateItems.filter(i => i.estimate_id === estimate.id && !i.block_id);
-                  const estVat = computeVatSummary(
-                    items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
-                  );
+                  const estVat = computeVatSummary(items.map(toVatInput));
                   
                   return (
                     <AccordionItem key={estimate.id} value={`legacy-${estimate.id}`}>
@@ -1219,8 +1229,14 @@ export const Estimates: React.FC = () => {
                       </div>
                       <Input type="number" step="0.01" placeholder="Betrag" value={manualItem.estimated_amount} onChange={(e) => setManualItem({ ...manualItem, estimated_amount: e.target.value })} />
                       <div className="flex items-center gap-2">
-                        <Checkbox id="manual-item-gross" checked={manualItem.is_gross} onCheckedChange={(checked) => setManualItem({ ...manualItem, is_gross: !!checked })} />
-                        <Label htmlFor="manual-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                        <Select value={manualItem.tax_status} onValueChange={(v) => setManualItem({ ...manualItem, tax_status: v as TaxStatus })}>
+                          <SelectTrigger className="w-28 h-9 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="net">Netto</SelectItem>
+                            <SelectItem value="gross">Brutto</SelectItem>
+                            <SelectItem value="tax_free">Steuerfrei</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <Button onClick={addManualItemToList} variant="outline"><Plus className="h-4 w-4" /></Button>
                     </div>
@@ -1257,7 +1273,7 @@ export const Estimates: React.FC = () => {
                           </TableRow>
                         );
                       })}
-                      <VatSummaryRows items={extractedItems} colSpan={3} />
+                      <VatSummaryRows items={extractedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), tax_status: (i as any).tax_status || (i.is_gross ? 'gross' : 'net') as TaxStatus }))} colSpan={3} />
                     </TableBody>
                   </Table>
 
@@ -1291,8 +1307,14 @@ export const Estimates: React.FC = () => {
                   <Input type="number" step="0.01" placeholder="Betrag" value={newBlockItem.estimated_amount} onChange={(e) => setNewBlockItem({ ...newBlockItem, estimated_amount: e.target.value })} />
                   <Input placeholder="Notiz" value={newBlockItem.notes} onChange={(e) => setNewBlockItem({ ...newBlockItem, notes: e.target.value })} />
                   <div className="flex items-center gap-2">
-                    <Checkbox id="block-item-gross" checked={newBlockItem.is_gross} onCheckedChange={(checked) => setNewBlockItem({ ...newBlockItem, is_gross: !!checked })} />
-                    <Label htmlFor="block-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                    <Select value={newBlockItem.tax_status} onValueChange={(v) => setNewBlockItem({ ...newBlockItem, tax_status: v as TaxStatus })}>
+                      <SelectTrigger className="w-28 h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="net">Netto</SelectItem>
+                        <SelectItem value="gross">Brutto</SelectItem>
+                        <SelectItem value="tax_free">Steuerfrei</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button onClick={addNewBlockItem} variant="outline"><Plus className="h-4 w-4" /></Button>
                 </div>
@@ -1304,7 +1326,7 @@ export const Estimates: React.FC = () => {
                     <TableRow>
                       <TableHead>Kostengruppe</TableHead>
                       <TableHead>Notiz</TableHead>
-                      <TableHead className="text-center">inkl. MwSt</TableHead>
+                      <TableHead className="text-center">Steuer</TableHead>
                       <TableHead className="text-right">Betrag</TableHead>
                       <TableHead className="w-16"></TableHead>
                     </TableRow>
@@ -1316,7 +1338,7 @@ export const Estimates: React.FC = () => {
                         <TableRow key={index}>
                           <TableCell>{item.kostengruppe_code} — {kg?.name || '-'}</TableCell>
                           <TableCell>{item.notes || '-'}</TableCell>
-                          <TableCell className="text-center">{item.is_gross ? 'Ja' : 'Nein'}</TableCell>
+                          <TableCell className="text-center">{item.tax_status === 'tax_free' ? 'Steuerfrei' : item.tax_status === 'gross' ? 'Brutto' : 'Netto'}</TableCell>
                           <TableCell className="text-right">{formatCurrency(parseFloat(item.estimated_amount) || 0)}</TableCell>
                           <TableCell>
                             <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setManualBlockItems(prev => prev.filter((_, i) => i !== index))}>

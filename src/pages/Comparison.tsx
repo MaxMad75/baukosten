@@ -8,7 +8,7 @@ import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
 import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { useOffers } from '@/hooks/useOffers';
-import { Invoice, ArchitectEstimateItem, Offer, OfferItem } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, Offer, OfferItem, TaxStatus } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 
 const toBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
 const toNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
+const toBruttoTaxStatus = (amount: number, taxStatus: TaxStatus) => taxStatus === 'net' ? amount * 1.19 : amount;
 
 interface OfferDetail {
   offer: Offer;
@@ -177,7 +178,7 @@ export const Comparison: React.FC = () => {
       const codeInvoiceItems = actualByCode.get(code) || [];
       const codeOfferItems = offerByCode.get(code) || [];
 
-      const estimatedBrutto = codeEstimates.reduce((s, i) => s + toBrutto(Number(i.estimated_amount), i.is_gross), 0);
+      const estimatedBrutto = codeEstimates.reduce((s, i) => s + toBruttoTaxStatus(Number(i.estimated_amount), (i.tax_status as TaxStatus) || (i.is_gross ? 'gross' : 'net')), 0);
       const actualBrutto = codeInvoiceItems.reduce((s, item) => s + toBrutto(item.allocatedAmount, item.invoice.is_gross), 0);
       const difference = actualBrutto - estimatedBrutto;
       const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;

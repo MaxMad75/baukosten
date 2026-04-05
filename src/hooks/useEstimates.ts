@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArchitectEstimate, ArchitectEstimateItem, EstimateVersion, EstimateBlock } from '@/lib/types';
+import { ArchitectEstimate, ArchitectEstimateItem, EstimateVersion, EstimateBlock, TaxStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 export function useEstimates() {
@@ -228,17 +228,21 @@ export function useEstimates() {
     return data as ArchitectEstimate;
   };
 
-  const addEstimateItems = async (estimateId: string, items: Array<{ kostengruppe_code: string; estimated_amount: number; notes?: string; is_gross?: boolean }>) => {
+  const addEstimateItems = async (estimateId: string, items: Array<{ kostengruppe_code: string; estimated_amount: number; notes?: string; is_gross?: boolean; tax_status?: TaxStatus }>) => {
     const { error } = await supabase
       .from('architect_estimate_items')
       .insert(
-        items.map(item => ({
-          estimate_id: estimateId,
-          kostengruppe_code: item.kostengruppe_code,
-          estimated_amount: item.estimated_amount,
-          notes: item.notes || null,
-          is_gross: item.is_gross ?? false,
-        }))
+        items.map(item => {
+          const taxStatus = item.tax_status || (item.is_gross ? 'gross' : 'net');
+          return {
+            estimate_id: estimateId,
+            kostengruppe_code: item.kostengruppe_code,
+            estimated_amount: item.estimated_amount,
+            notes: item.notes || null,
+            is_gross: taxStatus === 'gross',
+            tax_status: taxStatus,
+          };
+        })
       );
 
     if (error) {
@@ -298,19 +302,23 @@ export function useEstimates() {
   const addBlockItems = async (
     blockId: string,
     estimateId: string,
-    items: Array<{ kostengruppe_code: string; estimated_amount: number; notes?: string; is_gross?: boolean }>
+    items: Array<{ kostengruppe_code: string; estimated_amount: number; notes?: string; is_gross?: boolean; tax_status?: TaxStatus }>
   ) => {
     const { error } = await supabase
       .from('architect_estimate_items')
       .insert(
-        items.map(item => ({
-          estimate_id: estimateId,
-          block_id: blockId,
-          kostengruppe_code: item.kostengruppe_code,
-          estimated_amount: item.estimated_amount,
-          notes: item.notes || null,
-          is_gross: item.is_gross ?? false,
-        }))
+        items.map(item => {
+          const taxStatus = item.tax_status || (item.is_gross ? 'gross' : 'net');
+          return {
+            estimate_id: estimateId,
+            block_id: blockId,
+            kostengruppe_code: item.kostengruppe_code,
+            estimated_amount: item.estimated_amount,
+            notes: item.notes || null,
+            is_gross: taxStatus === 'gross',
+            tax_status: taxStatus,
+          };
+        })
       );
 
     if (error) {
@@ -395,6 +403,7 @@ export function useEstimates() {
               estimated_amount: item.estimated_amount,
               notes: item.notes,
               is_gross: item.is_gross,
+              tax_status: item.tax_status || (item.is_gross ? 'gross' : 'net'),
             }))
           );
       }

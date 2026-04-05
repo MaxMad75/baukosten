@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { computeFileHash } from '@/utils/fileHash';
 import { Layout } from '@/components/Layout';
 import { ZipUploadDialog } from '@/components/ZipUploadDialog';

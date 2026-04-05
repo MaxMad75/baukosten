@@ -177,13 +177,13 @@ export const Estimates: React.FC = () => {
     kostengruppe_code: string;
     estimated_amount: string;
     notes: string;
-    is_gross: boolean;
+    tax_status: TaxStatus;
   }>>([]);
   const [newBlockItem, setNewBlockItem] = useState({
     kostengruppe_code: '',
     estimated_amount: '',
     notes: '',
-    is_gross: false,
+    tax_status: 'net' as TaxStatus,
   });
 
   // Upload/analysis state

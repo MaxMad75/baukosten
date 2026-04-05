@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useEstimates } from '@/hooks/useEstimates';
@@ -19,7 +19,8 @@ import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { ExtractedEstimateData, ArchitectEstimateItem } from '@/lib/types';
+import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate } from '@/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Plus, 
   Upload, 
@@ -35,7 +36,8 @@ import {
   AlertTriangle,
   RefreshCw,
   History,
-  Star
+  Star,
+  GitBranch
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';

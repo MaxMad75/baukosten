@@ -809,7 +809,9 @@ export const Estimates: React.FC = () => {
               <TableCell>{kg?.name || '-'}</TableCell>
               <TableCell className="text-muted-foreground">{item.notes || '-'}</TableCell>
               <TableCell className="text-center">
-                <span className="text-xs text-muted-foreground">{item.is_gross ? 'brutto' : 'netto'}</span>
+                <span className="text-xs text-muted-foreground">
+                  {itemTaxStatus(item) === 'tax_free' ? 'steuerfrei' : itemTaxStatus(item) === 'gross' ? 'brutto' : 'netto'}
+                </span>
               </TableCell>
               <TableCell className="text-right font-medium">{formatCurrency(Number(item.estimated_amount))}</TableCell>
               <TableCell>

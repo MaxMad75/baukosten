@@ -155,15 +155,44 @@ export async function restoreBackupZip(
     }
   }
 
+  // 5b. Restore estimate blocks
+  for (const block of backup.data.estimateBlocks || []) {
+    // version_id mapping would be needed if we had version restore;
+    // for now blocks reference version_id directly (same household)
+    const { data, error } = await supabase
+      .from('estimate_blocks')
+      .insert({
+        version_id: block.version_id,
+        block_type: block.block_type,
+        label: block.label,
+        file_path: block.file_path,
+        file_name: block.file_name,
+        source_block_id: null,
+        processed: block.processed,
+        notes: block.notes,
+        sort_order: block.sort_order,
+      })
+      .select('id')
+      .single();
+
+    if (!error && data) {
+      blockIdMap.set(block.id, data.id);
+      counts.estimateBlocks++;
+    }
+  }
+
   // 6. Restore estimate items
   for (const item of backup.data.estimateItems) {
     const newEstimateId = estimateIdMap.get(item.estimate_id);
     if (!newEstimateId) continue;
 
+    const newBlockId = item.block_id ? blockIdMap.get(item.block_id) || null : null;
+
     const { error } = await supabase
       .from('architect_estimate_items')
       .insert({
         estimate_id: newEstimateId,
+        block_id: newBlockId,
         kostengruppe_code: item.kostengruppe_code,
         estimated_amount: item.estimated_amount,
         notes: item.notes,

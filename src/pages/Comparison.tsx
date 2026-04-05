@@ -519,7 +519,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
             <div className="space-y-1">
               {row.estimateItems.map(item => (
                 <div key={item.id} className="flex justify-between text-sm">
-                  <span>{formatCurrency(Number(item.estimated_amount))} <Badge variant="outline" className="ml-1 text-xs">{item.is_gross ? 'brutto' : 'netto'}</Badge></span>
+                  <span>{formatCurrency(Number(item.estimated_amount))} <Badge variant="outline" className="ml-1 text-xs">{taxStatusLabel((item.tax_status as TaxStatus) || (item.is_gross ? 'gross' : 'net'))}</Badge></span>
                   {item.notes && <span className="text-muted-foreground truncate ml-2">{item.notes}</span>}
                 </div>
               ))}

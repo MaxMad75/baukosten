@@ -8,7 +8,7 @@ import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
 import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { useOffers } from '@/hooks/useOffers';
-import { Invoice, ArchitectEstimateItem, Offer, OfferItem } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, Offer, OfferItem, TaxStatus } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';

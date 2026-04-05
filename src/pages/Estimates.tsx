@@ -296,6 +296,21 @@ export const Estimates: React.FC = () => {
     return { textContent, fileBase64, fileName };
   };
 
+  // Compute estimate families for grouping
+  const estimateFamilies = useMemo(() => {
+    const seen = new Set<string>();
+    return estimates.filter(est => {
+      const rootId = est.parent_id || est.id;
+      if (seen.has(rootId)) return false;
+      seen.add(rootId);
+      return true;
+    }).map(est => ({
+      rootId: est.parent_id || est.id,
+      activeVersion: est,
+      versions: getVersions(est.id),
+    }));
+  }, [estimates, allEstimates]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !household) return;
@@ -321,6 +336,15 @@ export const Estimates: React.FC = () => {
         throw uploadError;
       }
 
+      // If there are existing estimate families, ask the user what to do
+      if (estimateFamilies.length > 0) {
+        setPendingUpload({ filePath, fileName: file.name, file });
+        setPendingUploadChoice('standalone');
+        setUploading(false);
+        return;
+      }
+
+      // No existing families: create standalone immediately
       setUploadedFile({ path: filePath, name: file.name });
       setPendingFile(file);
 
@@ -354,6 +378,15 @@ export const Estimates: React.FC = () => {
     if (!household) return;
 
     setIsDocPickerOpen(false);
+
+    // If there are existing families, ask the user what to do
+    if (estimateFamilies.length > 0) {
+      setPendingUpload({ filePath: doc.file_path, fileName: doc.file_name, file: null });
+      setPendingUploadChoice('standalone');
+      return;
+    }
+
+    // No existing families: create standalone immediately
     setIsUploadOpen(true);
     setAnalyzing(true);
 
@@ -384,6 +417,64 @@ export const Estimates: React.FC = () => {
       toast({
         title: 'Fehler',
         description: 'Dokument konnte nicht analysiert werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Proceed after user chose standalone vs version
+  const proceedWithUploadChoice = async () => {
+    if (!pendingUpload || !household) return;
+
+    const { filePath, fileName, file } = pendingUpload;
+    const isVersion = pendingUploadChoice !== 'standalone';
+
+    setPendingUpload(null);
+    setIsUploadOpen(true);
+    setAnalyzing(true);
+
+    try {
+      let estimate: ArchitectEstimate | null;
+
+      if (isVersion) {
+        // Create as new version of selected family
+        estimate = await replaceEstimate(pendingUploadChoice, filePath, fileName);
+      } else {
+        estimate = await createEstimate(filePath, fileName);
+      }
+
+      if (!estimate) throw new Error('Could not create estimate');
+
+      setPendingEstimateId(estimate.id);
+      setUploadedFile({ path: filePath, name: fileName });
+
+      // Get the blob for analysis
+      let blob: Blob;
+      if (file) {
+        blob = file;
+        setPendingFile(file instanceof File ? file : null);
+      } else {
+        const signedUrl = await getDocumentUrl(filePath);
+        if (!signedUrl) throw new Error('Could not get document URL');
+        const response = await fetch(signedUrl);
+        if (!response.ok) throw new Error('Could not download document');
+        blob = await response.blob();
+      }
+
+      const payload = await processFileForAnalysis(blob, fileName);
+      setPendingAnalysisPayload(payload);
+
+      const result = await callAnalyzeEstimate(payload);
+      if (result) {
+        handleAnalysisResult(result);
+      }
+    } catch (error) {
+      console.error('[Estimates] Upload choice error:', error);
+      toast({
+        title: 'Fehler',
+        description: error instanceof Error ? error.message : 'Datei konnte nicht verarbeitet werden',
         variant: 'destructive',
       });
     } finally {

@@ -1338,7 +1338,7 @@ export const Estimates: React.FC = () => {
                         <TableRow key={index}>
                           <TableCell>{item.kostengruppe_code} — {kg?.name || '-'}</TableCell>
                           <TableCell>{item.notes || '-'}</TableCell>
-                          <TableCell className="text-center">{item.is_gross ? 'Ja' : 'Nein'}</TableCell>
+                          <TableCell className="text-center">{item.tax_status === 'tax_free' ? 'Steuerfrei' : item.tax_status === 'gross' ? 'Brutto' : 'Netto'}</TableCell>
                           <TableCell className="text-right">{formatCurrency(parseFloat(item.estimated_amount) || 0)}</TableCell>
                           <TableCell>
                             <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setManualBlockItems(prev => prev.filter((_, i) => i !== index))}>

@@ -391,7 +391,7 @@ export function useEstimates() {
       if (error || !newBlock) continue;
 
       // Copy items from the source block
-386:       const sourceItems = allEstimateItems.filter(i => i.block_id === block.id);
+      const sourceItems = allEstimateItems.filter(i => i.block_id === block.id);
       if (sourceItems.length > 0) {
         await supabase
           .from('architect_estimate_items')

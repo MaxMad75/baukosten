@@ -199,6 +199,7 @@ export interface BackupData {
     contractors: BackupContractor[];
     journalEntries: BackupJournalEntry[];
     documents: BackupDocument[];
+    estimateBlocks: BackupEstimateBlock[];
   };
   attachments: BackupAttachmentRef[];
 }

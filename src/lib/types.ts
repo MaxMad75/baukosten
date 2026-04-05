@@ -23,6 +23,8 @@ export interface DIN276Kostengruppe {
   created_at: string;
 }
 
+export type TaxStatus = 'net' | 'gross' | 'tax_free';
+
 export type InvoiceStatus = 'draft' | 'review_needed' | 'approved' | 'partially_paid' | 'paid' | 'cancelled';
 
 export interface Invoice {

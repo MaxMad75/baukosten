@@ -237,6 +237,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       journalEntries: backupData.data.journalEntries.length,
       documents: backupData.data.documents.length,
       attachments: attachments.length,
+      estimateBlocks: backupData.data.estimateBlocks.length,
     },
   };
 

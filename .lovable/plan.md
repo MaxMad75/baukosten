@@ -1,112 +1,66 @@
 
 
-# Trade-Level Comparison View — Revised Plan (Deterministic Mapping)
+# Fix Estimate Version Assignment and Family Grouping
 
-## Overview
+## Root cause
 
-Introduce a static, fully explicit trade mapping that groups DIN-based comparison rows into pragmatic trade nodes. Every mapping rule uses exact codes or exact prefix matching. No vague subsets or inferred semantics.
+`handleFileUpload` and `handleDocumentSelect` in `Estimates.tsx` always call `createEstimate(filePath, fileName)` without a `parentId`, creating a new standalone active estimate every time. Only `handleReplaceUpload` correctly uses `replaceEstimate`.
 
-## New file: `src/lib/tradeMapping.ts`
+## Changes — 3 items, all in `src/pages/Estimates.tsx`
 
-### Interface
+### 1. Upload flow: ask "new or version?"
 
-```ts
-interface TradeNode {
-  id: string;
-  label: string;
-  codes: string[];  // exact DIN codes (level 2 or 3) that match this trade
-}
-```
+After a file is uploaded to storage (or a document is selected), but before creating the estimate record:
 
-### Matching rule
+- If no existing estimate families exist: create standalone immediately (current behavior)
+- If families exist: show a small dialog with two choices:
+  - **"Neue eigenständige Schätzung"** → calls `createEstimate(path, name)` (standalone)
+  - **"Neue Version von: [family name]"** (select from list) → calls `replaceEstimate(selectedEstimateId, path, name)`
 
-A comparison row with code `X` matches a trade node if:
-1. `X` is listed in the node's `codes` array, OR
-2. `X`'s level-2 parent (from kostengruppen data) is listed in the node's `codes` array
+Implementation: add a `pendingUpload: { filePath: string; fileName: string } | null` state. Set it after successful storage upload. Show a dialog when `pendingUpload` is set and families exist. On choice, call the appropriate function and clear `pendingUpload`.
 
-If no match is found, the row goes to "Sonstiges".
+Same logic applies to `handleDocumentSelect`.
 
-### Initial trade nodes (deterministic, exact codes only)
+### 2. Family grouping in accordion
 
-| id | label | codes (exact) |
-|---|---|---|
-| `erdarbeiten` | Erdarbeiten | `["310"]` |
-| `gruendung` | Gründung / Unterbau | `["320"]` |
-| `rohbau` | Rohbau (Wände, Decken) | `["330", "340", "350"]` |
-| `dach` | Dach / Zimmerer | `["360"]` |
-| `sanitaer` | Sanitär (Abwasser, Wasser, Gas) | `["410"]` |
-| `heizung` | Heizung | `["420"]` |
-| `lueftung` | Wohnraumlüftung | `["430"]` |
-| `elektro` | Elektro | `["440"]` |
-| `aussenanlagen` | Außenanlagen | `["500"]` |
-| `baunebenkosten` | Baunebenkosten | `["700"]` |
-
-Codes **not** covered (e.g. 100, 200, 370, 390, 450-490, 600, 800) fall into the automatic "Sonstiges" catch-all.
-
-This is deliberately conservative. Trade nodes like "Fenster + Eingangstüren" or "Bodenbeläge + Treppe" require level-3 code splitting within a single level-2 parent (e.g. 334 from 330) — those are deferred to a later phase to keep this mapping unambiguous.
-
-### Helper function
+Group `estimates` by family root (`parent_id || id`) before rendering:
 
 ```ts
-function getTradeForCode(code: string, parentCode: string | null): string
+const estimateFamilies = useMemo(() => {
+  const seen = new Set<string>();
+  return estimates.filter(est => {
+    const rootId = est.parent_id || est.id;
+    if (seen.has(rootId)) return false;
+    seen.add(rootId);
+    return true;
+  }).map(est => ({
+    rootId: est.parent_id || est.id,
+    activeVersion: est,
+    versions: getVersions(est.id),
+  }));
+}, [estimates, allEstimates]);
 ```
 
-Returns the `id` of the matching trade node, or `"sonstiges"`.
+Render one accordion entry per family. Show version badge ("v2 von 3") when versions > 1.
 
-## Changes in `src/pages/Comparison.tsx`
+### 3. Summary description
 
-### 1. New interface
+Change from `"{n} Schätzung(en)"` to `"{n} Schätzfamilie(n)"`. The actual numeric summary (`estimateItems` from hook = active-only items) is already correct and unchanged.
 
-```ts
-interface TradeComparisonGroup {
-  tradeId: string;
-  tradeLabel: string;
-  estimatedBrutto: number;
-  actualBrutto: number;
-  difference: number;
-  percentage: number;
-  offerBrutto: number;
-  offerVsEstimate: number;
-  children: ComparisonRow[];
-}
-```
+## Explicitly not included
 
-### 2. New `tradeComparisons` memo
-
-After existing `comparisons` memo:
-- For each `ComparisonRow`, resolve its trade using `getTradeForCode(row.code, kostengruppeByCode?.parent_code)`
-- Group rows by trade, aggregate sums for all numeric fields
-- Compute `percentage` from aggregated `difference / estimatedBrutto`
-
-### 3. View toggle
-
-```ts
-const [viewMode, setViewMode] = useState<'trades' | 'detail'>('trades');
-```
-
-Two small buttons/tabs above the table: **Gewerke** (default) | **Detail (DIN 276)**.
-
-### 4. UI rendering
-
-- `trades` mode: render `TradeComparisonGroup` rows, each collapsible to show child `ComparisonRow` details
-- `detail` mode: existing flat table, unchanged
-
-### 5. Totals memo unchanged
-
-Existing `totals` reduces over flat `comparisons` — stays as-is.
+- No post-hoc reassignment action — `replaceEstimate` is designed for new uploads, not reparenting existing records. Reassignment would need dedicated logic in a future phase.
 
 ## Files
 
 | File | Change |
-|---|---|
-| `src/lib/tradeMapping.ts` | New — trade node definitions + `getTradeForCode` helper |
-| `src/pages/Comparison.tsx` | Import mapping, add `tradeComparisons` memo, view toggle, grouped rendering |
+|------|--------|
+| `src/pages/Estimates.tsx` | Pending-upload state + choice dialog, family grouping in accordion, summary text |
 
 ## Unchanged
 
+- `useEstimates.ts` — hook logic and active filtering already correct
 - Database schema — no migration
-- All hooks (`useKostengruppen`, `useEstimates`, `useInvoices`, `useOffers`, `useInvoiceAllocations`)
-- `comparisons` memo and `ComparisonRow` interface — kept intact as data source
-- All other pages
-- Auth, backup/restore, invoice payments, estimate versioning
+- `Comparison.tsx`, invoice logic, offer logic
+- Auth, dashboard, backup/restore, all other pages
 

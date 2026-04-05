@@ -210,6 +210,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       contractors: (contractors || []).map((c: any) => stripHouseholdId(c)),
       journalEntries: (journalEntries || []).map((j: any) => stripHouseholdId(j)),
       documents: (documents || []).map((d: any) => stripHouseholdId(d)),
+      estimateBlocks: estimateBlocks.map((b: any) => ({ ...b })),
     },
     attachments,
   };

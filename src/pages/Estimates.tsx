@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,10 +34,9 @@ import {
   X,
   FolderOpen,
   AlertTriangle,
-  RefreshCw,
-  History,
+  Layers,
   Star,
-  GitBranch
+  Pencil,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -114,10 +113,6 @@ function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: n
   );
 }
 
-function formatCurrencyStatic(amount: number) {
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
-}
-
 interface AnalysisResult {
   is_estimate: boolean;
   confidence: string;
@@ -152,6 +147,14 @@ export const Estimates: React.FC = () => {
   const { formatAmount } = usePrivacy();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Version management
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
+  const [editingVersionNameValue, setEditingVersionNameValue] = useState('');
+  const [isCreateVersionOpen, setIsCreateVersionOpen] = useState(false);
+  const [newVersionName, setNewVersionName] = useState('');
+
+  // Upload/analysis state
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isDocPickerOpen, setIsDocPickerOpen] = useState(false);
@@ -163,11 +166,8 @@ export const Estimates: React.FC = () => {
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // Version management
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [editingVersionName, setEditingVersionName] = useState<string | null>(null);
-  const [newVersionName, setNewVersionName] = useState('');
-  const [isCreateVersionOpen, setIsCreateVersionOpen] = useState(false);
+  // Pre-analysis result
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
   const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<any>(null);
 
@@ -203,13 +203,28 @@ export const Estimates: React.FC = () => {
     is_gross: false,
   });
 
+  // Auto-select active version when versions load
+  useEffect(() => {
+    if (versions.length > 0 && !selectedVersionId) {
+      const active = versions.find(v => v.is_active);
+      setSelectedVersionId(active?.id || versions[0].id);
+    }
+  }, [versions, selectedVersionId]);
+
+  // The currently displayed version
+  const displayedVersion = versions.find(v => v.id === selectedVersionId) || activeVersion;
+
+  // Estimates for the displayed version
+  const displayedEstimates = useMemo(() => {
+    if (!displayedVersion) return [];
+    return allEstimates.filter(e => e.version_id === displayedVersion.id);
+  }, [allEstimates, displayedVersion]);
+
   const resetForm = () => {
     setExtractedItems([]);
     setUploadedFile(null);
     setPendingEstimateId(null);
     setPendingFile(null);
-    setPendingUpload(null);
-    setPendingUploadChoice('standalone');
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
@@ -292,20 +307,16 @@ export const Estimates: React.FC = () => {
     return { textContent, fileBase64, fileName };
   };
 
-  // Compute estimate families for grouping
-  const estimateFamilies = useMemo(() => {
-    const seen = new Set<string>();
-    return estimates.filter(est => {
-      const rootId = est.parent_id || est.id;
-      if (seen.has(rootId)) return false;
-      seen.add(rootId);
-      return true;
-    }).map(est => ({
-      rootId: est.parent_id || est.id,
-      activeVersion: est,
-      versions: getVersions(est.id),
-    }));
-  }, [estimates, allEstimates]);
+  // Ensure there's a version to work with, creating one if needed
+  const ensureVersion = async (): Promise<string | null> => {
+    if (displayedVersion) return displayedVersion.id;
+    const v = await createVersion('V1');
+    if (v) {
+      setSelectedVersionId(v.id);
+      return v.id;
+    }
+    return null;
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -313,7 +324,6 @@ export const Estimates: React.FC = () => {
 
     setUploading(true);
     try {
-      console.log('[Estimates] Uploading file:', file.name, 'size:', file.size);
       const sanitizedName = file.name
         .replace(/\s+/g, '_')
         .replace(/,/g, '_')
@@ -327,24 +337,15 @@ export const Estimates: React.FC = () => {
         .from('estimates')
         .upload(filePath, file);
 
-      if (uploadError) {
-        console.error('[Estimates] Storage upload error:', uploadError);
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      // If there are existing estimate families, ask the user what to do
-      if (estimateFamilies.length > 0) {
-        setPendingUpload({ filePath, fileName: file.name, file });
-        setPendingUploadChoice('standalone');
-        setUploading(false);
-        return;
-      }
+      const versionId = await ensureVersion();
+      if (!versionId) throw new Error('Could not determine version');
 
-      // No existing families: create standalone immediately
       setUploadedFile({ path: filePath, name: file.name });
       setPendingFile(file);
 
-      const estimate = await createEstimate(filePath, file.name);
+      const estimate = await createEstimate(filePath, file.name, versionId);
       if (!estimate) throw new Error('Could not create estimate');
       
       setPendingEstimateId(estimate.id);
@@ -374,19 +375,13 @@ export const Estimates: React.FC = () => {
     if (!household) return;
 
     setIsDocPickerOpen(false);
-
-    // If there are existing families, ask the user what to do
-    if (estimateFamilies.length > 0) {
-      setPendingUpload({ filePath: doc.file_path, fileName: doc.file_name, file: null });
-      setPendingUploadChoice('standalone');
-      return;
-    }
-
-    // No existing families: create standalone immediately
     setIsUploadOpen(true);
     setAnalyzing(true);
 
     try {
+      const versionId = await ensureVersion();
+      if (!versionId) throw new Error('Could not determine version');
+
       const signedUrl = await getDocumentUrl(doc.file_path);
       if (!signedUrl) throw new Error('Could not get document URL');
 
@@ -395,7 +390,7 @@ export const Estimates: React.FC = () => {
       
       const blob = await response.blob();
 
-      const estimate = await createEstimate(doc.file_path, doc.file_name);
+      const estimate = await createEstimate(doc.file_path, doc.file_name, versionId);
       if (!estimate) throw new Error('Could not create estimate');
       
       setPendingEstimateId(estimate.id);
@@ -420,125 +415,12 @@ export const Estimates: React.FC = () => {
     }
   };
 
-  // Proceed after user chose standalone vs version
-  const proceedWithUploadChoice = async () => {
-    if (!pendingUpload || !household) return;
-
-    const { filePath, fileName, file } = pendingUpload;
-    const isVersion = pendingUploadChoice !== 'standalone';
-
-    setPendingUpload(null);
-    setIsUploadOpen(true);
-    setAnalyzing(true);
-
-    try {
-      let estimate: ArchitectEstimate | null;
-
-      if (isVersion) {
-        // Create as new version of selected family
-        estimate = await replaceEstimate(pendingUploadChoice, filePath, fileName);
-      } else {
-        estimate = await createEstimate(filePath, fileName);
-      }
-
-      if (!estimate) throw new Error('Could not create estimate');
-
-      setPendingEstimateId(estimate.id);
-      setUploadedFile({ path: filePath, name: fileName });
-
-      // Get the blob for analysis
-      let blob: Blob;
-      if (file) {
-        blob = file;
-        setPendingFile(file instanceof File ? file : null);
-      } else {
-        const signedUrl = await getDocumentUrl(filePath);
-        if (!signedUrl) throw new Error('Could not get document URL');
-        const response = await fetch(signedUrl);
-        if (!response.ok) throw new Error('Could not download document');
-        blob = await response.blob();
-      }
-
-      const payload = await processFileForAnalysis(blob, fileName);
-      setPendingAnalysisPayload(payload);
-
-      const result = await callAnalyzeEstimate(payload);
-      if (result) {
-        handleAnalysisResult(result);
-      }
-    } catch (error) {
-      console.error('[Estimates] Upload choice error:', error);
-      toast({
-        title: 'Fehler',
-        description: error instanceof Error ? error.message : 'Datei konnte nicht verarbeitet werden',
-        variant: 'destructive',
-      });
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // Handle replacing an existing estimate with a new file
-  const handleReplaceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !household || !replacingEstimateId) return;
-
-    setUploading(true);
-    setIsUploadOpen(true);
-    try {
-      const sanitizedName = file.name
-        .replace(/\s+/g, '_')
-        .replace(/,/g, '_')
-        .replace(/[äÄ]/g, 'ae')
-        .replace(/[öÖ]/g, 'oe')
-        .replace(/[üÜ]/g, 'ue')
-        .replace(/ß/g, 'ss')
-        .replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `${household.id}/${Date.now()}_${sanitizedName}`;
-      const { error: uploadError } = await supabase.storage
-        .from('estimates')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      setUploadedFile({ path: filePath, name: file.name });
-      setPendingFile(file);
-
-      // Create new version via replaceEstimate
-      const newEstimate = await replaceEstimate(replacingEstimateId, filePath, file.name);
-      if (!newEstimate) throw new Error('Could not create replacement estimate');
-
-      setPendingEstimateId(newEstimate.id);
-
-      setAnalyzing(true);
-      const payload = await processFileForAnalysis(file, file.name);
-      setPendingAnalysisPayload(payload);
-
-      const result = await callAnalyzeEstimate(payload);
-      if (result) {
-        handleAnalysisResult(result);
-      }
-    } catch (error) {
-      console.error('[Estimates] Replace upload error:', error);
-      toast({
-        title: 'Fehler',
-        description: error instanceof Error ? error.message : 'Datei konnte nicht verarbeitet werden',
-        variant: 'destructive',
-      });
-    } finally {
-      setUploading(false);
-      setAnalyzing(false);
-      setReplacingEstimateId(null);
-    }
-  };
-
   const handleForceAnalysis = () => {
     if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
       setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false })));
     }
     setShowNotEstimateWarning(false);
   };
-
 
   const handleSaveExtractedItems = async () => {
     if (!pendingEstimateId || extractedItems.length === 0) return;
@@ -653,7 +535,10 @@ export const Estimates: React.FC = () => {
       return;
     }
 
-    const estimate = await createEstimate('', manualEstimateName || `Manuelle Schätzung ${format(new Date(), 'dd.MM.yyyy')}`);
+    const versionId = await ensureVersion();
+    if (!versionId) return;
+
+    const estimate = await createEstimate('', manualEstimateName || `Manuelle Schätzung ${format(new Date(), 'dd.MM.yyyy')}`, versionId);
     if (!estimate) return;
 
     const success = await addEstimateItems(
@@ -718,9 +603,44 @@ export const Estimates: React.FC = () => {
 
   const formatCurrency = (amount: number) => formatAmount(amount);
 
-  // Compute global VAT summary
+  // Handle creating a new version
+  const handleCreateVersion = async () => {
+    if (!newVersionName.trim()) return;
+    const v = await createVersion(newVersionName.trim());
+    if (v) {
+      setSelectedVersionId(v.id);
+      toast({ title: 'Erfolg', description: `Version "${v.name}" erstellt und aktiviert.` });
+    }
+    setNewVersionName('');
+    setIsCreateVersionOpen(false);
+  };
+
+  // Handle activating a version
+  const handleActivateVersion = async (versionId: string) => {
+    const success = await setActiveVersion(versionId);
+    if (success) {
+      setSelectedVersionId(versionId);
+      toast({ title: 'Erfolg', description: 'Version aktiviert.' });
+    }
+  };
+
+  // Handle renaming a version
+  const handleSaveVersionName = async () => {
+    if (!editingVersionId || !editingVersionNameValue.trim()) return;
+    await updateVersionName(editingVersionId, editingVersionNameValue.trim());
+    setEditingVersionId(null);
+    setEditingVersionNameValue('');
+  };
+
+  // Compute VAT summary for displayed version items
+  const displayedItems = useMemo(() => {
+    if (!displayedVersion) return [];
+    const estIds = new Set(displayedEstimates.map(e => e.id));
+    return allEstimateItems.filter(i => estIds.has(i.estimate_id));
+  }, [displayedEstimates, allEstimateItems, displayedVersion]);
+
   const globalVat = computeVatSummary(
-    estimateItems.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
+    displayedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
   );
 
   if (loading) {
@@ -755,6 +675,11 @@ export const Estimates: React.FC = () => {
                   <DialogTitle>Kostenschätzung hochladen</DialogTitle>
                   <DialogDescription>
                     Laden Sie die Kostenkalkulation Ihres Architekten als PDF hoch. Gescannte PDFs werden automatisch per OCR erkannt.
+                    {displayedVersion && (
+                      <span className="block mt-1 font-medium text-foreground">
+                        → wird in Version „{displayedVersion.name}" angelegt
+                      </span>
+                    )}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -803,13 +728,13 @@ export const Estimates: React.FC = () => {
 
                   {/* Not-an-estimate warning */}
                   {showNotEstimateWarning && analysisResult && (
-                    <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 space-y-3">
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
                       <div className="flex items-start gap-3">
-                        <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-600 mt-0.5" />
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
                         <div>
-                          <p className="font-medium text-yellow-900">Keine Kostenschätzung erkannt</p>
-                          <p className="text-sm text-yellow-800 mt-1">{analysisResult.reason}</p>
-                          <p className="text-xs text-yellow-700 mt-1">Konfidenz: {analysisResult.confidence}</p>
+                          <p className="font-medium text-destructive">Keine Kostenschätzung erkannt</p>
+                          <p className="text-sm text-muted-foreground mt-1">{analysisResult.reason}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Konfidenz: {analysisResult.confidence}</p>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -825,13 +750,13 @@ export const Estimates: React.FC = () => {
 
                   {/* Analysis result info */}
                   {analysisResult && analysisResult.is_estimate && extractedItems.length > 0 && (
-                    <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                    <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4" />
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
                         <span className="font-medium">Kostenschätzung erkannt</span>
-                        <span className="text-green-600">(Konfidenz: {analysisResult.confidence})</span>
+                        <span className="text-muted-foreground">(Konfidenz: {analysisResult.confidence})</span>
                       </div>
-                      <p className="mt-1 text-xs text-green-700">{analysisResult.reason}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{analysisResult.reason}</p>
                       <p className="mt-1">✓ {extractedItems.length} Kostenpositionen extrahiert. Bitte überprüfen und ggf. korrigieren.</p>
                     </div>
                   )}
@@ -961,6 +886,11 @@ export const Estimates: React.FC = () => {
                   <DialogTitle>Kostenschätzung manuell erfassen</DialogTitle>
                   <DialogDescription>
                     Erstellen Sie eine neue Kostenschätzung und fügen Sie Positionen hinzu.
+                    {displayedVersion && (
+                      <span className="block mt-1 font-medium text-foreground">
+                        → wird in Version „{displayedVersion.name}" angelegt
+                      </span>
+                    )}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -1078,11 +1008,129 @@ export const Estimates: React.FC = () => {
           </div>
         </div>
 
+        {/* Version Selector */}
+        {versions.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle className="text-lg">Versionen</CardTitle>
+                </div>
+                <Dialog open={isCreateVersionOpen} onOpenChange={setIsCreateVersionOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Neue Version
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Neue Version erstellen</DialogTitle>
+                      <DialogDescription>
+                        Eine neue Version wird erstellt und als aktive Version gesetzt. Alle Uploads und manuellen Schätzungen werden dieser Version zugeordnet.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                        <Label>Versionsname</Label>
+                        <Input
+                          value={newVersionName}
+                          onChange={(e) => setNewVersionName(e.target.value)}
+                          placeholder={`V${(versions.length || 0) + 1}`}
+                          onKeyDown={(e) => e.key === 'Enter' && handleCreateVersion()}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsCreateVersionOpen(false)}>Abbrechen</Button>
+                      <Button onClick={handleCreateVersion}>Erstellen</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {versions.map(v => (
+                  <div key={v.id} className="flex items-center gap-1">
+                    {editingVersionId === v.id ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={editingVersionNameValue}
+                          onChange={(e) => setEditingVersionNameValue(e.target.value)}
+                          className="h-8 w-32 text-sm"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveVersionName();
+                            if (e.key === 'Escape') setEditingVersionId(null);
+                          }}
+                          autoFocus
+                        />
+                        <Button size="sm" variant="ghost" onClick={handleSaveVersionName} className="h-8 w-8 p-0">
+                          <Save className="h-3 w-3" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingVersionId(null)} className="h-8 w-8 p-0">
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant={selectedVersionId === v.id ? 'default' : 'outline'}
+                        onClick={() => setSelectedVersionId(v.id)}
+                        className="gap-2"
+                      >
+                        {v.name}
+                        {v.is_active && (
+                          <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                            <Star className="h-3 w-3 mr-0.5" />
+                            aktiv
+                          </Badge>
+                        )}
+                      </Button>
+                    )}
+                    {selectedVersionId === v.id && editingVersionId !== v.id && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setEditingVersionId(v.id);
+                          setEditingVersionNameValue(v.name);
+                        }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {displayedVersion && !displayedVersion.is_active && (
+                <div className="mt-3 flex items-center gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    Diese Version ist nicht aktiv. Nur die aktive Version fließt in den Soll-Ist-Vergleich ein.
+                  </p>
+                  <Button size="sm" onClick={() => handleActivateVersion(displayedVersion.id)}>
+                    <Star className="mr-2 h-4 w-4" />
+                    Als aktiv setzen
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Summary Card */}
         <Card>
           <CardHeader>
-            <CardTitle>Gesamtschätzung</CardTitle>
-            <CardDescription>Summe aller geschätzten Kosten</CardDescription>
+            <CardTitle>Gesamtschätzung{displayedVersion ? ` — ${displayedVersion.name}` : ''}</CardTitle>
+            <CardDescription>
+              {displayedVersion?.is_active
+                ? 'Aktive Version — fließt in den Soll-Ist-Vergleich ein'
+                : displayedVersion
+                  ? 'Nicht-aktive Version (nur zur Ansicht)'
+                  : 'Summe aller geschätzten Kosten'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
@@ -1100,60 +1148,46 @@ export const Estimates: React.FC = () => {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              {estimateItems.length} Kostenpositionen in {estimateFamilies.length} Schätzfamilie(n)
-              {estimateFamilies.length > 0 && ' — nur aktive Versionen'}
+              {displayedItems.length} Kostenpositionen in {displayedEstimates.length} Schätzblock(en)
+              {versions.length > 1 && ` — ${versions.length} Versionen gesamt`}
             </p>
           </CardContent>
         </Card>
 
-        {/* Estimates List */}
-        {estimateFamilies.length === 0 ? (
+        {/* Estimates List for displayed version */}
+        {displayedEstimates.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Calculator className="h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-medium">Keine Kostenschätzungen vorhanden</h3>
+              <h3 className="mt-4 text-lg font-medium">
+                {versions.length === 0
+                  ? 'Keine Kostenschätzungen vorhanden'
+                  : `Keine Schätzungen in ${displayedVersion?.name || 'dieser Version'}`}
+              </h3>
               <p className="text-muted-foreground">Laden Sie die Kalkulation Ihres Architekten hoch oder erfassen Sie sie manuell.</p>
             </CardContent>
           </Card>
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Hochgeladene Schätzungen</CardTitle>
+              <CardTitle>Schätzungen — {displayedVersion?.name || 'Aktuell'}</CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Hidden file input for replace */}
-              <input
-                type="file"
-                ref={replaceFileInputRef}
-                accept=".pdf,.png,.jpg,.jpeg"
-                onChange={handleReplaceUpload}
-                className="hidden"
-              />
-
               <Accordion type="single" collapsible className="w-full">
-                {estimateFamilies.map(({ rootId, activeVersion: estimate, versions }) => {
+                {displayedEstimates.map((estimate) => {
                   const items = getItemsByEstimate(estimate.id);
                   const estVat = computeVatSummary(
                     items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
                   );
-                  const hasVersions = versions.length > 1;
                   
                   return (
-                    <AccordionItem key={rootId} value={rootId}>
+                    <AccordionItem key={estimate.id} value={estimate.id}>
                       <AccordionTrigger>
                         <div className="flex w-full items-center justify-between pr-4">
                           <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-muted-foreground" />
                             <div className="text-left">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
-                                {hasVersions && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    <GitBranch className="h-3 w-3 mr-1" />
-                                    v{estimate.version_number} von {versions.length}
-                                  </Badge>
-                                )}
-                              </div>
+                              <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
                               <p className="text-sm text-muted-foreground">
                                 {format(new Date(estimate.uploaded_at), 'dd.MM.yyyy', { locale: de })}
                                 {estimate.notes && <span className="ml-2">— {estimate.notes}</span>}
@@ -1167,78 +1201,6 @@ export const Estimates: React.FC = () => {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
-                        {/* Action buttons */}
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setReplacingEstimateId(estimate.id);
-                              replaceFileInputRef.current?.click();
-                            }}
-                          >
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Ersetzen (neue Version)
-                          </Button>
-                          {hasVersions && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setIsVersionHistoryOpen(
-                                isVersionHistoryOpen === estimate.id ? null : estimate.id
-                              )}
-                            >
-                              <History className="mr-2 h-4 w-4" />
-                              Versionen anzeigen
-                            </Button>
-                          )}
-                        </div>
-
-                        {/* Version history */}
-                        {isVersionHistoryOpen === estimate.id && hasVersions && (
-                          <div className="mb-4 rounded-lg border p-4 space-y-2">
-                            <h4 className="font-medium text-sm mb-3">Versionshistorie</h4>
-                            {versions.map((v) => {
-                              const vItems = getItemsByEstimate(v.id);
-                              return (
-                                <div
-                                  key={v.id}
-                                  className={`flex items-center justify-between rounded-md border p-3 ${
-                                    v.is_active ? 'border-primary bg-primary/5' : 'opacity-60'
-                                  }`}
-                                >
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium text-sm">
-                                        Version {v.version_number}
-                                      </span>
-                                      {v.is_active && (
-                                        <Badge variant="default" className="text-xs">Aktiv</Badge>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {v.file_name} — {format(new Date(v.uploaded_at), 'dd.MM.yyyy HH:mm', { locale: de })}
-                                      {' — '}{vItems.length} Positionen
-                                    </p>
-                                    {v.notes && (
-                                      <p className="text-xs text-muted-foreground mt-1">{v.notes}</p>
-                                    )}
-                                  </div>
-                                  {!v.is_active && v.processed && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => setActiveVersion(v.id)}
-                                    >
-                                      Aktivieren
-                                    </Button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -1297,7 +1259,7 @@ export const Estimates: React.FC = () => {
                                     <TableCell>
                                       <div className="flex gap-1">
                                         <Button size="sm" variant="ghost" onClick={saveEditing}>
-                                          <Save className="h-4 w-4 text-green-600" />
+                                          <Save className="h-4 w-4 text-primary" />
                                         </Button>
                                         <Button size="sm" variant="ghost" onClick={cancelEditing}>
                                           <X className="h-4 w-4 text-muted-foreground" />
@@ -1385,53 +1347,9 @@ export const Estimates: React.FC = () => {
           onSelect={handleDocumentSelect}
           loading={analyzing}
         />
-
-        {/* Upload Choice Dialog: standalone vs new version */}
-        <Dialog open={!!pendingUpload} onOpenChange={(open) => { if (!open) { setPendingUpload(null); setPendingUploadChoice('standalone'); } }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Schätzung zuordnen</DialogTitle>
-              <DialogDescription>
-                Soll die hochgeladene Datei als neue eigenständige Schätzung oder als neue Version einer bestehenden Schätzfamilie angelegt werden?
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label>Zuordnung</Label>
-                <Select value={pendingUploadChoice} onValueChange={setPendingUploadChoice}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="standalone">Neue eigenständige Schätzung</SelectItem>
-                    {estimateFamilies.map(({ rootId, activeVersion }) => (
-                      <SelectItem key={rootId} value={activeVersion.id}>
-                        Neue Version von: {activeVersion.file_name || 'Kostenschätzung'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {pendingUpload && (
-                <p className="text-sm text-muted-foreground">
-                  Datei: {pendingUpload.fileName}
-                </p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setPendingUpload(null); setPendingUploadChoice('standalone'); }}>
-                Abbrechen
-              </Button>
-              <Button onClick={proceedWithUploadChoice}>
-                Weiter
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </Layout>
   );
 };
 
 export default Estimates;
-

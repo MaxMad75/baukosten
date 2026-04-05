@@ -726,8 +726,9 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: editFormData.kostengruppe_code,
       estimated_amount: parseFloat(editFormData.estimated_amount) || 0,
       notes: editFormData.notes || null,
-      is_gross: editFormData.is_gross,
-    });
+      is_gross: editFormData.tax_status === 'gross',
+      tax_status: editFormData.tax_status,
+    } as any);
     if (success) {
       toast({ title: 'Erfolg', description: 'Position wurde aktualisiert.' });
       cancelEditing();

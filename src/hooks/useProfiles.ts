@@ -12,7 +12,7 @@ export const useHouseholdProfiles = () => {
       if (!household?.id) return [];
 
       const { data, error } = await supabase
-        .from('profiles')
+        .from('profiles_safe' as any)
         .select('*')
         .eq('household_id', household.id);
 

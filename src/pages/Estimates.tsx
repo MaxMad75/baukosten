@@ -547,10 +547,11 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: manualItem.kostengruppe_code,
       estimated_amount: parseFloat(manualItem.estimated_amount),
       notes: manualItem.notes || '',
-      is_gross: manualItem.is_gross,
+      is_gross: manualItem.tax_status === 'gross',
+      tax_status: manualItem.tax_status,
     }]);
 
-    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
   };
 
   // ── Block handlers ──

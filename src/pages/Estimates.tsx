@@ -163,17 +163,11 @@ export const Estimates: React.FC = () => {
   const [pendingEstimateId, setPendingEstimateId] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // Replace state
-  const [replacingEstimateId, setReplacingEstimateId] = useState<string | null>(null);
-  const replaceFileInputRef = useRef<HTMLInputElement>(null);
-  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState<string | null>(null);
-
-  // Pending upload choice state (new standalone vs new version)
-  const [pendingUpload, setPendingUpload] = useState<{ filePath: string; fileName: string; file: File | Blob | null } | null>(null);
-  const [pendingUploadChoice, setPendingUploadChoice] = useState<string>('standalone');
-
-  // Pre-analysis result
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  // Version management
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [editingVersionName, setEditingVersionName] = useState<string | null>(null);
+  const [newVersionName, setNewVersionName] = useState('');
+  const [isCreateVersionOpen, setIsCreateVersionOpen] = useState(false);
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
   const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<any>(null);
 

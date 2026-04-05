@@ -64,6 +64,7 @@ export type Database = {
           parent_id: string | null
           processed: boolean
           uploaded_at: string
+          version_id: string | null
           version_number: number
         }
         Insert: {
@@ -77,6 +78,7 @@ export type Database = {
           parent_id?: string | null
           processed?: boolean
           uploaded_at?: string
+          version_id?: string | null
           version_number?: number
         }
         Update: {
@@ -90,6 +92,7 @@ export type Database = {
           parent_id?: string | null
           processed?: boolean
           uploaded_at?: string
+          version_id?: string | null
           version_number?: number
         }
         Relationships: [
@@ -105,6 +108,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "architect_estimates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "architect_estimates_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "estimate_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -352,6 +362,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      estimate_versions: {
+        Row: {
+          created_at: string
+          household_id: string
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          version_number: number
+        }
+        Insert: {
+          created_at?: string
+          household_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          version_number?: number
+        }
+        Update: {
+          created_at?: string
+          household_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          version_number?: number
+        }
+        Relationships: []
       }
       household_invitations: {
         Row: {

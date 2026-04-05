@@ -59,6 +59,16 @@ export interface InvoicePayment {
   created_at: string;
 }
 
+export interface EstimateVersion {
+  id: string;
+  household_id: string;
+  version_number: number;
+  name: string;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface ArchitectEstimate {
   id: string;
   household_id: string;
@@ -71,6 +81,7 @@ export interface ArchitectEstimate {
   version_number: number;
   is_active: boolean;
   notes: string | null;
+  version_id: string | null;
 }
 
 export interface ArchitectEstimateItem {

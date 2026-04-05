@@ -19,7 +19,7 @@ import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate } from '@/lib/types';
+import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate, EstimateVersion } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Plus, 

@@ -711,7 +711,7 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: item.kostengruppe_code,
       estimated_amount: String(item.estimated_amount),
       notes: item.notes || '',
-      is_gross: item.is_gross ?? false,
+      tax_status: (item.tax_status as TaxStatus) || (item.is_gross ? 'gross' : 'net'),
     });
   };
 

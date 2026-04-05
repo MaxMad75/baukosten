@@ -619,7 +619,8 @@ export const Estimates: React.FC = () => {
         kostengruppe_code: item.kostengruppe_code,
         estimated_amount: parseFloat(item.estimated_amount),
         notes: item.notes || undefined,
-        is_gross: item.is_gross,
+        is_gross: item.tax_status === 'gross',
+        tax_status: item.tax_status,
       }))
     );
 

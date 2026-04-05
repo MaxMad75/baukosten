@@ -471,7 +471,7 @@ export const Estimates: React.FC = () => {
 
   const handleForceAnalysis = () => {
     if (analysisResult && analysisResult.items && analysisResult.items.length > 0) {
-      setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false })));
+      setExtractedItems(analysisResult.items.map(item => ({ ...item, is_gross: false, tax_status: 'net' as TaxStatus })));
     }
     setShowNotEstimateWarning(false);
   };

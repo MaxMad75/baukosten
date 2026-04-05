@@ -94,6 +94,7 @@ export interface ArchitectEstimateItem {
   estimated_amount: number;
   notes: string | null;
   is_gross: boolean;
+  tax_status: TaxStatus;
   created_at: string;
 }
 

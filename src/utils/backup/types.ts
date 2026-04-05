@@ -97,6 +97,7 @@ export interface BackupEstimateItem {
   estimated_amount: number;
   notes: string | null;
   is_gross: boolean;
+  tax_status?: string | null;
   block_id: string | null;
   created_at: string;
 }

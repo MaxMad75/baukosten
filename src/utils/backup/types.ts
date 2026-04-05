@@ -96,6 +96,21 @@ export interface BackupEstimateItem {
   estimated_amount: number;
   notes: string | null;
   is_gross: boolean;
+  block_id: string | null;
+  created_at: string;
+}
+
+export interface BackupEstimateBlock {
+  id: string;
+  version_id: string;
+  block_type: string;
+  label: string;
+  file_path: string | null;
+  file_name: string | null;
+  source_block_id: string | null;
+  processed: boolean;
+  notes: string | null;
+  sort_order: number;
   created_at: string;
 }
 

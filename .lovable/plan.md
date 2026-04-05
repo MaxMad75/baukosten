@@ -1,116 +1,55 @@
 
 
-# Phase 2: Estimate Blocks (Revised)
+# Stabilization Plan: Mixed Legacy vs Block Data
 
-## Adjustments from original Phase 2 plan
+## Analysis Summary
 
-1. **Backup/restore included**: Export and import of `estimate_blocks` and `block_id` linkage on items. Minimal additions to existing backup types and flows -- no full redesign.
-2. **`deleteVersion` removed**: Too risky with mixed legacy/block data. Deferred to a later phase.
+The current dual-path logic in both `useEstimates.ts` and `Estimates.tsx` is **already correctly guarding against double counting**. The key filter rule at lines 251-253 of Estimates.tsx (and lines 28-31 of useEstimates.ts) uses:
 
-## Database migration
+- `i.block_id && blockIds.has(i.block_id)` — block path
+- `!i.block_id && estIds.has(i.estimate_id)` — legacy path (only items WITHOUT block_id)
 
-**New table `estimate_blocks`:**
+This means items with `block_id` are never counted via the legacy path. No double counting occurs in summaries.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | uuid PK | |
-| `version_id` | uuid NOT NULL | FK to `estimate_versions.id` |
-| `block_type` | text NOT NULL | `'imported'` or `'manual'` |
-| `label` | text NOT NULL | e.g. "Architekt KS", "Grundstück" |
-| `file_path` | text | Imported blocks only |
-| `file_name` | text | Imported blocks only |
-| `source_block_id` | uuid | Set when copied from prior version |
-| `processed` | boolean DEFAULT false | Imported blocks only |
-| `notes` | text | |
-| `sort_order` | integer DEFAULT 0 | |
-| `created_at` | timestamptz DEFAULT now() | |
+### What IS working correctly
 
-RLS: join through `estimate_versions` to `household_id = get_user_household_id()`.
+1. **Summary totals** (`displayedItems`, `getAllEstimatedAmounts`): No double counting — the `!i.block_id` guard prevents it.
+2. **Legacy rendering**: `legacyEstimatesWithItems` only shows estimates that have items with `block_id = NULL`. Empty legacy container records (created alongside imported blocks) are excluded.
+3. **New imports**: Items created via `addBlockItems` get both `estimate_id` (required by NOT NULL FK) and `block_id`, so they only appear under the block.
 
-**Alter `architect_estimate_items`:**
-- Add `block_id uuid` (nullable). Legacy items keep `block_id = NULL` and continue to work via `estimate_id`.
+### What is NOT a real bug but is unnecessary complexity
 
-## Types: `src/lib/types.ts`
+1. **Redundant legacy `architect_estimates` container**: Every PDF import (line 397) creates both a block AND a legacy estimate record. The legacy record is required because `architect_estimate_items.estimate_id` is NOT NULL — items need a valid FK target. The legacy record itself has no `!block_id` items, so it never renders. But it clutters the data.
 
-Add `EstimateBlock` interface.
+### Actual risks remaining
 
-## Hook: `src/hooks/useEstimates.ts`
+1. **Manual block item creation** (lines ~540-570 in `handleAddManualItem`): Need to verify whether manual items added to a block also correctly set `block_id`. If they don't, they'd show under both the block (no) and the legacy estimate (yes).
 
-- Fetch `estimate_blocks` for all versions
-- New functions: `createBlock`, `addBlockItems`, `deleteBlock`, `copyBlocksToVersion`
-- **No `deleteVersion`** in this phase
-- `estimateItems` / `getAllEstimatedAmounts` returns items from active version: block-linked items (via `block_id` on blocks belonging to active version) plus legacy items (via `estimate_id` on `architect_estimates` with matching `version_id`)
+2. **Edge case**: If a user added items to a legacy estimate in Phase 1, then in Phase 2 those items have `block_id = NULL` and show correctly in the legacy accordion. No duplication risk unless someone manually creates a block for the same content.
 
-## UI: `src/pages/Estimates.tsx`
+## Verdict: No stabilization migration needed
 
-- Within selected version: show blocks as accordion sections
-- "Add block" button: choose imported (PDF upload) or manual
-- Delete block with confirmation
-- "New version" flow: create version row, then show checklist of manual blocks from previous version to copy
-- No version deletion button
+The code is already safe. The dual-path filter logic is correct and there are no double-counting bugs in the current implementation.
 
-## Backup/restore additions
+## One small code fix recommended
 
-### Backup types (`src/utils/backup/types.ts`)
+Verify and fix the manual "add item to block" flow to ensure `block_id` is always set when adding items to a block. This is the only path where a bug could cause items to appear in both views.
 
-Bump `BACKUP_SCHEMA_VERSION` to `'1.1.0'`. Add:
-
-```ts
-export interface BackupEstimateBlock {
-  id: string;
-  version_id: string;
-  block_type: string;
-  label: string;
-  file_path: string | null;
-  file_name: string | null;
-  source_block_id: string | null;
-  processed: boolean;
-  notes: string | null;
-  sort_order: number;
-  created_at: string;
-}
-```
-
-Add `estimateBlocks: BackupEstimateBlock[]` to `BackupData.data` and `estimateBlocks: number` to `BackupManifest.counts`.
-
-Add `block_id: string | null` to `BackupEstimateItem`.
-
-### Export (`src/utils/backup/export.ts`)
-
-After fetching estimates, also fetch `estimate_blocks` for the household's version IDs. Include in `backupData.data.estimateBlocks`. Include `block_id` when exporting estimate items.
-
-### Import (`src/utils/backup/import.ts`)
-
-After restoring estimate versions (if present), restore blocks with ID mapping. When restoring estimate items, map `block_id` through the block ID map (nullable -- old backups won't have it).
-
-### Re-export (`src/utils/backup/index.ts`)
-
-No structural change needed -- types are already re-exported.
-
-## Files to change
+### File to check/fix
 
 | File | Change |
 |------|--------|
-| Migration SQL | Create `estimate_blocks`, add `block_id` to `architect_estimate_items`, RLS |
-| `src/lib/types.ts` | Add `EstimateBlock` |
-| `src/hooks/useEstimates.ts` | Block CRUD, copy-blocks-to-version, item retrieval with dual path |
-| `src/pages/Estimates.tsx` | Block-grouped accordion, add/delete block, new-version-with-copy |
-| `src/utils/backup/types.ts` | Bump schema version, add `BackupEstimateBlock`, extend item type |
-| `src/utils/backup/export.ts` | Fetch and export blocks and `block_id` on items |
-| `src/utils/backup/import.ts` | Restore blocks with ID mapping, map `block_id` on items |
+| `src/pages/Estimates.tsx` | Verify `handleAddManualItem` sets `block_id` when adding to a block. If it uses `addBlockItems`, it's already correct. If it uses `addEstimateItems`, items won't get `block_id` and will appear in the legacy accordion instead of the block. |
 
-## Unchanged
+### Unchanged
 
-- `estimate_versions` table -- no schema change
-- `architect_estimates` table -- no changes
-- `Comparison.tsx`, Dashboard -- same hook contract
-- Invoice, offer, allocation logic
-- Edge functions
-- Auth, contractors, construction journal, documents
+- `useEstimates.ts` — dual-path logic is correct
+- Migration / schema — no changes needed
+- Comparison, Dashboard, invoices, offers, backup
+- All other pages and hooks
 
 ## Explicitly deferred
 
-- **`deleteVersion`**: removed from this phase; requires explicit legacy-cleanup rules first
-- **Legacy data migration**: existing `architect_estimates` not auto-converted to blocks
-- **Block reordering UI**: `sort_order` column present but no drag-and-drop
+- **Removing the redundant legacy `architect_estimates` container creation**: Requires making `architect_estimate_items.estimate_id` nullable or introducing a household-level dummy record. Not worth the risk now.
+- **Legacy data migration to blocks**: Deferred as planned.
 

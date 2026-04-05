@@ -79,7 +79,7 @@ export async function restoreBackupZip(
     return { success: false, message: 'Ungültige Backup-Struktur.' };
   }
 
-  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, invoiceAllocations: 0, estimates: 0, estimateItems: 0, journalEntries: 0, documents: 0, attachments: 0 };
+  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, invoiceAllocations: 0, estimates: 0, estimateItems: 0, estimateBlocks: 0, journalEntries: 0, documents: 0, attachments: 0 };
 
   // ID mapping: old ID -> new ID (for referential integrity)
   const contractorIdMap = new Map<string, string>();

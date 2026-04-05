@@ -1326,7 +1326,7 @@ export const Estimates: React.FC = () => {
                     <TableRow>
                       <TableHead>Kostengruppe</TableHead>
                       <TableHead>Notiz</TableHead>
-                      <TableHead className="text-center">inkl. MwSt</TableHead>
+                      <TableHead className="text-center">Steuer</TableHead>
                       <TableHead className="text-right">Betrag</TableHead>
                       <TableHead className="w-16"></TableHead>
                     </TableRow>

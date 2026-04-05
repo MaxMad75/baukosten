@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArchitectEstimate, ArchitectEstimateItem, EstimateVersion, EstimateBlock } from '@/lib/types';
+import { ArchitectEstimate, ArchitectEstimateItem, EstimateVersion, EstimateBlock, TaxStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 export function useEstimates() {

@@ -781,7 +781,14 @@ export const Estimates: React.FC = () => {
                   <Input value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} placeholder="Notiz" />
                 </TableCell>
                 <TableCell className="text-center">
-                  <Checkbox checked={editFormData.is_gross} onCheckedChange={(checked) => setEditFormData({ ...editFormData, is_gross: !!checked })} />
+                  <Select value={editFormData.tax_status} onValueChange={(v) => setEditFormData({ ...editFormData, tax_status: v as TaxStatus })}>
+                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="net">Netto</SelectItem>
+                      <SelectItem value="gross">Brutto</SelectItem>
+                      <SelectItem value="tax_free">Steuerfrei</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell className="text-right">
                   <Input type="number" step="0.01" value={editFormData.estimated_amount} onChange={(e) => setEditFormData({ ...editFormData, estimated_amount: e.target.value })} className="w-32 text-right" />

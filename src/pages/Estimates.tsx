@@ -1056,9 +1056,7 @@ export const Estimates: React.FC = () => {
                 {/* Render blocks */}
                 {displayedBlocks.map((block) => {
                   const items = getItemsByBlock(block.id);
-                  const blockVat = computeVatSummary(
-                    items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
-                  );
+                  const blockVat = computeVatSummary(items.map(toVatInput));
                   
                   return (
                     <AccordionItem key={block.id} value={`block-${block.id}`}>

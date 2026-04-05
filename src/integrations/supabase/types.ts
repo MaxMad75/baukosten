@@ -24,6 +24,7 @@ export type Database = {
           is_gross: boolean
           kostengruppe_code: string
           notes: string | null
+          tax_status: string
         }
         Insert: {
           block_id?: string | null
@@ -34,6 +35,7 @@ export type Database = {
           is_gross?: boolean
           kostengruppe_code: string
           notes?: string | null
+          tax_status?: string
         }
         Update: {
           block_id?: string | null
@@ -44,6 +46,7 @@ export type Database = {
           is_gross?: boolean
           kostengruppe_code?: string
           notes?: string | null
+          tax_status?: string
         }
         Relationships: [
           {

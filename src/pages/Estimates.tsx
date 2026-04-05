@@ -1389,6 +1389,49 @@ export const Estimates: React.FC = () => {
           onSelect={handleDocumentSelect}
           loading={analyzing}
         />
+
+        {/* Upload Choice Dialog: standalone vs new version */}
+        <Dialog open={!!pendingUpload} onOpenChange={(open) => { if (!open) { setPendingUpload(null); setPendingUploadChoice('standalone'); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schätzung zuordnen</DialogTitle>
+              <DialogDescription>
+                Soll die hochgeladene Datei als neue eigenständige Schätzung oder als neue Version einer bestehenden Schätzfamilie angelegt werden?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Zuordnung</Label>
+                <Select value={pendingUploadChoice} onValueChange={setPendingUploadChoice}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standalone">Neue eigenständige Schätzung</SelectItem>
+                    {estimateFamilies.map(({ rootId, activeVersion }) => (
+                      <SelectItem key={rootId} value={activeVersion.id}>
+                        Neue Version von: {activeVersion.file_name || 'Kostenschätzung'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {pendingUpload && (
+                <p className="text-sm text-muted-foreground">
+                  Datei: {pendingUpload.fileName}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setPendingUpload(null); setPendingUploadChoice('standalone'); }}>
+                Abbrechen
+              </Button>
+              <Button onClick={proceedWithUploadChoice}>
+                Weiter
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

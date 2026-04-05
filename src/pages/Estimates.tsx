@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useEstimates } from '@/hooks/useEstimates';
@@ -19,7 +19,8 @@ import { computeFileHash } from '@/utils/fileHash';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { ExtractedEstimateData, ArchitectEstimateItem } from '@/lib/types';
+import { ExtractedEstimateData, ArchitectEstimateItem, ArchitectEstimate } from '@/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Plus, 
   Upload, 
@@ -35,7 +36,8 @@ import {
   AlertTriangle,
   RefreshCw,
   History,
-  Star
+  Star,
+  GitBranch
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -164,6 +166,10 @@ export const Estimates: React.FC = () => {
   const replaceFileInputRef = useRef<HTMLInputElement>(null);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState<string | null>(null);
 
+  // Pending upload choice state (new standalone vs new version)
+  const [pendingUpload, setPendingUpload] = useState<{ filePath: string; fileName: string; file: File | Blob | null } | null>(null);
+  const [pendingUploadChoice, setPendingUploadChoice] = useState<string>('standalone');
+
   // Pre-analysis result
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
@@ -206,6 +212,8 @@ export const Estimates: React.FC = () => {
     setUploadedFile(null);
     setPendingEstimateId(null);
     setPendingFile(null);
+    setPendingUpload(null);
+    setPendingUploadChoice('standalone');
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
@@ -288,6 +296,21 @@ export const Estimates: React.FC = () => {
     return { textContent, fileBase64, fileName };
   };
 
+  // Compute estimate families for grouping
+  const estimateFamilies = useMemo(() => {
+    const seen = new Set<string>();
+    return estimates.filter(est => {
+      const rootId = est.parent_id || est.id;
+      if (seen.has(rootId)) return false;
+      seen.add(rootId);
+      return true;
+    }).map(est => ({
+      rootId: est.parent_id || est.id,
+      activeVersion: est,
+      versions: getVersions(est.id),
+    }));
+  }, [estimates, allEstimates]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !household) return;
@@ -313,6 +336,15 @@ export const Estimates: React.FC = () => {
         throw uploadError;
       }
 
+      // If there are existing estimate families, ask the user what to do
+      if (estimateFamilies.length > 0) {
+        setPendingUpload({ filePath, fileName: file.name, file });
+        setPendingUploadChoice('standalone');
+        setUploading(false);
+        return;
+      }
+
+      // No existing families: create standalone immediately
       setUploadedFile({ path: filePath, name: file.name });
       setPendingFile(file);
 
@@ -346,6 +378,15 @@ export const Estimates: React.FC = () => {
     if (!household) return;
 
     setIsDocPickerOpen(false);
+
+    // If there are existing families, ask the user what to do
+    if (estimateFamilies.length > 0) {
+      setPendingUpload({ filePath: doc.file_path, fileName: doc.file_name, file: null });
+      setPendingUploadChoice('standalone');
+      return;
+    }
+
+    // No existing families: create standalone immediately
     setIsUploadOpen(true);
     setAnalyzing(true);
 
@@ -376,6 +417,64 @@ export const Estimates: React.FC = () => {
       toast({
         title: 'Fehler',
         description: 'Dokument konnte nicht analysiert werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Proceed after user chose standalone vs version
+  const proceedWithUploadChoice = async () => {
+    if (!pendingUpload || !household) return;
+
+    const { filePath, fileName, file } = pendingUpload;
+    const isVersion = pendingUploadChoice !== 'standalone';
+
+    setPendingUpload(null);
+    setIsUploadOpen(true);
+    setAnalyzing(true);
+
+    try {
+      let estimate: ArchitectEstimate | null;
+
+      if (isVersion) {
+        // Create as new version of selected family
+        estimate = await replaceEstimate(pendingUploadChoice, filePath, fileName);
+      } else {
+        estimate = await createEstimate(filePath, fileName);
+      }
+
+      if (!estimate) throw new Error('Could not create estimate');
+
+      setPendingEstimateId(estimate.id);
+      setUploadedFile({ path: filePath, name: fileName });
+
+      // Get the blob for analysis
+      let blob: Blob;
+      if (file) {
+        blob = file;
+        setPendingFile(file instanceof File ? file : null);
+      } else {
+        const signedUrl = await getDocumentUrl(filePath);
+        if (!signedUrl) throw new Error('Could not get document URL');
+        const response = await fetch(signedUrl);
+        if (!response.ok) throw new Error('Could not download document');
+        blob = await response.blob();
+      }
+
+      const payload = await processFileForAnalysis(blob, fileName);
+      setPendingAnalysisPayload(payload);
+
+      const result = await callAnalyzeEstimate(payload);
+      if (result) {
+        handleAnalysisResult(result);
+      }
+    } catch (error) {
+      console.error('[Estimates] Upload choice error:', error);
+      toast({
+        title: 'Fehler',
+        description: error instanceof Error ? error.message : 'Datei konnte nicht verarbeitet werden',
         variant: 'destructive',
       });
     } finally {
@@ -1005,13 +1104,14 @@ export const Estimates: React.FC = () => {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              {estimateItems.length} Kostenpositionen in {estimates.length} Schätzung(en)
+              {estimateItems.length} Kostenpositionen in {estimateFamilies.length} Schätzfamilie(n)
+              {estimateFamilies.length > 0 && ' — nur aktive Versionen'}
             </p>
           </CardContent>
         </Card>
 
         {/* Estimates List */}
-        {estimates.length === 0 ? (
+        {estimateFamilies.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Calculator className="h-12 w-12 text-muted-foreground" />
@@ -1035,16 +1135,15 @@ export const Estimates: React.FC = () => {
               />
 
               <Accordion type="single" collapsible className="w-full">
-                {estimates.map((estimate) => {
+                {estimateFamilies.map(({ rootId, activeVersion: estimate, versions }) => {
                   const items = getItemsByEstimate(estimate.id);
                   const estVat = computeVatSummary(
                     items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
                   );
-                  const versions = getVersions(estimate.id);
                   const hasVersions = versions.length > 1;
                   
                   return (
-                    <AccordionItem key={estimate.id} value={estimate.id}>
+                    <AccordionItem key={rootId} value={rootId}>
                       <AccordionTrigger>
                         <div className="flex w-full items-center justify-between pr-4">
                           <div className="flex items-center gap-3">
@@ -1052,13 +1151,10 @@ export const Estimates: React.FC = () => {
                             <div className="text-left">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
-                                <Badge variant="default" className="text-xs">
-                                  <Star className="h-3 w-3 mr-1" />
-                                  v{estimate.version_number}
-                                </Badge>
                                 {hasVersions && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {versions.length} Versionen
+                                  <Badge variant="secondary" className="text-xs">
+                                    <GitBranch className="h-3 w-3 mr-1" />
+                                    v{estimate.version_number} von {versions.length}
                                   </Badge>
                                 )}
                               </div>
@@ -1293,6 +1389,49 @@ export const Estimates: React.FC = () => {
           onSelect={handleDocumentSelect}
           loading={analyzing}
         />
+
+        {/* Upload Choice Dialog: standalone vs new version */}
+        <Dialog open={!!pendingUpload} onOpenChange={(open) => { if (!open) { setPendingUpload(null); setPendingUploadChoice('standalone'); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schätzung zuordnen</DialogTitle>
+              <DialogDescription>
+                Soll die hochgeladene Datei als neue eigenständige Schätzung oder als neue Version einer bestehenden Schätzfamilie angelegt werden?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Zuordnung</Label>
+                <Select value={pendingUploadChoice} onValueChange={setPendingUploadChoice}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standalone">Neue eigenständige Schätzung</SelectItem>
+                    {estimateFamilies.map(({ rootId, activeVersion }) => (
+                      <SelectItem key={rootId} value={activeVersion.id}>
+                        Neue Version von: {activeVersion.file_name || 'Kostenschätzung'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {pendingUpload && (
+                <p className="text-sm text-muted-foreground">
+                  Datei: {pendingUpload.fileName}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setPendingUpload(null); setPendingUploadChoice('standalone'); }}>
+                Abbrechen
+              </Button>
+              <Button onClick={proceedWithUploadChoice}>
+                Weiter
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

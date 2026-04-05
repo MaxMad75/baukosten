@@ -18,6 +18,8 @@ import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { getTradeForCode, getTradeLabel, TRADE_NODES } from '@/lib/tradeMapping';
+import { Button } from '@/components/ui/button';
 
 const toBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
 const toNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
@@ -42,6 +44,18 @@ interface ComparisonRow {
   offerVsEstimate: number;
 }
 
+interface TradeComparisonGroup {
+  tradeId: string;
+  tradeLabel: string;
+  estimatedBrutto: number;
+  actualBrutto: number;
+  difference: number;
+  percentage: number;
+  offerBrutto: number;
+  offerVsEstimate: number;
+  children: ComparisonRow[];
+}
+
 export const Comparison: React.FC = () => {
   const { invoices, loading: invLoading } = useInvoices();
   const { allEstimates, getItemsByEstimateIds, loading: estLoading } = useEstimates();
@@ -51,7 +65,9 @@ export const Comparison: React.FC = () => {
   const { data: profiles } = useHouseholdProfiles();
   const { offers, allOfferItems } = useOffers();
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
+  const [openTradeRows, setOpenTradeRows] = useState<Set<string>>(new Set());
   const { formatAmount } = usePrivacy();
+  const [viewMode, setViewMode] = useState<'trades' | 'detail'>('trades');
 
   // --- Offer selection state ---
   const [selectedOfferIds, setSelectedOfferIds] = useState<Set<string>>(new Set());
@@ -106,6 +122,14 @@ export const Comparison: React.FC = () => {
     setOpenRows(prev => {
       const next = new Set(prev);
       next.has(code) ? next.delete(code) : next.add(code);
+      return next;
+    });
+  };
+
+  const toggleTradeRow = (tradeId: string) => {
+    setOpenTradeRows(prev => {
+      const next = new Set(prev);
+      next.has(tradeId) ? next.delete(tradeId) : next.add(tradeId);
       return next;
     });
   };
@@ -165,6 +189,37 @@ export const Comparison: React.FC = () => {
     }).sort((a, b) => a.code.localeCompare(b.code));
   }, [invoices, selectedEstimateItems, kostengruppen, getEffectiveAllocations, offersActive, allOfferItems, selectedOfferIds, offerMap]);
 
+  // --- Trade-level grouping ---
+  const tradeComparisons = useMemo((): TradeComparisonGroup[] => {
+    const groupMap = new Map<string, ComparisonRow[]>();
+
+    for (const row of comparisons) {
+      const kg = getKostengruppeByCode(row.code);
+      const tradeId = getTradeForCode(row.code, kg?.parent_code ?? null);
+      const existing = groupMap.get(tradeId) || [];
+      existing.push(row);
+      groupMap.set(tradeId, existing);
+    }
+
+    const groups: TradeComparisonGroup[] = [];
+
+    // First add trade nodes in defined order
+    for (const node of TRADE_NODES) {
+      const children = groupMap.get(node.id);
+      if (!children || children.length === 0) continue;
+      groups.push(buildTradeGroup(node.id, children));
+      groupMap.delete(node.id);
+    }
+
+    // Then add sonstiges if present
+    const sonstigesChildren = groupMap.get('sonstiges');
+    if (sonstigesChildren && sonstigesChildren.length > 0) {
+      groups.push(buildTradeGroup('sonstiges', sonstigesChildren));
+    }
+
+    return groups;
+  }, [comparisons, getKostengruppeByCode]);
+
   const totals = useMemo(() => {
     const estimated = comparisons.reduce((s, c) => s + c.estimatedBrutto, 0);
     const actual = comparisons.reduce((s, c) => s + c.actualBrutto, 0);
@@ -185,7 +240,11 @@ export const Comparison: React.FC = () => {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Soll/Ist-Vergleich</h1>
-          <p className="text-muted-foreground">Budget vs. tatsächliche Kosten nach DIN 276 (alle Werte brutto inkl. 19% MwSt)</p>
+          <p className="text-muted-foreground">
+            {viewMode === 'trades'
+              ? 'Budget vs. tatsächliche Kosten nach Gewerk (alle Werte brutto inkl. 19% MwSt)'
+              : 'Budget vs. tatsächliche Kosten nach DIN 276 (alle Werte brutto inkl. 19% MwSt)'}
+          </p>
         </div>
 
         {/* Version selectors */}
@@ -263,72 +322,190 @@ export const Comparison: React.FC = () => {
         </div>
 
         <Card>
-          <CardHeader><CardTitle>Vergleich nach Kostengruppe</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>
+                {viewMode === 'trades' ? 'Vergleich nach Gewerk' : 'Vergleich nach Kostengruppe'}
+              </CardTitle>
+              <div className="flex gap-1">
+                <Button
+                  variant={viewMode === 'trades' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('trades')}
+                >
+                  Gewerke
+                </Button>
+                <Button
+                  variant={viewMode === 'detail' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('detail')}
+                >
+                  Detail (DIN 276)
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8"></TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Kostengruppe</TableHead>
-                  <TableHead className="text-right">Soll (brutto)</TableHead>
-                  {offersActive && <TableHead className="text-right">Angebot (brutto)</TableHead>}
-                  {offersActive && <TableHead className="text-right">Δ Angebot/Soll</TableHead>}
-                  <TableHead className="text-right">Ist (brutto)</TableHead>
-                  <TableHead className="text-right">Differenz</TableHead>
-                  <TableHead className="w-32">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {comparisons.map((c) => (
-                  <Collapsible key={c.code} open={openRows.has(c.code)} onOpenChange={() => toggleRow(c.code)} asChild>
-                    <>
-                      <CollapsibleTrigger asChild>
-                        <TableRow className="cursor-pointer hover:bg-muted/50">
-                          <TableCell className="w-8">
-                            {openRows.has(c.code) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </TableCell>
-                          <TableCell className="font-mono">{c.code}</TableCell>
-                          <TableCell>{c.name}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(c.estimatedBrutto)}</TableCell>
-                          {offersActive && (
-                            <TableCell className="text-right">
-                              {c.offerBrutto > 0 ? formatCurrency(c.offerBrutto) : '–'}
+            {viewMode === 'detail' ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8"></TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Kostengruppe</TableHead>
+                    <TableHead className="text-right">Soll (brutto)</TableHead>
+                    {offersActive && <TableHead className="text-right">Angebot (brutto)</TableHead>}
+                    {offersActive && <TableHead className="text-right">Δ Angebot/Soll</TableHead>}
+                    <TableHead className="text-right">Ist (brutto)</TableHead>
+                    <TableHead className="text-right">Differenz</TableHead>
+                    <TableHead className="w-32">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {comparisons.map((c) => (
+                    <Collapsible key={c.code} open={openRows.has(c.code)} onOpenChange={() => toggleRow(c.code)} asChild>
+                      <>
+                        <CollapsibleTrigger asChild>
+                          <TableRow className="cursor-pointer hover:bg-muted/50">
+                            <TableCell className="w-8">
+                              {openRows.has(c.code) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </TableCell>
-                          )}
-                          {offersActive && (
-                            <TableCell className={`text-right font-medium ${c.offerVsEstimate > 0 ? 'text-destructive' : c.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>
-                              {c.offerBrutto > 0 || c.estimatedBrutto > 0 ? `${c.offerVsEstimate > 0 ? '+' : ''}${formatCurrency(c.offerVsEstimate)}` : '–'}
+                            <TableCell className="font-mono">{c.code}</TableCell>
+                            <TableCell>{c.name}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(c.estimatedBrutto)}</TableCell>
+                            {offersActive && (
+                              <TableCell className="text-right">
+                                {c.offerBrutto > 0 ? formatCurrency(c.offerBrutto) : '–'}
+                              </TableCell>
+                            )}
+                            {offersActive && (
+                              <TableCell className={`text-right font-medium ${c.offerVsEstimate > 0 ? 'text-destructive' : c.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>
+                                {c.offerBrutto > 0 || c.estimatedBrutto > 0 ? `${c.offerVsEstimate > 0 ? '+' : ''}${formatCurrency(c.offerVsEstimate)}` : '–'}
+                              </TableCell>
+                            )}
+                            <TableCell className="text-right">{formatCurrency(c.actualBrutto)}</TableCell>
+                            <TableCell className={`text-right font-medium ${c.difference > 0 ? 'text-destructive' : c.difference < 0 ? 'text-green-600' : ''}`}>{c.difference > 0 ? '+' : ''}{formatCurrency(c.difference)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {c.difference > 0 ? <TrendingUp className="h-4 w-4 text-destructive" /> : c.difference < 0 ? <TrendingDown className="h-4 w-4 text-green-600" /> : <Minus className="h-4 w-4" />}
+                                <span className="text-sm">{c.estimatedBrutto > 0 ? `${c.percentage > 0 ? '+' : ''}${c.percentage.toFixed(0)}%` : 'Neu'}</span>
+                              </div>
                             </TableCell>
-                          )}
-                          <TableCell className="text-right">{formatCurrency(c.actualBrutto)}</TableCell>
-                          <TableCell className={`text-right font-medium ${c.difference > 0 ? 'text-destructive' : c.difference < 0 ? 'text-green-600' : ''}`}>{c.difference > 0 ? '+' : ''}{formatCurrency(c.difference)}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {c.difference > 0 ? <TrendingUp className="h-4 w-4 text-destructive" /> : c.difference < 0 ? <TrendingDown className="h-4 w-4 text-green-600" /> : <Minus className="h-4 w-4" />}
-                              <span className="text-sm">{c.estimatedBrutto > 0 ? `${c.percentage > 0 ? '+' : ''}${c.percentage.toFixed(0)}%` : 'Neu'}</span>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent asChild>
-                        <TableRow>
-                          <TableCell colSpan={offersActive ? 9 : 7} className="bg-muted/30 p-0">
-                            <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} offersActive={offersActive} />
-                          </TableCell>
-                        </TableRow>
-                      </CollapsibleContent>
-                    </>
-                  </Collapsible>
-                ))}
-              </TableBody>
-            </Table>
+                          </TableRow>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent asChild>
+                          <TableRow>
+                            <TableCell colSpan={offersActive ? 9 : 7} className="bg-muted/30 p-0">
+                              <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} offersActive={offersActive} />
+                            </TableCell>
+                          </TableRow>
+                        </CollapsibleContent>
+                      </>
+                    </Collapsible>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8"></TableHead>
+                    <TableHead>Gewerk</TableHead>
+                    <TableHead className="text-right">Soll (brutto)</TableHead>
+                    {offersActive && <TableHead className="text-right">Angebot (brutto)</TableHead>}
+                    {offersActive && <TableHead className="text-right">Δ Angebot/Soll</TableHead>}
+                    <TableHead className="text-right">Ist (brutto)</TableHead>
+                    <TableHead className="text-right">Differenz</TableHead>
+                    <TableHead className="w-32">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tradeComparisons.map((group) => (
+                    <Collapsible key={group.tradeId} open={openTradeRows.has(group.tradeId)} onOpenChange={() => toggleTradeRow(group.tradeId)} asChild>
+                      <>
+                        <CollapsibleTrigger asChild>
+                          <TableRow className="cursor-pointer hover:bg-muted/50 font-medium">
+                            <TableCell className="w-8">
+                              {openTradeRows.has(group.tradeId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </TableCell>
+                            <TableCell>{group.tradeLabel}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(group.estimatedBrutto)}</TableCell>
+                            {offersActive && (
+                              <TableCell className="text-right">
+                                {group.offerBrutto > 0 ? formatCurrency(group.offerBrutto) : '–'}
+                              </TableCell>
+                            )}
+                            {offersActive && (
+                              <TableCell className={`text-right font-medium ${group.offerVsEstimate > 0 ? 'text-destructive' : group.offerVsEstimate < 0 ? 'text-green-600' : ''}`}>
+                                {group.offerBrutto > 0 || group.estimatedBrutto > 0 ? `${group.offerVsEstimate > 0 ? '+' : ''}${formatCurrency(group.offerVsEstimate)}` : '–'}
+                              </TableCell>
+                            )}
+                            <TableCell className="text-right">{formatCurrency(group.actualBrutto)}</TableCell>
+                            <TableCell className={`text-right font-medium ${group.difference > 0 ? 'text-destructive' : group.difference < 0 ? 'text-green-600' : ''}`}>{group.difference > 0 ? '+' : ''}{formatCurrency(group.difference)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {group.difference > 0 ? <TrendingUp className="h-4 w-4 text-destructive" /> : group.difference < 0 ? <TrendingDown className="h-4 w-4 text-green-600" /> : <Minus className="h-4 w-4" />}
+                                <span className="text-sm">{group.estimatedBrutto > 0 ? `${group.percentage > 0 ? '+' : ''}${group.percentage.toFixed(0)}%` : 'Neu'}</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent asChild>
+                          <TableRow>
+                            <TableCell colSpan={offersActive ? 8 : 6} className="bg-muted/30 p-0">
+                              <div className="p-3 space-y-1">
+                                {group.children.map(c => (
+                                  <div key={c.code} className="flex items-center justify-between text-sm py-1 px-2 rounded hover:bg-muted/50">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs text-muted-foreground">{c.code}</span>
+                                      <span>{c.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                      <span className="w-28 text-right">{formatCurrency(c.estimatedBrutto)}</span>
+                                      {offersActive && <span className="w-28 text-right">{c.offerBrutto > 0 ? formatCurrency(c.offerBrutto) : '–'}</span>}
+                                      <span className="w-28 text-right">{formatCurrency(c.actualBrutto)}</span>
+                                      <span className={`w-28 text-right ${c.difference > 0 ? 'text-destructive' : c.difference < 0 ? 'text-green-600' : ''}`}>
+                                        {c.difference > 0 ? '+' : ''}{formatCurrency(c.difference)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        </CollapsibleContent>
+                      </>
+                    </Collapsible>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>
     </Layout>
   );
 };
+
+function buildTradeGroup(tradeId: string, children: ComparisonRow[]): TradeComparisonGroup {
+  const estimatedBrutto = children.reduce((s, c) => s + c.estimatedBrutto, 0);
+  const actualBrutto = children.reduce((s, c) => s + c.actualBrutto, 0);
+  const difference = children.reduce((s, c) => s + c.difference, 0);
+  const offerBrutto = children.reduce((s, c) => s + c.offerBrutto, 0);
+  const offerVsEstimate = children.reduce((s, c) => s + c.offerVsEstimate, 0);
+  const percentage = estimatedBrutto > 0 ? ((difference / estimatedBrutto) * 100) : 0;
+  return {
+    tradeId,
+    tradeLabel: getTradeLabel(tradeId),
+    estimatedBrutto,
+    actualBrutto,
+    difference,
+    percentage,
+    offerBrutto,
+    offerVsEstimate,
+    children: children.sort((a, b) => a.code.localeCompare(b.code)),
+  };
+}
 
 function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offersActive }: {
   row: ComparisonRow;

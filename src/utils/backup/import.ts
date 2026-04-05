@@ -84,6 +84,7 @@ export async function restoreBackupZip(
   // ID mapping: old ID -> new ID (for referential integrity)
   const contractorIdMap = new Map<string, string>();
   const estimateIdMap = new Map<string, string>();
+  const blockIdMap = new Map<string, string>();
   const invoiceIdMap = new Map<string, string>();
   const profileIdMap = new Map<string, string>();
 

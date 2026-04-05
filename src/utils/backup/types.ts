@@ -3,7 +3,7 @@
  * Schema version follows semver — bump major on breaking changes.
  */
 
-export const BACKUP_SCHEMA_VERSION = '1.0.0';
+export const BACKUP_SCHEMA_VERSION = '1.1.0';
 
 export interface BackupManifest {
   schemaVersion: string;

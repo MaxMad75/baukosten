@@ -199,7 +199,29 @@ export interface OfferItem {
   created_at: string;
 }
 
+export interface EstimateBlock {
+  id: string;
+  version_id: string;
+  block_type: 'imported' | 'manual';
+  label: string;
+  file_path: string | null;
+  file_name: string | null;
+  source_block_id: string | null;
+  processed: boolean;
+  notes: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface InvoiceAllocation {
+  id: string;
+  invoice_id: string;
+  kostengruppe_code: string;
+  estimate_item_id: string | null;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}
   id: string;
   invoice_id: string;
   kostengruppe_code: string;

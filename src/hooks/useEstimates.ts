@@ -391,7 +391,7 @@ export function useEstimates() {
       if (error || !newBlock) continue;
 
       // Copy items from the source block
-      const sourceItems = allEstimateItems.filter(i => i.block_id === block.id);
+386:       const sourceItems = allEstimateItems.filter(i => i.block_id === block.id);
       if (sourceItems.length > 0) {
         await supabase
           .from('architect_estimate_items')
@@ -403,6 +403,7 @@ export function useEstimates() {
               estimated_amount: item.estimated_amount,
               notes: item.notes,
               is_gross: item.is_gross,
+              tax_status: item.tax_status || (item.is_gross ? 'gross' : 'net'),
             }))
           );
       }

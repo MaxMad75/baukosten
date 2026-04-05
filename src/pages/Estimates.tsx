@@ -317,7 +317,7 @@ export const Estimates: React.FC = () => {
     setAnalysisResult(result);
     
     if (result.is_estimate && result.items && result.items.length > 0) {
-      setExtractedItems(result.items.map(item => ({ ...item, is_gross: false })));
+      setExtractedItems(result.items.map(item => ({ ...item, is_gross: false, tax_status: 'net' as TaxStatus })));
       toast({
         title: 'Kostenschätzung erkannt',
         description: `${result.items.length} Kostenpositionen extrahiert (Konfidenz: ${result.confidence}).`,

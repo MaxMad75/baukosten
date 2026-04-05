@@ -90,7 +90,7 @@ function computeVatSummary(items: Array<{ estimated_amount: number; tax_status: 
   return { netto, mwst: brutto - netto, brutto };
 }
 
-function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: number; is_gross: boolean }>; colSpan: number }) {
+function VatSummaryRows({ items, colSpan }: { items: Array<{ estimated_amount: number; tax_status: TaxStatus }>; colSpan: number }) {
   const { netto, mwst, brutto } = computeVatSummary(items);
   const { formatAmount } = usePrivacy();
   return (

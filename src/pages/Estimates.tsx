@@ -1307,8 +1307,14 @@ export const Estimates: React.FC = () => {
                   <Input type="number" step="0.01" placeholder="Betrag" value={newBlockItem.estimated_amount} onChange={(e) => setNewBlockItem({ ...newBlockItem, estimated_amount: e.target.value })} />
                   <Input placeholder="Notiz" value={newBlockItem.notes} onChange={(e) => setNewBlockItem({ ...newBlockItem, notes: e.target.value })} />
                   <div className="flex items-center gap-2">
-                    <Checkbox id="block-item-gross" checked={newBlockItem.is_gross} onCheckedChange={(checked) => setNewBlockItem({ ...newBlockItem, is_gross: !!checked })} />
-                    <Label htmlFor="block-item-gross" className="text-sm whitespace-nowrap">inkl. MwSt</Label>
+                    <Select value={newBlockItem.tax_status} onValueChange={(v) => setNewBlockItem({ ...newBlockItem, tax_status: v as TaxStatus })}>
+                      <SelectTrigger className="w-28 h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="net">Netto</SelectItem>
+                        <SelectItem value="gross">Brutto</SelectItem>
+                        <SelectItem value="tax_free">Steuerfrei</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button onClick={addNewBlockItem} variant="outline"><Plus className="h-4 w-4" /></Button>
                 </div>

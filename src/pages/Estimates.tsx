@@ -717,7 +717,7 @@ export const Estimates: React.FC = () => {
 
   const cancelEditing = () => {
     setEditingItemId(null);
-    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setEditFormData({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
   };
 
   const saveEditing = async () => {

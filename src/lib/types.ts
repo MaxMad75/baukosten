@@ -87,6 +87,7 @@ export interface ArchitectEstimate {
 export interface ArchitectEstimateItem {
   id: string;
   estimate_id: string;
+  block_id: string | null;
   kostengruppe_code: string;
   estimated_amount: number;
   notes: string | null;

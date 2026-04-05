@@ -1,55 +1,66 @@
 
 
-# Stabilization Plan: Mixed Legacy vs Block Data
+# Estimate Item Tax Status: Minimal Implementation Plan
 
-## Analysis Summary
+## Problem
 
-The current dual-path logic in both `useEstimates.ts` and `Estimates.tsx` is **already correctly guarding against double counting**. The key filter rule at lines 251-253 of Estimates.tsx (and lines 28-31 of useEstimates.ts) uses:
+`calcNetto` and `calcBrutto` always apply 19% VAT conversion. Items like "Grundstück" or "Notar" are VAT-free but currently get a false VAT component calculated, inflating MwSt totals.
 
-- `i.block_id && blockIds.has(i.block_id)` — block path
-- `!i.block_id && estIds.has(i.estimate_id)` — legacy path (only items WITHOUT block_id)
+## Schema change
 
-This means items with `block_id` are never counted via the legacy path. No double counting occurs in summaries.
+**Alter `architect_estimate_items`**: Add column `tax_status text NOT NULL DEFAULT 'net'`.
 
-### What IS working correctly
+**Data migration** (in same migration):
+```sql
+UPDATE architect_estimate_items
+SET tax_status = CASE WHEN is_gross THEN 'gross' ELSE 'net' END;
+```
 
-1. **Summary totals** (`displayedItems`, `getAllEstimatedAmounts`): No double counting — the `!i.block_id` guard prevents it.
-2. **Legacy rendering**: `legacyEstimatesWithItems` only shows estimates that have items with `block_id = NULL`. Empty legacy container records (created alongside imported blocks) are excluded.
-3. **New imports**: Items created via `addBlockItems` get both `estimate_id` (required by NOT NULL FK) and `block_id`, so they only appear under the block.
+The `is_gross` column is kept for now (no drop) to avoid breaking backup/restore or edge function output parsing. New code reads `tax_status` only.
 
-### What is NOT a real bug but is unnecessary complexity
+Valid values: `'net'`, `'gross'`, `'tax_free'`
 
-1. **Redundant legacy `architect_estimates` container**: Every PDF import (line 397) creates both a block AND a legacy estimate record. The legacy record is required because `architect_estimate_items.estimate_id` is NOT NULL — items need a valid FK target. The legacy record itself has no `!block_id` items, so it never renders. But it clutters the data.
+## Core logic changes
 
-### Actual risks remaining
+Replace the two helper functions and `computeVatSummary` to handle three states:
 
-1. **Manual block item creation** (lines ~540-570 in `handleAddManualItem`): Need to verify whether manual items added to a block also correctly set `block_id`. If they don't, they'd show under both the block (no) and the legacy estimate (yes).
+```ts
+type TaxStatus = 'net' | 'gross' | 'tax_free';
 
-2. **Edge case**: If a user added items to a legacy estimate in Phase 1, then in Phase 2 those items have `block_id = NULL` and show correctly in the legacy accordion. No duplication risk unless someone manually creates a block for the same content.
+const calcNetto = (amount: number, status: TaxStatus) =>
+  status === 'gross' ? amount / 1.19 : amount; // tax_free and net are already net-equivalent
 
-## Verdict: No stabilization migration needed
+const calcBrutto = (amount: number, status: TaxStatus) =>
+  status === 'net' ? amount * 1.19 : amount; // tax_free and gross are already brutto-equivalent
+```
 
-The code is already safe. The dual-path filter logic is correct and there are no double-counting bugs in the current implementation.
+For `tax_free`: amount contributes fully to both netto and brutto (no VAT delta).
 
-## One small code fix recommended
-
-Verify and fix the manual "add item to block" flow to ensure `block_id` is always set when adding items to a block. This is the only path where a bug could cause items to appear in both views.
-
-### File to check/fix
+## Files to change
 
 | File | Change |
 |------|--------|
-| `src/pages/Estimates.tsx` | Verify `handleAddManualItem` sets `block_id` when adding to a block. If it uses `addBlockItems`, it's already correct. If it uses `addEstimateItems`, items won't get `block_id` and will appear in the legacy accordion instead of the block. |
+| Migration SQL | Add `tax_status` column, migrate from `is_gross`, default `'net'` |
+| `src/lib/types.ts` | Add `tax_status` field to `ArchitectEstimateItem`, add `TaxStatus` type |
+| `src/pages/Estimates.tsx` | Replace `calcNetto`/`calcBrutto`/`computeVatSummary` to use `tax_status`. Replace all `is_gross` checkbox UI with a 3-option select (Brutto/Netto/Steuerfrei). Update all item form state from `is_gross: boolean` to `tax_status: TaxStatus`. |
+| `src/pages/Comparison.tsx` | Update `toBrutto`/`toNetto` to handle `tax_status` on estimate items (keep `is_gross` path for invoices/offers unchanged) |
+| `src/hooks/useEstimates.ts` | Pass `tax_status` through `addBlockItems`, `addEstimateItems`, `updateEstimateItem`. Derive `is_gross` from `tax_status` for backward compat on insert (so the old column stays consistent). |
+| `src/utils/backup/types.ts` | Add `tax_status` to `BackupEstimateItem` (nullable for old backups) |
+| `src/utils/backup/export.ts` | Include `tax_status` in exported items |
+| `src/utils/backup/import.ts` | Map `tax_status` on import; fall back to deriving from `is_gross` for old backups |
 
-### Unchanged
+## Unchanged
 
-- `useEstimates.ts` — dual-path logic is correct
-- Migration / schema — no changes needed
-- Comparison, Dashboard, invoices, offers, backup
-- All other pages and hooks
+- `architect_estimate_items.is_gross` column: kept, not dropped
+- Invoice tax handling (`invoices.is_gross`): unchanged
+- Offer tax handling: unchanged
+- Dashboard, Settings, Auth, Documents, Contractors, Journal pages
+- Edge functions (`analyze-estimate` output still uses `is_gross` — mapped to `tax_status` in UI layer)
+- `estimate_versions`, `estimate_blocks` tables
 
-## Explicitly deferred
+## Deferred
 
-- **Removing the redundant legacy `architect_estimates` container creation**: Requires making `architect_estimate_items.estimate_id` nullable or introducing a household-level dummy record. Not worth the risk now.
-- **Legacy data migration to blocks**: Deferred as planned.
+- Dropping the `is_gross` column from `architect_estimate_items` (later cleanup)
+- Extending `tax_free` to invoices or offers
+- Updating the `analyze-estimate` edge function output schema
 

@@ -493,7 +493,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
   profiles: { id: string; name: string }[];
   offersActive: boolean;
 }) {
-  const estNetto = row.estimateItems.reduce((s, i) => s + toNetto(Number(i.estimated_amount), i.is_gross), 0);
+  const estNetto = row.estimateItems.reduce((s, i) => s + toNettoTaxStatus(Number(i.estimated_amount), (i.tax_status as TaxStatus) || (i.is_gross ? 'gross' : 'net')), 0);
   const estBrutto = row.estimatedBrutto;
   const estMwst = estBrutto - estNetto;
 

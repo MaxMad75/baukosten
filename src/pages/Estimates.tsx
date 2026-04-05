@@ -1111,7 +1111,7 @@ export const Estimates: React.FC = () => {
         </Card>
 
         {/* Estimates List */}
-        {estimates.length === 0 ? (
+        {estimateFamilies.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Calculator className="h-12 w-12 text-muted-foreground" />
@@ -1135,16 +1135,15 @@ export const Estimates: React.FC = () => {
               />
 
               <Accordion type="single" collapsible className="w-full">
-                {estimates.map((estimate) => {
+                {estimateFamilies.map(({ rootId, activeVersion: estimate, versions }) => {
                   const items = getItemsByEstimate(estimate.id);
                   const estVat = computeVatSummary(
                     items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
                   );
-                  const versions = getVersions(estimate.id);
                   const hasVersions = versions.length > 1;
                   
                   return (
-                    <AccordionItem key={estimate.id} value={estimate.id}>
+                    <AccordionItem key={rootId} value={rootId}>
                       <AccordionTrigger>
                         <div className="flex w-full items-center justify-between pr-4">
                           <div className="flex items-center gap-3">
@@ -1152,13 +1151,10 @@ export const Estimates: React.FC = () => {
                             <div className="text-left">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">{estimate.file_name || 'Kostenschätzung'}</p>
-                                <Badge variant="default" className="text-xs">
-                                  <Star className="h-3 w-3 mr-1" />
-                                  v{estimate.version_number}
-                                </Badge>
                                 {hasVersions && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {versions.length} Versionen
+                                  <Badge variant="secondary" className="text-xs">
+                                    <GitBranch className="h-3 w-3 mr-1" />
+                                    v{estimate.version_number} von {versions.length}
                                   </Badge>
                                 )}
                               </div>

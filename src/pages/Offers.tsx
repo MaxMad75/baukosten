@@ -53,6 +53,7 @@ export const Offers: React.FC = () => {
   const { offers, loading, createOffer, updateOffer, deleteOffer, fetchOfferItems, saveOfferItems } = useOffers();
   const { contractors } = useContractors();
   const { isPrivate } = usePrivacy();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);

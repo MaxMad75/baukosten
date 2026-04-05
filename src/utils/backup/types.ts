@@ -23,6 +23,7 @@ export interface BackupManifest {
     journalEntries: number;
     documents: number;
     attachments: number;
+    estimateBlocks: number;
   };
   checksums?: {
     backupJson: string;

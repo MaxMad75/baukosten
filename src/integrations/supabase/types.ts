@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       architect_estimate_items: {
         Row: {
+          block_id: string | null
           created_at: string
           estimate_id: string
           estimated_amount: number
@@ -25,6 +26,7 @@ export type Database = {
           notes: string | null
         }
         Insert: {
+          block_id?: string | null
           created_at?: string
           estimate_id: string
           estimated_amount?: number
@@ -34,6 +36,7 @@ export type Database = {
           notes?: string | null
         }
         Update: {
+          block_id?: string | null
           created_at?: string
           estimate_id?: string
           estimated_amount?: number
@@ -43,6 +46,13 @@ export type Database = {
           notes?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "architect_estimate_items_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "estimate_blocks"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "architect_estimate_items_estimate_id_fkey"
             columns: ["estimate_id"]
@@ -359,6 +369,56 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      estimate_blocks: {
+        Row: {
+          block_type: string
+          created_at: string
+          file_name: string | null
+          file_path: string | null
+          id: string
+          label: string
+          notes: string | null
+          processed: boolean
+          sort_order: number
+          source_block_id: string | null
+          version_id: string
+        }
+        Insert: {
+          block_type?: string
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          label: string
+          notes?: string | null
+          processed?: boolean
+          sort_order?: number
+          source_block_id?: string | null
+          version_id: string
+        }
+        Update: {
+          block_type?: string
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          label?: string
+          notes?: string | null
+          processed?: boolean
+          sort_order?: number
+          source_block_id?: string | null
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estimate_blocks_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "estimate_versions"
             referencedColumns: ["id"]
           },
         ]

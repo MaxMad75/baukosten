@@ -1115,9 +1115,7 @@ export const Estimates: React.FC = () => {
                 {/* Render legacy estimates (items without block_id) */}
                 {legacyEstimatesWithItems.map((estimate) => {
                   const items = allEstimateItems.filter(i => i.estimate_id === estimate.id && !i.block_id);
-                  const estVat = computeVatSummary(
-                    items.map(i => ({ estimated_amount: Number(i.estimated_amount), is_gross: i.is_gross ?? false }))
-                  );
+                  const estVat = computeVatSummary(items.map(toVatInput));
                   
                   return (
                     <AccordionItem key={estimate.id} value={`legacy-${estimate.id}`}>

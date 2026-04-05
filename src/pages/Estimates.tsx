@@ -593,9 +593,9 @@ export const Estimates: React.FC = () => {
       kostengruppe_code: newBlockItem.kostengruppe_code,
       estimated_amount: newBlockItem.estimated_amount,
       notes: newBlockItem.notes,
-      is_gross: newBlockItem.is_gross,
+      tax_status: newBlockItem.tax_status,
     }]);
-    setNewBlockItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setNewBlockItem({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
   };
 
   const handleSaveBlockItems = async () => {

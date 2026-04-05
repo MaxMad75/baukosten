@@ -276,7 +276,7 @@ export const Estimates: React.FC = () => {
     setPendingEstimateId(null);
     setPendingFile(null);
     setPendingImportBlockId(null);
-    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
+    setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', tax_status: 'net' });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);
     setPendingAnalysisPayload(null);

@@ -212,6 +212,8 @@ export const Estimates: React.FC = () => {
     setUploadedFile(null);
     setPendingEstimateId(null);
     setPendingFile(null);
+    setPendingUpload(null);
+    setPendingUploadChoice('standalone');
     setManualItem({ kostengruppe_code: '', estimated_amount: '', notes: '', is_gross: false });
     setAnalysisResult(null);
     setShowNotEstimateWarning(false);

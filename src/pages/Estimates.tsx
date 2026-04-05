@@ -69,9 +69,9 @@ import {
 // Minimum text length to consider text extraction successful
 const MIN_TEXT_LENGTH = 50;
 
-// MwSt helpers
-const calcNetto = (amount: number, isGross: boolean) => isGross ? amount / 1.19 : amount;
-const calcBrutto = (amount: number, isGross: boolean) => isGross ? amount : amount * 1.19;
+// MwSt helpers — now tax_status-aware
+const calcNetto = (amount: number, taxStatus: TaxStatus) => taxStatus === 'gross' ? amount / 1.19 : amount;
+const calcBrutto = (amount: number, taxStatus: TaxStatus) => taxStatus === 'net' ? amount * 1.19 : amount;
 
 interface VatSummary {
   netto: number;
@@ -79,13 +79,13 @@ interface VatSummary {
   brutto: number;
 }
 
-function computeVatSummary(items: Array<{ estimated_amount: number; is_gross: boolean }>): VatSummary {
+function computeVatSummary(items: Array<{ estimated_amount: number; tax_status: TaxStatus }>): VatSummary {
   let netto = 0;
   let brutto = 0;
   for (const item of items) {
     const amt = Number(item.estimated_amount);
-    netto += calcNetto(amt, item.is_gross);
-    brutto += calcBrutto(amt, item.is_gross);
+    netto += calcNetto(amt, item.tax_status);
+    brutto += calcBrutto(amt, item.tax_status);
   }
   return { netto, mwst: brutto - netto, brutto };
 }

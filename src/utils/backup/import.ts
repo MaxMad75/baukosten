@@ -188,6 +188,8 @@ export async function restoreBackupZip(
 
     const newBlockId = item.block_id ? blockIdMap.get(item.block_id) || null : null;
 
+    const taxStatus = item.tax_status || (item.is_gross ? 'gross' : 'net');
+
     const { error } = await supabase
       .from('architect_estimate_items')
       .insert({
@@ -196,7 +198,8 @@ export async function restoreBackupZip(
         kostengruppe_code: item.kostengruppe_code,
         estimated_amount: item.estimated_amount,
         notes: item.notes,
-        is_gross: item.is_gross,
+        is_gross: taxStatus === 'gross',
+        tax_status: taxStatus,
       });
 
     if (!error) counts.estimateItems++;

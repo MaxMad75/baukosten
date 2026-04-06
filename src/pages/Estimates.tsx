@@ -530,6 +530,33 @@ export const Estimates: React.FC = () => {
       }
     }
 
+    // Redundancy check: compare imported items against carry_forward manual blocks
+    if (pendingImportBlockId && displayedVersion) {
+      const importedParentCodes = new Set(
+        extractedItems.map(i => i.kostengruppe_code.substring(0, 3))
+      );
+      const carryForwardBlocks = displayedBlocks.filter(
+        b => b.block_type === 'manual' && b.carry_forward && b.id !== pendingImportBlockId
+      );
+      const warnings: Array<{ importedLabel: string; manualLabel: string; codes: string[] }> = [];
+      const importedBlock = allBlocks.find(b => b.id === pendingImportBlockId);
+      for (const cfBlock of carryForwardBlocks) {
+        const cfItems = getItemsByBlock(cfBlock.id);
+        const cfParentCodes = new Set(cfItems.map(i => i.kostengruppe_code.substring(0, 3)));
+        const overlap = [...importedParentCodes].filter(c => cfParentCodes.has(c));
+        if (overlap.length > 0) {
+          warnings.push({
+            importedLabel: importedBlock?.label || 'Import',
+            manualLabel: cfBlock.label,
+            codes: overlap,
+          });
+        }
+      }
+      if (warnings.length > 0) {
+        setRedundancyWarnings(warnings);
+      }
+    }
+
     resetForm();
     setIsUploadOpen(false);
   };

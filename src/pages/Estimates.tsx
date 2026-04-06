@@ -207,6 +207,9 @@ export const Estimates: React.FC = () => {
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
   const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<any>(null);
 
+  // Redundancy warning after import
+  const [redundancyWarnings, setRedundancyWarnings] = useState<Array<{ importedLabel: string; manualLabel: string; codes: string[] }>>([]);
+
   // Edit state for inline editing
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({

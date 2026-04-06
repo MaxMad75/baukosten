@@ -448,6 +448,22 @@ export function useEstimates() {
     return true;
   };
 
+  /** Update a block's metadata (e.g. carry_forward flag) */
+  const updateBlock = async (blockId: string, updates: Partial<Pick<EstimateBlock, 'carry_forward' | 'label' | 'notes'>>) => {
+    const { error } = await supabase
+      .from('estimate_blocks')
+      .update(updates)
+      .eq('id', blockId);
+
+    if (error) {
+      toast({ title: 'Fehler', description: 'Block konnte nicht aktualisiert werden', variant: 'destructive' });
+      return false;
+    }
+
+    await fetchEstimates();
+    return true;
+  };
+
   const deleteEstimateItem = async (id: string) => {
     const { error } = await supabase
       .from('architect_estimate_items')

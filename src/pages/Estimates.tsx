@@ -664,7 +664,8 @@ export const Estimates: React.FC = () => {
         const prevManualBlocks = allBlocks.filter(b => b.version_id === prevVersion.id && b.block_type === 'manual');
         if (prevManualBlocks.length > 0) {
           setPendingNewVersionId(v.id);
-          setCopyBlockIds(prevManualBlocks.map(b => b.id));
+          // Pre-select carry_forward blocks, all others still shown but unchecked
+          setCopyBlockIds(prevManualBlocks.filter(b => b.carry_forward).map(b => b.id));
           setIsCopyBlocksOpen(true);
         } else {
           toast({ title: 'Erfolg', description: `Version „${v.name}" erstellt und aktiviert.` });

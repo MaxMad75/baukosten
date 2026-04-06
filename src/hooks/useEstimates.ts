@@ -516,5 +516,6 @@ export function useEstimates() {
     addBlockItems,
     deleteBlock,
     copyBlocksToVersion,
+    updateBlock,
   };
 }

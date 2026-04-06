@@ -38,6 +38,8 @@ import {
   Star,
   Pencil,
   Package,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';

@@ -148,6 +148,7 @@ export const Estimates: React.FC = () => {
     addBlockItems,
     deleteBlock,
     copyBlocksToVersion,
+    updateBlock,
   } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getDocumentUrl, uploadDocument, createDocument, checkDuplicate } = useDocuments();

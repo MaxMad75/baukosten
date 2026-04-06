@@ -1068,6 +1068,29 @@ export const Estimates: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* Redundancy Warning */}
+        {redundancyWarnings.length > 0 && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Mögliche Überschneidung erkannt</AlertTitle>
+            <AlertDescription>
+              <div className="space-y-1 mt-1">
+                {redundancyWarnings.map((w, i) => (
+                  <p key={i} className="text-sm">
+                    Der importierte Block „{w.importedLabel}" enthält ähnliche Kostengruppen wie der fixierte Block „{w.manualLabel}" (KG {w.codes.join(', ')}).
+                  </p>
+                ))}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Bitte prüfen Sie, ob Positionen doppelt erfasst sind. Kein Block wurde automatisch entfernt.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => setRedundancyWarnings([])}>
+                Verstanden
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Blocks + Legacy Estimates */}
         {displayedBlocks.length === 0 && legacyEstimatesWithItems.length === 0 ? (
           <Card>

@@ -371,7 +371,7 @@ export function useEstimates() {
     if (!targetEstimate) return false;
 
     for (const block of sourcesBlocks) {
-      // Create new block
+      // Create new block — inherit carry_forward from source
       const { data: newBlock, error } = await supabase
         .from('estimate_blocks')
         .insert({
@@ -384,6 +384,7 @@ export function useEstimates() {
           processed: block.processed,
           notes: block.notes,
           sort_order: block.sort_order,
+          carry_forward: block.carry_forward,
         })
         .select()
         .single();

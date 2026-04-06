@@ -1442,11 +1442,19 @@ export const Estimates: React.FC = () => {
                         );
                       }}
                     />
-                    <div>
-                      <p className="font-medium">{block.label}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {getItemsByBlock(block.id).length} Positionen
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <p className="font-medium">{block.label}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {getItemsByBlock(block.id).length} Positionen
+                        </p>
+                      </div>
+                      {block.carry_forward && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <Pin className="h-3 w-3" />
+                          Fixiert
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 ));

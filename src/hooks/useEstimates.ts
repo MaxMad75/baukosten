@@ -371,7 +371,7 @@ export function useEstimates() {
     if (!targetEstimate) return false;
 
     for (const block of sourcesBlocks) {
-      // Create new block
+      // Create new block — inherit carry_forward from source
       const { data: newBlock, error } = await supabase
         .from('estimate_blocks')
         .insert({
@@ -384,6 +384,7 @@ export function useEstimates() {
           processed: block.processed,
           notes: block.notes,
           sort_order: block.sort_order,
+          carry_forward: block.carry_forward,
         })
         .select()
         .single();
@@ -440,6 +441,22 @@ export function useEstimates() {
 
     if (error) {
       toast({ title: 'Fehler', description: 'Notiz konnte nicht gespeichert werden', variant: 'destructive' });
+      return false;
+    }
+
+    await fetchEstimates();
+    return true;
+  };
+
+  /** Update a block's metadata (e.g. carry_forward flag) */
+  const updateBlock = async (blockId: string, updates: Partial<Pick<EstimateBlock, 'carry_forward' | 'label' | 'notes'>>) => {
+    const { error } = await supabase
+      .from('estimate_blocks')
+      .update(updates)
+      .eq('id', blockId);
+
+    if (error) {
+      toast({ title: 'Fehler', description: 'Block konnte nicht aktualisiert werden', variant: 'destructive' });
       return false;
     }
 
@@ -515,5 +532,6 @@ export function useEstimates() {
     addBlockItems,
     deleteBlock,
     copyBlocksToVersion,
+    updateBlock,
   };
 }

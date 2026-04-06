@@ -171,6 +171,7 @@ export async function restoreBackupZip(
         processed: block.processed,
         notes: block.notes,
         sort_order: block.sort_order,
+        carry_forward: block.carry_forward ?? false,
       })
       .select('id')
       .single();

@@ -113,6 +113,7 @@ export interface BackupEstimateBlock {
   processed: boolean;
   notes: string | null;
   sort_order: number;
+  carry_forward: boolean;
   created_at: string;
 }
 

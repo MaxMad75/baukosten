@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,8 @@ import {
   Star,
   Pencil,
   Package,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -146,6 +149,7 @@ export const Estimates: React.FC = () => {
     addBlockItems,
     deleteBlock,
     copyBlocksToVersion,
+    updateBlock,
   } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
   const { getDocumentUrl, uploadDocument, createDocument, checkDuplicate } = useDocuments();
@@ -202,6 +206,9 @@ export const Estimates: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
   const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<any>(null);
+
+  // Redundancy warning after import
+  const [redundancyWarnings, setRedundancyWarnings] = useState<Array<{ importedLabel: string; manualLabel: string; codes: string[] }>>([]);
 
   // Edit state for inline editing
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -523,6 +530,33 @@ export const Estimates: React.FC = () => {
       }
     }
 
+    // Redundancy check: compare imported items against carry_forward manual blocks
+    if (pendingImportBlockId && displayedVersion) {
+      const importedParentCodes = new Set(
+        extractedItems.map(i => i.kostengruppe_code.substring(0, 3))
+      );
+      const carryForwardBlocks = displayedBlocks.filter(
+        b => b.block_type === 'manual' && b.carry_forward && b.id !== pendingImportBlockId
+      );
+      const warnings: Array<{ importedLabel: string; manualLabel: string; codes: string[] }> = [];
+      const importedBlock = allBlocks.find(b => b.id === pendingImportBlockId);
+      for (const cfBlock of carryForwardBlocks) {
+        const cfItems = getItemsByBlock(cfBlock.id);
+        const cfParentCodes = new Set(cfItems.map(i => i.kostengruppe_code.substring(0, 3)));
+        const overlap = [...importedParentCodes].filter(c => cfParentCodes.has(c));
+        if (overlap.length > 0) {
+          warnings.push({
+            importedLabel: importedBlock?.label || 'Import',
+            manualLabel: cfBlock.label,
+            codes: overlap,
+          });
+        }
+      }
+      if (warnings.length > 0) {
+        setRedundancyWarnings(warnings);
+      }
+    }
+
     resetForm();
     setIsUploadOpen(false);
   };
@@ -657,7 +691,8 @@ export const Estimates: React.FC = () => {
         const prevManualBlocks = allBlocks.filter(b => b.version_id === prevVersion.id && b.block_type === 'manual');
         if (prevManualBlocks.length > 0) {
           setPendingNewVersionId(v.id);
-          setCopyBlockIds(prevManualBlocks.map(b => b.id));
+          // Pre-select carry_forward blocks, all others still shown but unchecked
+          setCopyBlockIds(prevManualBlocks.filter(b => b.carry_forward).map(b => b.id));
           setIsCopyBlocksOpen(true);
         } else {
           toast({ title: 'Erfolg', description: `Version „${v.name}" erstellt und aktiviert.` });
@@ -1033,6 +1068,29 @@ export const Estimates: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* Redundancy Warning */}
+        {redundancyWarnings.length > 0 && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Mögliche Überschneidung erkannt</AlertTitle>
+            <AlertDescription>
+              <div className="space-y-1 mt-1">
+                {redundancyWarnings.map((w, i) => (
+                  <p key={i} className="text-sm">
+                    Der importierte Block „{w.importedLabel}" enthält ähnliche Kostengruppen wie der fixierte Block „{w.manualLabel}" (KG {w.codes.join(', ')}).
+                  </p>
+                ))}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Bitte prüfen Sie, ob Positionen doppelt erfasst sind. Kein Block wurde automatisch entfernt.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => setRedundancyWarnings([])}>
+                Verstanden
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Blocks + Legacy Estimates */}
         {displayedBlocks.length === 0 && legacyEstimatesWithItems.length === 0 ? (
           <Card>
@@ -1070,6 +1128,23 @@ export const Estimates: React.FC = () => {
                                 <Badge variant={block.block_type === 'imported' ? 'default' : 'secondary'} className="text-xs">
                                   {block.block_type === 'imported' ? 'Import' : 'Manuell'}
                                 </Badge>
+                                {block.block_type === 'manual' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0"
+                                    title={block.carry_forward ? 'Wird in neue Versionen übernommen' : 'Nicht automatisch übernommen'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateBlock(block.id, { carry_forward: !block.carry_forward });
+                                    }}
+                                  >
+                                    {block.carry_forward
+                                      ? <Pin className="h-3.5 w-3.5 text-primary" />
+                                      : <PinOff className="h-3.5 w-3.5 text-muted-foreground" />
+                                    }
+                                  </Button>
+                                )}
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {format(new Date(block.created_at), 'dd.MM.yyyy', { locale: de })}
@@ -1390,11 +1465,19 @@ export const Estimates: React.FC = () => {
                         );
                       }}
                     />
-                    <div>
-                      <p className="font-medium">{block.label}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {getItemsByBlock(block.id).length} Positionen
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <p className="font-medium">{block.label}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {getItemsByBlock(block.id).length} Positionen
+                        </p>
+                      </div>
+                      {block.carry_forward && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <Pin className="h-3 w-3" />
+                          Fixiert
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 ));

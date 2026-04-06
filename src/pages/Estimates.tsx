@@ -1105,6 +1105,23 @@ export const Estimates: React.FC = () => {
                                 <Badge variant={block.block_type === 'imported' ? 'default' : 'secondary'} className="text-xs">
                                   {block.block_type === 'imported' ? 'Import' : 'Manuell'}
                                 </Badge>
+                                {block.block_type === 'manual' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0"
+                                    title={block.carry_forward ? 'Wird in neue Versionen übernommen' : 'Nicht automatisch übernommen'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateBlock(block.id, { carry_forward: !block.carry_forward });
+                                    }}
+                                  >
+                                    {block.carry_forward
+                                      ? <Pin className="h-3.5 w-3.5 text-primary" />
+                                      : <PinOff className="h-3.5 w-3.5 text-muted-foreground" />
+                                    }
+                                  </Button>
+                                )}
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {format(new Date(block.created_at), 'dd.MM.yyyy', { locale: de })}

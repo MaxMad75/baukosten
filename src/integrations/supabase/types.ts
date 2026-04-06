@@ -379,6 +379,7 @@ export type Database = {
       estimate_blocks: {
         Row: {
           block_type: string
+          carry_forward: boolean
           created_at: string
           file_name: string | null
           file_path: string | null
@@ -392,6 +393,7 @@ export type Database = {
         }
         Insert: {
           block_type?: string
+          carry_forward?: boolean
           created_at?: string
           file_name?: string | null
           file_path?: string | null
@@ -405,6 +407,7 @@ export type Database = {
         }
         Update: {
           block_type?: string
+          carry_forward?: boolean
           created_at?: string
           file_name?: string | null
           file_path?: string | null

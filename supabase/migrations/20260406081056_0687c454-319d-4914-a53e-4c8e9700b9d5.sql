@@ -1,0 +1,1 @@
+ALTER TABLE estimate_blocks ADD COLUMN carry_forward boolean NOT NULL DEFAULT false;

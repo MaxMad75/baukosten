@@ -1,9 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024; // 5MB
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -11,6 +14,38 @@ serve(async (req) => {
   }
 
   try {
+    // --- Auth: require valid JWT ---
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const contentLength = req.headers.get("content-length");
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+      return new Response(
+        JSON.stringify({ error: "Payload too large" }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { textContent, fileBase64, fileName } = await req.json();
 
     if (!textContent && !fileBase64) {
@@ -22,7 +57,11 @@ serve(async (req) => {
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      console.error("Missing LOVABLE_API_KEY secret");
+      return new Response(
+        JSON.stringify({ error: "Service temporarily unavailable. Please try again later." }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const systemPrompt = `Du bist ein Experte für deutsche Baukostenkalkulationen und die DIN 276 Kostenstruktur.
@@ -58,31 +97,27 @@ Wichtig:
 - Beträge als reine Zahlen ohne Währungszeichen
 - Auch wenn das Dokument nicht eindeutig eine Kostenschätzung ist aber Kosten enthält, setze is_estimate auf true mit confidence "niedrig"`;
 
-    // Build messages based on input type
     const userContent: any[] = [];
-    
+
     if (textContent) {
       userContent.push({
         type: "text",
-        text: `Analysiere dieses Dokument (Dateiname: ${fileName || 'unbekannt'}):\n\n${textContent}`
+        text: `Analysiere dieses Dokument (Dateiname: ${fileName || 'unbekannt'}):\n\n${textContent}`,
       });
     }
-    
+
     if (fileBase64) {
-      // Determine mime type from base64 or default to pdf
-      const mimeType = fileBase64.startsWith("/9j/") ? "image/jpeg" 
-        : fileBase64.startsWith("iVBOR") ? "image/png" 
+      const mimeType = fileBase64.startsWith("/9j/") ? "image/jpeg"
+        : fileBase64.startsWith("iVBOR") ? "image/png"
         : "application/pdf";
-      
+
       userContent.push({
         type: "text",
-        text: `Analysiere dieses Dokument (Dateiname: ${fileName || 'unbekannt'}). Das Dokument wurde als Bild/PDF bereitgestellt:`
+        text: `Analysiere dieses Dokument (Dateiname: ${fileName || 'unbekannt'}). Das Dokument wurde als Bild/PDF bereitgestellt:`,
       });
       userContent.push({
         type: "image_url",
-        image_url: {
-          url: `data:${mimeType};base64,${fileBase64}`
-        }
+        image_url: { url: `data:${mimeType};base64,${fileBase64}` },
       });
     }
 
@@ -116,40 +151,43 @@ Wichtig:
       }
       const errorText = await response.text();
       console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
-      throw new Error("No response from AI");
+      console.error("Empty AI response");
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Parse the JSON response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("Could not parse AI response");
+      console.error("Could not parse AI response", content);
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const extractedData = JSON.parse(jsonMatch[0]);
 
-    console.log("Successfully analyzed document:", fileName, "is_estimate:", extractedData.is_estimate);
-
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        data: extractedData 
-      }),
+      JSON.stringify({ success: true, data: extractedData }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
     console.error("Error analyzing estimate:", error);
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : "Unknown error" 
-      }),
+      JSON.stringify({ error: "An internal error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

@@ -93,7 +93,11 @@ serve(async (req) => {
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      console.error("Missing LOVABLE_API_KEY secret");
+      return new Response(
+        JSON.stringify({ error: "Service temporarily unavailable. Please try again later." }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const userContent: any[] = [];
@@ -140,16 +144,31 @@ serve(async (req) => {
       }
       const errorText = await response.text();
       console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
 
-    if (!content) throw new Error("No response from AI");
+    if (!content) {
+      console.error("Empty AI response");
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("Could not parse AI response");
+    if (!jsonMatch) {
+      console.error("Could not parse AI response", content);
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const extractedData = JSON.parse(jsonMatch[0]);
 
@@ -161,7 +180,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("Error analyzing document:", error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({ error: "An internal error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

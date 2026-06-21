@@ -13,7 +13,7 @@ export const useHouseholdProfiles = () => {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, user_id, household_id, name, created_at, updated_at')
+        .select('id, user_id, household_id, name, has_iban, created_at, updated_at')
         .eq('household_id', household.id);
 
       if (error) throw error;

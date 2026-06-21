@@ -3,7 +3,10 @@ export interface Profile {
   user_id: string;
   household_id: string;
   name: string;
-  iban: string | null;
+  /** Whether this profile has an IBAN on file. Actual IBAN is not exposed to other household members. */
+  has_iban: boolean;
+  /** Only populated for the current user's own profile (via get_my_iban RPC). */
+  iban?: string | null;
   created_at: string;
   updated_at: string;
 }

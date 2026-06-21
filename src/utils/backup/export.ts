@@ -28,12 +28,16 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     onProgress?.(msg, step, steps);
   };
 
-  // 1. Profiles
+  // 1. Profiles (IBAN of other members is no longer readable — only own IBAN via RPC)
   progress('Profile laden…');
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, user_id, name, iban, created_at, updated_at')
+    .select('id, user_id, name, has_iban, created_at, updated_at')
     .eq('household_id', householdId);
+  const { data: ownIbanData } = await supabase.rpc('get_my_iban');
+  const ownIban: string | null = typeof ownIbanData === 'string' ? ownIbanData : null;
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+  const currentUserId = currentUser?.id ?? null;
 
   // 2. Invoices
   progress('Rechnungen laden…');
@@ -197,7 +201,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
         id: p.id,
         user_id: p.user_id,
         name: p.name,
-        iban: p.iban,
+        iban: p.user_id && p.user_id === currentUserId ? ownIban : null,
         created_at: p.created_at,
         updated_at: p.updated_at,
       })),

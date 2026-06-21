@@ -867,6 +867,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          has_iban: boolean | null
           household_id: string
           iban: string | null
           id: string
@@ -876,6 +877,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          has_iban?: boolean | null
           household_id: string
           iban?: string | null
           id?: string
@@ -885,6 +887,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          has_iban?: boolean | null
           household_id?: string
           iban?: string | null
           id?: string
@@ -944,6 +947,7 @@ export type Database = {
       }
     }
     Functions: {
+      get_my_iban: { Args: never; Returns: string }
       get_user_household_id: { Args: never; Returns: string }
       is_household_member: {
         Args: { check_household_id: string }

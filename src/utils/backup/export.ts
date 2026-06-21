@@ -201,7 +201,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
         id: p.id,
         user_id: p.user_id,
         name: p.name,
-        iban: p.iban,
+        iban: p.user_id && p.user_id === currentUserId ? ownIban : null,
         created_at: p.created_at,
         updated_at: p.updated_at,
       })),

@@ -27,34 +27,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
+    const profileCols = 'id, user_id, household_id, name, has_iban, created_at, updated_at';
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('*')
+      .select(profileCols)
       .eq('user_id', userId)
       .single();
 
     if (profileData) {
-      setProfile(profileData as Profile);
+      // Fetch own IBAN via RPC (only the owner can read it)
+      let ownIban: string | null = null;
+      const { data: ibanData } = await supabase.rpc('get_my_iban');
+      if (typeof ibanData === 'string') ownIban = ibanData;
+      setProfile({ ...(profileData as any), iban: ownIban } as Profile);
 
       // Fetch household
       const { data: householdData } = await supabase
         .from('households')
         .select('*')
-        .eq('id', profileData.household_id)
+        .eq('id', (profileData as any).household_id)
         .single();
 
       if (householdData) {
         setHousehold(householdData as Household);
       }
 
-      // Fetch all profiles in household
+      // Fetch all profiles in household (without IBAN)
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('household_id', profileData.household_id);
+        .select(profileCols)
+        .eq('household_id', (profileData as any).household_id);
 
       if (profiles) {
-        setHouseholdProfiles(profiles as Profile[]);
+        setHouseholdProfiles(profiles as unknown as Profile[]);
       }
     }
   };

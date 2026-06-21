@@ -208,7 +208,7 @@ export default function Settings() {
                     </div>
                     <div>
                       <p className="font-medium">{member.name}</p>
-                      {member.iban && (
+                      {member.has_iban && (
                         <p className="text-sm text-muted-foreground">
                           IBAN hinterlegt
                         </p>

@@ -169,20 +169,31 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
       }
       const errorText = await response.text();
       console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
-      throw new Error("No response from AI");
+      console.error("Empty AI response");
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Parse the JSON response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("Could not parse AI response");
+      console.error("Could not parse AI response", content);
+      return new Response(
+        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const extractedData = JSON.parse(jsonMatch[0]);
@@ -190,9 +201,9 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
     console.log("Successfully extracted invoice data for user:", userId);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        data: extractedData 
+      JSON.stringify({
+        success: true,
+        data: extractedData,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -200,9 +211,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
   } catch (error) {
     console.error("Error analyzing invoice:", error);
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : "Unknown error" 
-      }),
+      JSON.stringify({ error: "An internal error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

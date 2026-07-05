@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { lovable } from '@/integrations/lovable/index';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,9 @@ import authBg from '@/assets/auth-bg.jpg';
 
 export default function Auth() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const nextParam = searchParams.get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/';
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -34,7 +37,7 @@ export default function Auth() {
     if (error) {
       toast({ title: 'Anmeldung fehlgeschlagen', description: error.message, variant: 'destructive' });
     } else {
-      navigate('/');
+      navigate(safeNext);
     }
     setLoading(false);
   };
@@ -47,14 +50,15 @@ export default function Auth() {
       toast({ title: 'Registrierung fehlgeschlagen', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Willkommen!', description: 'Dein Konto wurde erstellt.' });
-      navigate('/');
+      navigate(safeNext);
     }
     setLoading(false);
   };
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    const redirectUri = safeNext === '/' ? window.location.origin : `${window.location.origin}${safeNext}`;
+    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: redirectUri });
     if (error) {
       toast({ title: 'Google-Anmeldung fehlgeschlagen', description: error.message, variant: 'destructive' });
     }

@@ -18,11 +18,10 @@ Zahlungen abweichen.
 (INSERT/UPDATE/DELETE), der `invoices.status`, `is_paid`, `payment_date`,
 `paid_by_profile_id` neu berechnet. Danach Client-Logik auf reines Refetch
 reduzieren.
-**Status:** Migration `20260705140000_invoice_status_trigger.sql` erstellt,
-inkl. einmaliger Reparatur divergenter Rechnungen mit Zahlungen.
-**Offen:** Nach Verifikation, dass der Trigger live ist (Zahlung erfassen →
-Status ändert sich auch ohne Client-Recalc), `recalculateInvoiceStatus` in
-`useInvoicePayments.ts` entfernen.
+**Status:** Migration `20260705140000_invoice_status_trigger.sql` — am
+05.07.2026 manuell im SQL-Editor angewendet und verifiziert (Trigger + Index
+vorhanden). Client-Recalc (`recalculateInvoiceStatus`/`deriveStatus`) aus
+`useInvoicePayments.ts` entfernt; die DB ist alleinige Instanz für den Status.
 
 ### 1.2 Duplikat-Schutz für Rechnungen (S) — ✅ umgesetzt 05.07.2026
 Es gibt keinen Schutz gegen doppelt angelegte Rechnungen (z. B. Dokument

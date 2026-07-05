@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { InvoicePayment, InvoiceStatus } from '@/lib/types';
+import { InvoicePayment } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 export function useInvoicePayments() {
@@ -41,23 +41,10 @@ export function useInvoicePayments() {
     [allPayments]
   );
 
-  /**
-   * Derives the invoice status from payment totals.
-   * Only updates payment-related statuses; leaves 'cancelled', 'review_needed' etc. untouched.
-   */
-  const deriveStatus = (
-    currentStatus: InvoiceStatus,
-    invoiceAmount: number,
-    totalPaid: number
-  ): InvoiceStatus => {
-    if (currentStatus === 'cancelled') return 'cancelled';
-    if (totalPaid >= invoiceAmount - 0.01) return 'paid';
-    if (totalPaid > 0) return 'partially_paid';
-    // No payments: if previously payment-derived, fall back to approved (not draft)
-    if (currentStatus === 'paid' || currentStatus === 'partially_paid') return 'approved';
-    // Otherwise keep current manual status
-    return currentStatus;
-  };
+  // Note: invoice status (status/is_paid/payment_date/paid_by_profile_id)
+  // is derived server-side by the trg_recalc_invoice_status trigger on
+  // invoice_payments (migration 20260705140000). Callers only need to
+  // refetch invoices after payment mutations.
 
   const addPayment = async (
     invoiceId: string,
@@ -81,13 +68,11 @@ export function useInvoicePayments() {
       return false;
     }
 
-    // Recalculate and update invoice status
-    await recalculateInvoiceStatus(invoiceId);
     await fetchAllPayments();
     return true;
   };
 
-  const deletePayment = async (paymentId: string, invoiceId: string) => {
+  const deletePayment = async (paymentId: string) => {
     const { error } = await supabase
       .from('invoice_payments')
       .delete()
@@ -98,7 +83,6 @@ export function useInvoicePayments() {
       return false;
     }
 
-    await recalculateInvoiceStatus(invoiceId);
     await fetchAllPayments();
     return true;
   };
@@ -111,44 +95,8 @@ export function useInvoicePayments() {
 
     if (error) return false;
 
-    await recalculateInvoiceStatus(invoiceId);
     await fetchAllPayments();
     return true;
-  };
-
-  const recalculateInvoiceStatus = async (invoiceId: string) => {
-    // Get current invoice
-    const { data: invoice } = await supabase
-      .from('invoices')
-      .select('amount, status, is_paid')
-      .eq('id', invoiceId)
-      .single();
-
-    if (!invoice) return;
-
-    // Get all payments for this invoice
-    const { data: payments } = await supabase
-      .from('invoice_payments')
-      .select('amount, profile_id, payment_date')
-      .eq('invoice_id', invoiceId)
-      .order('payment_date', { ascending: false });
-
-    const totalPaid = (payments || []).reduce((s, p) => s + Number(p.amount), 0);
-    const newStatus = deriveStatus(invoice.status as InvoiceStatus, Number(invoice.amount), totalPaid);
-    const isPaid = newStatus === 'paid';
-
-    // Centralized legacy field sync — this is the ONLY place these fields are written
-    const latestPayment = payments && payments.length > 0 ? payments[0] : null;
-
-    await supabase
-      .from('invoices')
-      .update({
-        status: newStatus,
-        is_paid: isPaid,
-        payment_date: isPaid && latestPayment ? latestPayment.payment_date : null,
-        paid_by_profile_id: isPaid && latestPayment ? latestPayment.profile_id : null,
-      })
-      .eq('id', invoiceId);
   };
 
   return {
@@ -156,7 +104,6 @@ export function useInvoicePayments() {
     loading,
     getPaymentsForInvoice,
     getTotalPaid,
-    deriveStatus,
     addPayment,
     deletePayment,
     deleteAllPayments,

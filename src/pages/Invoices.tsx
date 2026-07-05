@@ -256,7 +256,7 @@ export const Invoices: React.FC = () => {
 
   const handleDeletePaymentInEdit = async (paymentId: string) => {
     if (!editingInvoice) return;
-    const ok = await deletePayment(paymentId, editingInvoice.id);
+    const ok = await deletePayment(paymentId);
     if (ok) await fetchInvoices();
   };
 

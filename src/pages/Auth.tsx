@@ -37,7 +37,7 @@ export default function Auth() {
     if (error) {
       toast({ title: 'Anmeldung fehlgeschlagen', description: error.message, variant: 'destructive' });
     } else {
-      navigate('/');
+      navigate(safeNext);
     }
     setLoading(false);
   };
@@ -50,14 +50,15 @@ export default function Auth() {
       toast({ title: 'Registrierung fehlgeschlagen', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Willkommen!', description: 'Dein Konto wurde erstellt.' });
-      navigate('/');
+      navigate(safeNext);
     }
     setLoading(false);
   };
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    const redirectUri = safeNext === '/' ? window.location.origin : `${window.location.origin}${safeNext}`;
+    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: redirectUri });
     if (error) {
       toast({ title: 'Google-Anmeldung fehlgeschlagen', description: error.message, variant: 'destructive' });
     }

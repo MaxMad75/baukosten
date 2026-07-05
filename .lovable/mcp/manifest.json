@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://yrcxqyadtftveuzbjiup.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "baukosten-mcp",
+      "version": "0.1.0",
+      "title": "Baukosten Tracker"
+    },
+    "tools": [
+      {
+        "name": "list_invoices",
+        "title": "List invoices",
+        "description": "Lists invoices in the signed-in user's household, most recent first. Amounts are in EUR.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Max rows to return (default 50)."
+            },
+            "only_unpaid": {
+              "type": "boolean",
+              "description": "If true, return only unpaid invoices."
+            },
+            "kostengruppe_prefix": {
+              "type": "string",
+              "description": "Filter by DIN 276 cost-group code prefix, e.g. '3' or '310'."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_offers",
+        "title": "List offers",
+        "description": "Lists contractor offers in the signed-in user's household. Amounts are in EUR.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Max rows to return (default 50)."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_estimate_versions",
+        "title": "List estimate versions",
+        "description": "Lists all cost-estimate versions (V1, V2, ...) in the household with their blocks.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "budget_summary",
+        "title": "Budget summary (target vs actual)",
+        "description": "Returns target (from the active estimate version) vs actual (sum of invoices) per DIN 276 3-digit cost group. Amounts in EUR.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "version_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Estimate version to use as target. Defaults to the active version."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

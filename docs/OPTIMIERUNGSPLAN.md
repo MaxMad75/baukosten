@@ -191,4 +191,9 @@ einen Export in einen separaten Storage-Bucket legt; Aufbewahrung 8 Wochen.
   `supabase/functions/mcp/index.ts` (Lovable-MCP-Plugin). Vor jedem Commit:
   `git checkout -- supabase/functions/mcp/index.ts`, falls nicht bewusst geändert.
 - Edge-Function-Änderungen werden erst nach Push via Lovable deployed.
+- **Gepushte Migrationsdateien wendet Lovable NICHT automatisch an**
+  (verifiziert 05.07.2026): Neue Dateien unter `supabase/migrations/` müssen
+  zusätzlich manuell im Supabase SQL-Editor ausgeführt werden. Migrationen
+  deshalb immer idempotent schreiben (CREATE OR REPLACE, DROP IF EXISTS,
+  DO-Block mit Exception-Handling).
 - Vor DB-Migrationen (Phase 1) ein Backup über die Export-Seite ziehen.

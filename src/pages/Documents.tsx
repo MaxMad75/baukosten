@@ -18,6 +18,7 @@ import { extractTextFromExcel } from '@/utils/excelExtractor';
 import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import {
   Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt, FileCheck
 } from 'lucide-react';
@@ -49,6 +50,7 @@ const typeColors: Record<string, string> = {
 };
 
 const emptyForm = { title: '', document_type: '', description: '', contractor_id: '' };
+const emptyInvoiceForm = { company_name: '', invoice_number: '', amount: '', invoice_date: '', kostengruppe_code: '' };
 
 interface AiResult {
   title?: string;
@@ -60,6 +62,23 @@ interface AiResult {
   invoice_date?: string | null;
   kostengruppe_code?: string | null;
 }
+
+/** Editable invoice fields shown when a document is typed as "Rechnung". */
+interface InvoiceForm {
+  company_name: string;
+  invoice_number: string;
+  amount: string;
+  invoice_date: string;
+  kostengruppe_code: string;
+}
+
+const invoiceFormFromAi = (ai: AiResult): InvoiceForm => ({
+  company_name: ai.company_name || '',
+  invoice_number: ai.invoice_number || '',
+  amount: ai.amount != null ? String(ai.amount) : '',
+  invoice_date: ai.invoice_date || '',
+  kostengruppe_code: ai.kostengruppe_code || '',
+});
 
 export const Documents: React.FC = () => {
   const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
@@ -87,8 +106,10 @@ export const Documents: React.FC = () => {
   const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
   // Store full AI result for invoice creation
   const [pendingAiResult, setPendingAiResult] = useState<AiResult | null>(null);
+  // Editable invoice fields (prefilled by AI, always correctable by the user)
+  const [invoiceForm, setInvoiceForm] = useState<InvoiceForm>(emptyInvoiceForm);
 
-  const resetForm = () => { setFormData(emptyForm); setUploadedFile(null); setPendingFileHash(null); setDuplicateWarning(null); setPendingAiResult(null); };
+  const resetForm = () => { setFormData(emptyForm); setInvoiceForm(emptyInvoiceForm); setUploadedFile(null); setPendingFileHash(null); setDuplicateWarning(null); setPendingAiResult(null); };
 
   /**
    * Find or create contractor by company name.
@@ -111,26 +132,36 @@ export const Documents: React.FC = () => {
   };
 
   /**
-   * Create an invoice record from AI-extracted data and link it to the document.
+   * Validate the editable invoice fields. Returns an error message or null.
    */
-  const createInvoiceFromDocument = async (
-    ai: AiResult,
+  const getInvoiceFormError = (form: InvoiceForm): string | null => {
+    if (!form.company_name.trim()) return 'Firma fehlt';
+    const amount = parseFloat(form.amount);
+    if (!form.amount || isNaN(amount) || amount <= 0) return 'Betrag fehlt oder ist ungültig';
+    if (!form.invoice_date) return 'Rechnungsdatum fehlt';
+    return null;
+  };
+
+  /**
+   * Create an invoice record from the (user-verified) invoice form and return its ID.
+   */
+  const createInvoiceRecord = async (
+    form: InvoiceForm,
     filePath: string,
     fileName: string,
-    contractorId: string | null
+    description: string | null,
+    aiExtracted: boolean
   ): Promise<string | null> => {
-    if (!ai.amount || !ai.invoice_date || !ai.company_name) return null;
-
     const invoice = await createInvoice({
-      amount: ai.amount,
-      invoice_date: ai.invoice_date,
-      company_name: ai.company_name,
-      invoice_number: ai.invoice_number || null,
-      description: ai.description || null,
-      kostengruppe_code: ai.kostengruppe_code || null,
+      amount: parseFloat(form.amount),
+      invoice_date: form.invoice_date,
+      company_name: form.company_name.trim(),
+      invoice_number: form.invoice_number.trim() || null,
+      description: description || null,
+      kostengruppe_code: form.kostengruppe_code || null,
       file_path: filePath,
       file_name: fileName,
-      ai_extracted: true,
+      ai_extracted: aiExtracted,
       is_gross: true,
     });
 
@@ -211,6 +242,7 @@ export const Documents: React.FC = () => {
               description: ai.description || '',
               contractor_id: '',
             });
+            setInvoiceForm(invoiceFormFromAi(ai));
 
             if (ai.company_name) {
               const match = contractors.find(
@@ -244,24 +276,29 @@ export const Documents: React.FC = () => {
     let contractorId = formData.contractor_id || null;
     let invoiceId: string | null = null;
 
-    // If classified as Rechnung, handle contractor + invoice creation
-    if (isInvoice && pendingAiResult) {
-      // Find or create contractor from company name
-      if (pendingAiResult.company_name && !contractorId) {
-        contractorId = await findOrCreateContractor(pendingAiResult.company_name);
+    // If classified as Rechnung, validate the invoice fields and create the invoice.
+    // Works with or without AI — the user can fill in the fields manually.
+    if (isInvoice) {
+      const error = getInvoiceFormError(invoiceForm);
+      if (error) {
+        toast({ title: 'Rechnungsdaten unvollständig', description: `${error}. Bitte ergänzen Sie die Rechnungsfelder.`, variant: 'destructive' });
+        return;
       }
 
-      // Create invoice record
-      invoiceId = await createInvoiceFromDocument(
-        pendingAiResult,
+      if (!contractorId) {
+        contractorId = await findOrCreateContractor(invoiceForm.company_name.trim());
+      }
+
+      invoiceId = await createInvoiceRecord(
+        invoiceForm,
         uploadedFile.path,
         uploadedFile.name,
-        contractorId
+        formData.description || null,
+        !!pendingAiResult
       );
 
-      if (invoiceId) {
-        toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
-      }
+      if (!invoiceId) return; // createInvoice already showed an error toast
+      toast({ title: 'Rechnung angelegt', description: 'Die Rechnung ist jetzt in der Rechnungsverwaltung verfügbar.' });
     }
 
     await createDocument({
@@ -298,7 +335,7 @@ export const Documents: React.FC = () => {
     setUploading(false);
   };
 
-  const openEdit = (doc: Document) => {
+  const openEdit = (doc: Document, prefillInvoice?: InvoiceForm) => {
     setEditingDoc(doc);
     setFormData({
       title: doc.title,
@@ -306,16 +343,48 @@ export const Documents: React.FC = () => {
       description: doc.description || '',
       contractor_id: doc.contractor_id || '',
     });
+    setInvoiceForm(prefillInvoice || { ...emptyInvoiceForm, company_name: getContractorName(doc.contractor_id) || '' });
+    setPendingAiResult(null);
     setIsEditOpen(true);
   };
 
   const handleUpdate = async () => {
     if (!editingDoc || !formData.title) return;
+
+    let contractorId = formData.contractor_id || null;
+    let invoiceId = editingDoc.invoice_id || null;
+
+    // Retroactively create the invoice if the document is (now) typed as Rechnung
+    // but has no linked invoice yet (e.g. ZIP upload or earlier failed detection).
+    if (formData.document_type === 'Rechnung' && !invoiceId) {
+      const error = getInvoiceFormError(invoiceForm);
+      if (error) {
+        toast({ title: 'Rechnungsdaten unvollständig', description: `${error}. Bitte ergänzen Sie die Rechnungsfelder.`, variant: 'destructive' });
+        return;
+      }
+
+      if (!contractorId) {
+        contractorId = await findOrCreateContractor(invoiceForm.company_name.trim());
+      }
+
+      invoiceId = await createInvoiceRecord(
+        invoiceForm,
+        editingDoc.file_path,
+        editingDoc.file_name,
+        formData.description || null,
+        false
+      );
+
+      if (!invoiceId) return;
+      toast({ title: 'Rechnung angelegt', description: 'Die Rechnung ist jetzt in der Rechnungsverwaltung verfügbar.' });
+    }
+
     await updateDocument(editingDoc.id, {
       title: formData.title,
       document_type: formData.document_type || null,
       description: formData.description || null,
-      contractor_id: formData.contractor_id || null,
+      contractor_id: contractorId,
+      ...(invoiceId ? { invoice_id: invoiceId } : {}),
     });
     setIsEditOpen(false);
     setEditingDoc(null);
@@ -372,24 +441,41 @@ export const Documents: React.FC = () => {
       }
 
       // If classified as Rechnung and no invoice linked yet, create one
-      let invoiceId = (doc as any).invoice_id || null;
+      let invoiceId = doc.invoice_id || null;
+      let needsCompletion = false;
       if (ai.document_type === 'Rechnung' && !invoiceId) {
-        invoiceId = await createInvoiceFromDocument(ai, doc.file_path, doc.file_name, contractorId);
-        if (invoiceId) {
-          toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
+        const form = invoiceFormFromAi(ai);
+        if (!getInvoiceFormError(form)) {
+          invoiceId = await createInvoiceRecord(form, doc.file_path, doc.file_name, ai.description || null, true);
+          if (invoiceId) {
+            toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
+          }
+        } else {
+          needsCompletion = true;
         }
       }
 
-      await updateDocument(doc.id, {
+      const updates = {
         title: ai.title || doc.title,
         document_type: ai.document_type || doc.document_type,
         description: ai.description || doc.description,
         contractor_id: contractorId,
         ai_analyzed: true,
         ...(invoiceId ? { invoice_id: invoiceId } : {}),
-      } as any);
+      };
+      await updateDocument(doc.id, updates);
 
-      toast({ title: 'KI-Analyse abgeschlossen', description: `"${ai.title || doc.title}" wurde analysiert.` });
+      if (needsCompletion) {
+        // Open the edit dialog prefilled with what the AI found so the user
+        // can complete the missing fields instead of the invoice silently missing.
+        openEdit({ ...doc, ...updates }, invoiceFormFromAi(ai));
+        toast({
+          title: 'Rechnung erkannt – Daten unvollständig',
+          description: 'Bitte ergänzen Sie die fehlenden Rechnungsfelder und speichern Sie.',
+        });
+      } else {
+        toast({ title: 'KI-Analyse abgeschlossen', description: `"${ai.title || doc.title}" wurde analysiert.` });
+      }
     } catch (err: any) {
       toast({ title: 'Analyse fehlgeschlagen', description: err?.message || 'Unbekannter Fehler', variant: 'destructive' });
     }
@@ -416,6 +502,9 @@ export const Documents: React.FC = () => {
     return contractors.find((c) => c.id === id)?.company_name || null;
   };
 
+  // Invoice fields are shown when the doc is typed "Rechnung" and no invoice is linked yet
+  const showInvoiceFields = formData.document_type === 'Rechnung' && !editingDoc?.invoice_id;
+
   const documentFormFields = (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="col-span-2 space-y-2">
@@ -431,31 +520,63 @@ export const Documents: React.FC = () => {
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-2">
-        <Label>Firma zuordnen</Label>
-        <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
-          <SelectTrigger><SelectValue placeholder="Firma wählen (optional)" /></SelectTrigger>
-          <SelectContent>
-            {contractors.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* For invoices the contractor is derived from the invoice's Firma field */}
+      {!showInvoiceFields && (
+        <div className="space-y-2">
+          <Label>Firma zuordnen</Label>
+          <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
+            <SelectTrigger><SelectValue placeholder="Firma wählen (optional)" /></SelectTrigger>
+            <SelectContent>
+              {contractors.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="col-span-2 space-y-2">
         <Label>Beschreibung</Label>
         <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Kurze Beschreibung des Dokuments" rows={3} />
       </div>
-      {/* Invoice hint */}
-      {formData.document_type === 'Rechnung' && pendingAiResult?.amount && (
-        <div className="col-span-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+      {/* Editable invoice fields */}
+      {showInvoiceFields && (
+        <div className="col-span-2 space-y-3 rounded-lg border border-orange-200 bg-orange-50/50 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-orange-800">
+            <Receipt className="h-4 w-4" />
+            Rechnungsdaten – bitte prüfen und ggf. korrigieren
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Firma *</Label>
+              <Input value={invoiceForm.company_name} onChange={(e) => setInvoiceForm({ ...invoiceForm, company_name: e.target.value })} placeholder="Firmenname" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Rechnungsnummer</Label>
+              <Input value={invoiceForm.invoice_number} onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })} placeholder="optional" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Betrag brutto (EUR) *</Label>
+              <Input type="number" step="0.01" value={invoiceForm.amount} onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })} placeholder="0,00" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Rechnungsdatum *</Label>
+              <Input type="date" value={invoiceForm.invoice_date} onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_date: e.target.value })} />
+            </div>
+            <div className="col-span-2 space-y-1">
+              <Label className="text-xs">Kostengruppe (DIN 276)</Label>
+              <KostengruppenSelect value={invoiceForm.kostengruppe_code} onValueChange={(v) => setInvoiceForm({ ...invoiceForm, kostengruppe_code: v })} />
+            </div>
+          </div>
+          <p className="text-xs text-orange-700">
+            Beim Speichern wird die Rechnung in der Rechnungsverwaltung angelegt. Dort können Sie sie als bezahlt markieren und die Zahlung aufteilen.
+          </p>
+        </div>
+      )}
+      {formData.document_type === 'Rechnung' && editingDoc?.invoice_id && (
+        <div className="col-span-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
           <div className="flex items-center gap-2 font-medium">
             <Receipt className="h-4 w-4" />
-            Rechnung erkannt – wird automatisch in die Rechnungsverwaltung übernommen
+            Rechnung ist verknüpft
           </div>
-          <div className="mt-1 text-xs">
-            {pendingAiResult.company_name && <span>Firma: {pendingAiResult.company_name} · </span>}
-            Betrag: {pendingAiResult.amount?.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
-            {pendingAiResult.invoice_date && <span> · Datum: {pendingAiResult.invoice_date}</span>}
-          </div>
+          <p className="mt-1 text-xs">Betrag, Status und Zahlungsaufteilung bearbeiten Sie in der Rechnungsverwaltung.</p>
         </div>
       )}
       {formData.document_type === 'Angebot' && (
@@ -586,10 +707,17 @@ export const Documents: React.FC = () => {
                             ) : (
                               <Sparkles className="h-3 w-3 text-muted-foreground/40" />
                             )}
-                            {(doc as any).invoice_id && (
+                            {doc.invoice_id && (
                               <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
                                 <Receipt className="mr-1 h-3 w-3" />Rechnung
                               </Badge>
+                            )}
+                            {doc.document_type === 'Rechnung' && !doc.invoice_id && (
+                              <button onClick={() => openEdit(doc)} title="Rechnungsdaten ergänzen">
+                                <Badge variant="outline" className="text-xs border-destructive text-destructive cursor-pointer">
+                                  <Receipt className="mr-1 h-3 w-3" />Rechnung fehlt
+                                </Badge>
+                              </button>
                             )}
                             {offers.some(o => o.document_id === doc.id) && (
                               <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700">

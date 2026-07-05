@@ -1,5 +1,5 @@
 import * as XLSX from '@e965/xlsx';
-import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoiceSplit } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoiceSplit, InvoicePayment } from '@/lib/types';
 import { getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -11,6 +11,7 @@ interface ExportData {
   profiles: Profile[];
   comparisons: CostComparison[];
   splits?: InvoiceSplit[];
+  payments?: InvoicePayment[];
 }
 
 export function exportToExcel(data: ExportData, fileName: string = 'hausbau-export') {
@@ -156,15 +157,17 @@ function createByKostengruppeSheet(data: ExportData): any[][] {
 function createByPayerSheet(data: ExportData): any[][] {
   const result: any[][] = [['ZAHLUNGEN NACH PERSON (inkl. Aufteilungen)']];
   const splits = data.splits || [];
+  const payments = data.payments || [];
 
   data.profiles.forEach(profile => {
     const amounts = new Map<string, { invoice: Invoice; amount: number }>();
 
-    // Aggregate from splits and fallback
+    // Aggregate from payments (primary), splits/paid_by as legacy fallback
     for (const inv of data.invoices) {
       if (!inv.is_paid) continue;
       const invSplits = splits.filter(s => s.invoice_id === inv.id);
-      const effectiveAmounts = getEffectivePayerAmounts(inv, invSplits);
+      const invPayments = payments.filter(p => p.invoice_id === inv.id);
+      const effectiveAmounts = getEffectivePayerAmounts(inv, invSplits, invPayments);
       const myAmount = effectiveAmounts.get(profile.id);
       if (myAmount && myAmount > 0) {
         amounts.set(inv.id, { invoice: inv, amount: myAmount });

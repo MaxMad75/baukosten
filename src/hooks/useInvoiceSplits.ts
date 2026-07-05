@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { InvoiceSplit } from '@/lib/types';
+import { InvoicePayment, InvoiceSplit } from '@/lib/types';
 
 export function useInvoiceSplits() {
   const { household } = useAuth();
@@ -59,14 +59,20 @@ export function useInvoiceSplits() {
 
 /**
  * Returns a Map of profileId -> amount for an invoice.
- * Uses splits if available, otherwise falls back to paid_by_profile_id.
+ * Actual payments are the primary source of truth; splits and
+ * paid_by_profile_id serve as fallbacks for legacy data.
  */
 export function getEffectivePayerAmounts(
   invoice: { amount: number; is_paid: boolean; paid_by_profile_id: string | null },
-  splits: InvoiceSplit[]
+  splits: InvoiceSplit[],
+  payments: Pick<InvoicePayment, 'profile_id' | 'amount'>[] = []
 ): Map<string, number> {
   const map = new Map<string, number>();
-  if (splits.length > 0) {
+  if (payments.length > 0) {
+    for (const p of payments) {
+      map.set(p.profile_id, (map.get(p.profile_id) || 0) + Number(p.amount));
+    }
+  } else if (splits.length > 0) {
     for (const s of splits) {
       map.set(s.profile_id, (map.get(s.profile_id) || 0) + Number(s.amount));
     }

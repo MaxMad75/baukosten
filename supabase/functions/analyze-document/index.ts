@@ -23,17 +23,22 @@ const systemPrompt = `Du bist ein Experte für Baudokumente und die DIN 276 Kost
 - Einen aussagekräftigen Titel
 - Den Dokumenttyp (einer von: Vertrag, Genehmigung, Angebot, Zeichnung, Rechnung, Protokoll, Sonstiges)
 - Eine kurze Beschreibung / Zusammenfassung (max 2-3 Sätze)
-- Den Firmennamen, falls erkennbar
+- Den Firmennamen des Ausstellers, falls erkennbar
+
+KLASSIFIKATION "Rechnung":
+Ein Dokument ist eine RECHNUNG, wenn es eine Zahlungsaufforderung enthält — typische Merkmale: das Wort "Rechnung"/"Invoice", eine Rechnungsnummer, ein Rechnungsdatum, ausgewiesene Mehrwertsteuer, ein zu zahlender Gesamtbetrag, Zahlungsziel oder Bankverbindung. Auch Abschlagsrechnungen, Teilrechnungen, Schlussrechnungen und Gebührenbescheide zählen als Rechnung.
+KEINE Rechnung sind: Angebote, Kostenvoranschläge, Auftragsbestätigungen, Lieferscheine, Mahnungen ohne Rechnungscharakter.
 
 Falls es sich um eine RECHNUNG handelt, extrahiere zusätzlich:
 - Rechnungsnummer
-- Gesamtbetrag (nur die Zahl, z.B. 1234.56)
+- Gesamtbetrag BRUTTO, also inklusive MwSt (nur die Zahl mit Punkt als Dezimaltrenner, z.B. 1234.56 — achte auf deutsche Zahlenformate: "1.234,56 €" bedeutet 1234.56)
 - Rechnungsdatum (im Format YYYY-MM-DD)
 - Die passende DIN 276 Kostengruppe (3-stelliger Code)
+Der Gesamtbetrag steht meist am ENDE des Dokuments (Zeilen wie "Gesamtbetrag", "Rechnungsbetrag", "zu zahlen", "Bruttobetrag"). Wenn du dir bei einem Feld nicht sicher bist, setze es auf null statt zu raten.
 
 ${DIN276_CATEGORIES}
 
-Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
+Antworte NUR mit gültigem JSON im folgenden Format, ohne zusätzlichen Text und ohne Markdown-Codeblöcke:
 {
   "title": "string",
   "document_type": "string",
@@ -44,6 +49,18 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
   "invoice_date": "YYYY-MM-DD oder null (nur bei Rechnungen)",
   "kostengruppe_code": "string oder null (nur bei Rechnungen)"
 }`;
+
+/**
+ * Truncate long document text while keeping both the beginning (header,
+ * company, invoice number) and the end (totals, payment terms) — invoice
+ * amounts are almost always at the end of the document.
+ */
+function truncateKeepingEnds(text: string, maxLen = 10000): string {
+  if (text.length <= maxLen) return text;
+  const headLen = Math.floor(maxLen * 0.6);
+  const tailLen = maxLen - headLen;
+  return `${text.substring(0, headLen)}\n\n[... gekürzt ...]\n\n${text.substring(text.length - tailLen)}`;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -114,7 +131,7 @@ serve(async (req) => {
     } else {
       userContent.push({
         type: "text",
-        text: `Analysiere dieses Dokument (Dateiname: ${fileName}):\n\n${textContent.substring(0, 10000)}`
+        text: `Analysiere dieses Dokument (Dateiname: ${fileName}):\n\n${truncateKeepingEnds(textContent)}`
       });
     }
 

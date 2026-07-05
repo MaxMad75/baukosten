@@ -9,7 +9,7 @@ Empfohlene Reihenfolge = Nummerierung; innerhalb einer Phase sind die Schritte u
 
 ## Phase 1 — Datenkonsistenz auf DB-Ebene absichern (höchste Priorität)
 
-### 1.1 Rechnungsstatus per Postgres-Trigger ableiten (M)
+### 1.1 Rechnungsstatus per Postgres-Trigger ableiten (M) — ✅ umgesetzt 05.07.2026
 Der Status (`paid` / `partially_paid`) wird aktuell im Client berechnet
 (`recalculateInvoiceStatus` in `src/hooks/useInvoicePayments.ts`). Bei zwei
 gleichzeitigen Nutzern oder abgebrochenen Requests kann der Status von den
@@ -18,16 +18,24 @@ Zahlungen abweichen.
 (INSERT/UPDATE/DELETE), der `invoices.status`, `is_paid`, `payment_date`,
 `paid_by_profile_id` neu berechnet. Danach Client-Logik auf reines Refetch
 reduzieren.
+**Status:** Migration `20260705140000_invoice_status_trigger.sql` erstellt,
+inkl. einmaliger Reparatur divergenter Rechnungen mit Zahlungen.
+**Offen:** Nach Verifikation, dass der Trigger live ist (Zahlung erfassen →
+Status ändert sich auch ohne Client-Recalc), `recalculateInvoiceStatus` in
+`useInvoicePayments.ts` entfernen.
 
-### 1.2 Duplikat-Schutz für Rechnungen (S)
+### 1.2 Duplikat-Schutz für Rechnungen (S) — ✅ umgesetzt 05.07.2026
 Es gibt keinen Schutz gegen doppelt angelegte Rechnungen (z. B. Dokument
 zweimal hochgeladen und „Trotzdem hochladen" gewählt).
 **Umsetzung:** Partieller Unique-Index auf
 `(household_id, company_name, invoice_number) WHERE invoice_number IS NOT NULL`
 + verständliche Fehlermeldung im UI; zusätzlich Warnhinweis im Upload-Dialog,
 wenn Firma+Betrag+Datum bereits existieren.
+**Status:** Migration `20260705140100_invoice_duplicate_guard.sql` (Index wird
+bei Bestandsduplikaten mit NOTICE übersprungen — dann erst Duplikate mergen),
+23505-Handling in `useInvoices`, Live-Duplikatwarnung im Upload-Dialog.
 
-### 1.3 Firmen-Matching präzisieren + Dubletten bereinigen (M)
+### 1.3 Firmen-Matching präzisieren + Dubletten bereinigen (M) — ✅ umgesetzt 05.07.2026
 `findOrCreateByName` (in `src/hooks/useContractors.ts`) matcht per Substring in
 beide Richtungen — „Schmidmaier" matcht sowohl „Architekt Schmidmaier" als
 auch „Bauunternehmen Schmidmaier GmbH"; der erste Treffer gewinnt. Das ist die
@@ -36,6 +44,8 @@ wahrscheinlichste Ursache der beobachteten Firmen-Inkonsistenz.
 Zweitstufe mit Mindestlänge (≥ 5 Zeichen) und eindeutigem Treffer, sonst neue
 Firma anlegen. (b) Einmalige UI-Funktion „Firmen zusammenführen" auf der
 Contractors-Seite für bestehende Dubletten.
+**Status:** `matchContractorByName` (pure, mit Tests) + „Zusammenführen"-Dialog
+auf der Firmen-Seite (hängt documents/offers/construction_journal um).
 
 ### 1.4 Legacy-Felder ausmustern (L, erst nach 1.1)
 `invoices.is_paid` / `payment_date` / `paid_by_profile_id` und die Tabelle

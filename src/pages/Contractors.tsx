@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useContractors } from '@/hooks/useContractors';
 import { useInvoices } from '@/hooks/useInvoices';
 import { Contractor } from '@/lib/types';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Plus, Loader2, Trash2, Edit, Star, Phone, Mail, Globe, User, Search, Building2
+  Plus, Loader2, Trash2, Edit, Star, Phone, Mail, Globe, User, Search, Building2, Merge
 } from 'lucide-react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -34,9 +35,13 @@ const emptyForm = {
 };
 
 export const Contractors: React.FC = () => {
-  const { contractors, loading, createContractor, updateContractor, deleteContractor } = useContractors();
+  const { contractors, loading, createContractor, updateContractor, deleteContractor, mergeContractors } = useContractors();
   const { invoices } = useInvoices();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isMergeOpen, setIsMergeOpen] = useState(false);
+  const [mergeSelection, setMergeSelection] = useState<Set<string>>(new Set());
+  const [mergeTargetId, setMergeTargetId] = useState<string>('');
+  const [merging, setMerging] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -96,6 +101,26 @@ export const Contractors: React.FC = () => {
     if (!deleteId) return;
     await deleteContractor(deleteId);
     setDeleteId(null);
+  };
+
+  const toggleMergeSelection = (id: string) => {
+    const isSelected = mergeSelection.has(id);
+    const next = new Set(mergeSelection);
+    if (isSelected) next.delete(id); else next.add(id);
+    setMergeSelection(next);
+    if (isSelected && mergeTargetId === id) setMergeTargetId('');
+  };
+
+  const handleMerge = async () => {
+    if (mergeSelection.size < 2 || !mergeTargetId || !mergeSelection.has(mergeTargetId)) return;
+    setMerging(true);
+    const ok = await mergeContractors(Array.from(mergeSelection), mergeTargetId);
+    setMerging(false);
+    if (ok) {
+      setIsMergeOpen(false);
+      setMergeSelection(new Set());
+      setMergeTargetId('');
+    }
   };
 
   const filtered = contractors.filter((c) => {
@@ -185,6 +210,12 @@ export const Contractors: React.FC = () => {
             <h1 className="text-3xl font-bold">Firmen & Handwerker</h1>
             <p className="text-muted-foreground">Verwalten Sie Ihre Baufirmen und Handwerker</p>
           </div>
+          <div className="flex gap-2">
+            {contractors.length >= 2 && (
+              <Button variant="outline" onClick={() => setIsMergeOpen(true)}>
+                <Merge className="mr-2 h-4 w-4" />Zusammenführen
+              </Button>
+            )}
           <Dialog open={isCreateOpen} onOpenChange={(o) => { setIsCreateOpen(o); if (!o) resetForm(); }}>
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" />Neue Firma</Button>
@@ -218,6 +249,7 @@ export const Contractors: React.FC = () => {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Search & Filter */}
@@ -327,6 +359,57 @@ export const Contractors: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Merge Dialog */}
+      <Dialog open={isMergeOpen} onOpenChange={(o) => { setIsMergeOpen(o); if (!o) { setMergeSelection(new Set()); setMergeTargetId(''); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Firmen zusammenführen</DialogTitle>
+            <DialogDescription>
+              Wählen Sie die Duplikate aus und bestimmen Sie, welche Firma erhalten bleibt.
+              Alle Dokumente, Angebote und Bautagebuch-Einträge werden auf die verbleibende Firma umgehängt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="max-h-64 overflow-y-auto rounded-md border p-2 space-y-1">
+              {contractors.map((c) => (
+                <label key={c.id} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
+                  <Checkbox checked={mergeSelection.has(c.id)} onCheckedChange={() => toggleMergeSelection(c.id)} />
+                  <span className="text-sm flex-1">{c.company_name}</span>
+                  {c.trade && <span className="text-xs text-muted-foreground">{c.trade}</span>}
+                </label>
+              ))}
+            </div>
+
+            {mergeSelection.size >= 2 && (
+              <div className="space-y-2">
+                <Label>Erhalten bleibt:</Label>
+                <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
+                  <SelectTrigger><SelectValue placeholder="Ziel-Firma wählen…" /></SelectTrigger>
+                  <SelectContent>
+                    {contractors.filter((c) => mergeSelection.has(c.id)).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {mergeTargetId && (
+                  <p className="text-xs text-muted-foreground">
+                    {mergeSelection.size - 1} Firma/Firmen werden in „{contractors.find((c) => c.id === mergeTargetId)?.company_name}" zusammengeführt und gelöscht.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsMergeOpen(false)}>Abbrechen</Button>
+              <Button onClick={handleMerge} disabled={mergeSelection.size < 2 || !mergeTargetId || merging}>
+                {merging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Merge className="mr-2 h-4 w-4" />}
+                Zusammenführen
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

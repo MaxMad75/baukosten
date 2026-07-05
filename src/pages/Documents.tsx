@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { computeFileHash } from '@/utils/fileHash';
 import { Layout } from '@/components/Layout';
@@ -510,6 +510,23 @@ export const Documents: React.FC = () => {
   // Invoice fields are shown when the doc is typed "Rechnung" and no invoice is linked yet
   const showInvoiceFields = formData.document_type === 'Rechnung' && !editingDoc?.invoice_id;
 
+  // Live duplicate check: same company + invoice number, or same company + amount + date
+  const duplicateInvoice = useMemo(() => {
+    if (!showInvoiceFields) return null;
+    const name = invoiceForm.company_name.trim().toLowerCase();
+    if (!name) return null;
+    const num = invoiceForm.invoice_number.trim().toLowerCase();
+    const amount = parseFloat(invoiceForm.amount);
+    return invoices.find((inv) => {
+      if (inv.company_name.trim().toLowerCase() !== name) return false;
+      if (num && (inv.invoice_number || '').trim().toLowerCase() === num) return true;
+      return !isNaN(amount)
+        && Math.abs(Number(inv.amount) - amount) < 0.01
+        && !!invoiceForm.invoice_date
+        && inv.invoice_date === invoiceForm.invoice_date;
+    }) || null;
+  }, [showInvoiceFields, invoiceForm, invoices]);
+
   const documentFormFields = (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="col-span-2 space-y-2">
@@ -570,6 +587,14 @@ export const Documents: React.FC = () => {
               <KostengruppenSelect value={invoiceForm.kostengruppe_code} onValueChange={(v) => setInvoiceForm({ ...invoiceForm, kostengruppe_code: v })} />
             </div>
           </div>
+          {duplicateInvoice && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+              ⚠ Mögliches Duplikat: Es existiert bereits eine Rechnung von „{duplicateInvoice.company_name}"
+              {duplicateInvoice.invoice_number ? ` (Nr. ${duplicateInvoice.invoice_number})` : ''} über{' '}
+              {Number(duplicateInvoice.amount).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })} vom{' '}
+              {format(new Date(duplicateInvoice.invoice_date), 'dd.MM.yyyy', { locale: de })}.
+            </div>
+          )}
           <p className="text-xs text-orange-700">
             Beim Speichern wird die Rechnung in der Rechnungsverwaltung angelegt. Dort können Sie sie als bezahlt markieren und die Zahlung aufteilen.
           </p>

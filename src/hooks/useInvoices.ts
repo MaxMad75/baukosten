@@ -65,7 +65,9 @@ export function useInvoices() {
     if (error) {
       toast({
         title: 'Fehler',
-        description: 'Rechnung konnte nicht erstellt werden',
+        description: error.code === '23505'
+          ? 'Eine Rechnung mit dieser Rechnungsnummer existiert bereits für diese Firma.'
+          : 'Rechnung konnte nicht erstellt werden',
         variant: 'destructive',
       });
       return null;
@@ -88,7 +90,9 @@ export function useInvoices() {
     if (error) {
       toast({
         title: 'Fehler',
-        description: 'Rechnung konnte nicht aktualisiert werden',
+        description: error.code === '23505'
+          ? 'Eine Rechnung mit dieser Rechnungsnummer existiert bereits für diese Firma.'
+          : 'Rechnung konnte nicht aktualisiert werden',
         variant: 'destructive',
       });
       return false;

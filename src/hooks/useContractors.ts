@@ -4,6 +4,34 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Contractor } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
+/**
+ * Match a company name against existing contractors.
+ *
+ * Deliberately conservative: an exact (case-insensitive) match wins; a
+ * substring match is only accepted when it is unambiguous and both names
+ * are long enough — otherwise a short name like "Schmidmaier" would
+ * silently attach to the wrong company ("Architekt Schmidmaier" vs.
+ * "Bauunternehmen Schmidmaier GmbH"). Returns null when no safe match
+ * exists.
+ */
+export function matchContractorByName(contractors: Contractor[], companyName: string): Contractor | null {
+  const lower = companyName.trim().toLowerCase();
+  if (!lower) return null;
+
+  const exact = contractors.find((c) => c.company_name.trim().toLowerCase() === lower);
+  if (exact) return exact;
+
+  if (lower.length >= 5) {
+    const candidates = contractors.filter((c) => {
+      const other = c.company_name.trim().toLowerCase();
+      return other.length >= 5 && (other.includes(lower) || lower.includes(other));
+    });
+    if (candidates.length === 1) return candidates[0];
+  }
+
+  return null;
+}
+
 export function useContractors() {
   const { household } = useAuth();
   const { toast } = useToast();
@@ -68,19 +96,48 @@ export function useContractors() {
   };
 
   /**
-   * Find a contractor by (fuzzy) company name or create it.
-   * Shared by document upload and invoice editing so both sides
-   * always resolve to the same contractor.
+   * Find a contractor by company name or create it. Shared by document
+   * upload and invoice editing so both sides always resolve to the same
+   * contractor. When no safe match exists a new contractor is created;
+   * duplicates can be merged on the Contractors page.
    */
   const findOrCreateByName = async (companyName: string): Promise<Contractor | null> => {
     const name = companyName.trim();
     if (!name) return null;
-    const match = contractors.find(
-      (c) => c.company_name.toLowerCase().includes(name.toLowerCase()) ||
-        name.toLowerCase().includes(c.company_name.toLowerCase())
-    );
+    const match = matchContractorByName(contractors, name);
     if (match) return match;
     return await createContractor({ company_name: name });
+  };
+
+  /**
+   * Merge duplicate contractors into one: re-points all references
+   * (documents, offers, construction journal) to the target and deletes
+   * the sources.
+   */
+  const mergeContractors = async (sourceIds: string[], targetId: string) => {
+    const ids = sourceIds.filter((id) => id !== targetId);
+    if (ids.length === 0) return false;
+
+    for (const table of ['documents', 'offers', 'construction_journal'] as const) {
+      const { error } = await supabase
+        .from(table)
+        .update({ contractor_id: targetId })
+        .in('contractor_id', ids);
+      if (error) {
+        toast({ title: 'Fehler', description: `Verweise in ${table} konnten nicht umgehängt werden`, variant: 'destructive' });
+        return false;
+      }
+    }
+
+    const { error } = await supabase.from('contractors').delete().in('id', ids);
+    if (error) {
+      toast({ title: 'Fehler', description: 'Duplikate konnten nicht gelöscht werden', variant: 'destructive' });
+      return false;
+    }
+
+    await fetchContractors();
+    toast({ title: 'Erfolg', description: `${ids.length} Firma/Firmen zusammengeführt` });
+    return true;
   };
 
   const updateContractor = async (id: string, updates: Partial<Contractor>) => {
@@ -113,5 +170,5 @@ export function useContractors() {
     return true;
   };
 
-  return { contractors, loading, fetchContractors, createContractor, findOrCreateByName, updateContractor, deleteContractor };
+  return { contractors, loading, fetchContractors, createContractor, findOrCreateByName, mergeContractors, updateContractor, deleteContractor };
 }

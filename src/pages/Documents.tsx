@@ -222,7 +222,7 @@ export const Documents: React.FC = () => {
       if (analyzableExts.includes(ext)) {
         setAnalyzing(true);
         try {
-          let body: Record<string, string> = { fileName: file.name };
+          const body: Record<string, string> = { fileName: file.name };
           if (ext === '.pdf') {
             body.textContent = await extractTextFromPDF(file);
           } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
@@ -409,7 +409,7 @@ export const Documents: React.FC = () => {
       if (!url) throw new Error('URL nicht verfügbar');
 
       const ext = doc.file_name.substring(doc.file_name.lastIndexOf('.')).toLowerCase();
-      let body: Record<string, string> = { fileName: doc.file_name };
+      const body: Record<string, string> = { fileName: doc.file_name };
 
       if (ext === '.pdf') {
         const resp = await fetch(url);
@@ -476,8 +476,9 @@ export const Documents: React.FC = () => {
       } else {
         toast({ title: 'KI-Analyse abgeschlossen', description: `"${ai.title || doc.title}" wurde analysiert.` });
       }
-    } catch (err: any) {
-      toast({ title: 'Analyse fehlgeschlagen', description: err?.message || 'Unbekannter Fehler', variant: 'destructive' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unbekannter Fehler';
+      toast({ title: 'Analyse fehlgeschlagen', description: message, variant: 'destructive' });
     }
     setAnalyzingDocId(null);
   };

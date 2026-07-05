@@ -67,6 +67,22 @@ export function useContractors() {
     return result as Contractor;
   };
 
+  /**
+   * Find a contractor by (fuzzy) company name or create it.
+   * Shared by document upload and invoice editing so both sides
+   * always resolve to the same contractor.
+   */
+  const findOrCreateByName = async (companyName: string): Promise<Contractor | null> => {
+    const name = companyName.trim();
+    if (!name) return null;
+    const match = contractors.find(
+      (c) => c.company_name.toLowerCase().includes(name.toLowerCase()) ||
+        name.toLowerCase().includes(c.company_name.toLowerCase())
+    );
+    if (match) return match;
+    return await createContractor({ company_name: name });
+  };
+
   const updateContractor = async (id: string, updates: Partial<Contractor>) => {
     const { error } = await supabase
       .from('contractors')
@@ -97,5 +113,5 @@ export function useContractors() {
     return true;
   };
 
-  return { contractors, loading, fetchContractors, createContractor, updateContractor, deleteContractor };
+  return { contractors, loading, fetchContractors, createContractor, findOrCreateByName, updateContractor, deleteContractor };
 }

@@ -126,10 +126,11 @@ export function useDocuments() {
     return true;
   };
 
-  const deleteDocument = async (id: string) => {
-    // Find the document to get file path
+  const deleteDocument = async (id: string, options?: { keepFile?: boolean }) => {
+    // Find the document to get file path. Keep the storage file when a
+    // linked invoice still references the same path.
     const doc = documents.find((d) => d.id === id);
-    if (doc) {
+    if (doc && !options?.keepFile) {
       await supabase.storage.from('documents').remove([doc.file_path]);
     }
 

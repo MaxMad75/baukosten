@@ -82,8 +82,8 @@ const invoiceFormFromAi = (ai: AiResult): InvoiceForm => ({
 
 export const Documents: React.FC = () => {
   const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
-  const { contractors, createContractor, fetchContractors } = useContractors();
-  const { createInvoice, fetchInvoices } = useInvoices();
+  const { contractors, findOrCreateByName, fetchContractors } = useContractors();
+  const { invoices, createInvoice, deleteInvoice, fetchInvoices } = useInvoices();
   const { offers, createOffer } = useOffers();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -92,7 +92,7 @@ export const Documents: React.FC = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [formData, setFormData] = useState(emptyForm);
@@ -112,24 +112,16 @@ export const Documents: React.FC = () => {
   const resetForm = () => { setFormData(emptyForm); setInvoiceForm(emptyInvoiceForm); setUploadedFile(null); setPendingFileHash(null); setDuplicateWarning(null); setPendingAiResult(null); };
 
   /**
-   * Find or create contractor by company name.
-   * Returns contractor ID or null.
+   * Find or create contractor by company name. Returns contractor ID or null.
    */
   const findOrCreateContractor = async (companyName: string): Promise<string | null> => {
-    const match = contractors.find(
-      (c) => c.company_name.toLowerCase().includes(companyName.toLowerCase()) ||
-        companyName.toLowerCase().includes(c.company_name.toLowerCase())
-    );
-    if (match) return match.id;
-
-    // Auto-create contractor
-    const newContractor = await createContractor({ company_name: companyName });
-    if (newContractor) {
-      toast({ title: 'Firma angelegt', description: `"${companyName}" wurde automatisch als Firma erstellt.` });
-      return newContractor.id;
-    }
-    return null;
+    const contractor = await findOrCreateByName(companyName);
+    return contractor?.id || null;
   };
+
+  /** The linked invoice is the master record for invoice-typed documents. */
+  const getLinkedInvoice = (doc: Document) =>
+    doc.invoice_id ? invoices.find((i) => i.id === doc.invoice_id) || null : null;
 
   /**
    * Validate the editable invoice fields. Returns an error message or null.
@@ -391,10 +383,18 @@ export const Documents: React.FC = () => {
     resetForm();
   };
 
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    await deleteDocument(deleteId);
-    setDeleteId(null);
+  const handleDelete = async (alsoDeleteInvoice: boolean) => {
+    if (!deleteTarget) return;
+    const linkedInvoice = getLinkedInvoice(deleteTarget);
+
+    if (alsoDeleteInvoice && deleteTarget.invoice_id) {
+      await deleteInvoice(deleteTarget.invoice_id);
+    }
+
+    // Keep the storage file if a surviving invoice still references the same path
+    const keepFile = !alsoDeleteInvoice && !!linkedInvoice && linkedInvoice.file_path === deleteTarget.file_path;
+    await deleteDocument(deleteTarget.id, { keepFile });
+    setDeleteTarget(null);
   };
 
   const handleDownload = async (doc: Document) => {
@@ -434,9 +434,13 @@ export const Documents: React.FC = () => {
 
       const ai: AiResult = functionData.data;
       let contractorId = doc.contractor_id;
+      const linkedInvoice = getLinkedInvoice(doc);
 
-      // Find or create contractor
-      if (ai.company_name) {
+      // The linked invoice is the master for the company — align the document
+      // with it instead of letting a re-analysis introduce a diverging name.
+      if (linkedInvoice) {
+        contractorId = await findOrCreateContractor(linkedInvoice.company_name);
+      } else if (ai.company_name) {
         contractorId = await findOrCreateContractor(ai.company_name);
       }
 
@@ -521,8 +525,8 @@ export const Documents: React.FC = () => {
           </SelectContent>
         </Select>
       </div>
-      {/* For invoices the contractor is derived from the invoice's Firma field */}
-      {!showInvoiceFields && (
+      {/* For invoices the contractor is always derived from the invoice's Firma */}
+      {formData.document_type !== 'Rechnung' && (
         <div className="space-y-2">
           <Label>Firma zuordnen</Label>
           <Select value={formData.contractor_id} onValueChange={(v) => setFormData({ ...formData, contractor_id: v })}>
@@ -708,11 +712,18 @@ export const Documents: React.FC = () => {
                             ) : (
                               <Sparkles className="h-3 w-3 text-muted-foreground/40" />
                             )}
-                            {doc.invoice_id && (
-                              <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
-                                <Receipt className="mr-1 h-3 w-3" />Rechnung
-                              </Badge>
-                            )}
+                            {doc.invoice_id && (() => {
+                              const inv = getLinkedInvoice(doc);
+                              const isPaid = inv?.status === 'paid';
+                              return (
+                                <Badge variant="outline" className={`text-xs ${isPaid ? 'border-green-400 text-green-700' : 'border-orange-300 text-orange-700'}`}>
+                                  <Receipt className="mr-1 h-3 w-3" />
+                                  {inv
+                                    ? `${Number(inv.amount).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}${isPaid ? ' · bezahlt' : ''}`
+                                    : 'Rechnung'}
+                                </Badge>
+                              );
+                            })()}
                             {doc.document_type === 'Rechnung' && !doc.invoice_id && (
                               <button onClick={() => openEdit(doc)} title="Rechnungsdaten ergänzen">
                                 <Badge variant="outline" className="text-xs border-destructive text-destructive cursor-pointer">
@@ -738,7 +749,9 @@ export const Documents: React.FC = () => {
                           <Badge variant="secondary" className={typeColors[doc.document_type] || ''}>{doc.document_type}</Badge>
                         ) : '–'}
                       </TableCell>
-                      <TableCell className="hidden lg:table-cell">{getContractorName(doc.contractor_id) || '–'}</TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {getLinkedInvoice(doc)?.company_name || getContractorName(doc.contractor_id) || '–'}
+                      </TableCell>
                       <TableCell className="hidden md:table-cell">{formatFileSize(doc.file_size)}</TableCell>
                       <TableCell className="hidden lg:table-cell">
                         {format(new Date(doc.created_at!), 'dd.MM.yyyy', { locale: de })}
@@ -784,7 +797,7 @@ export const Documents: React.FC = () => {
                             <ExternalLink className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => openEdit(doc)}><Edit className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteId(doc.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(doc)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -814,15 +827,28 @@ export const Documents: React.FC = () => {
       </Dialog>
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Dokument löschen?</AlertDialogTitle>
-            <AlertDialogDescription>Das Dokument wird unwiderruflich gelöscht.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {deleteTarget?.invoice_id
+                ? 'Dieses Dokument ist mit einer Rechnung verknüpft. Sie können nur das Dokument löschen (die Rechnung und ihre Zahlungen bleiben erhalten) oder beides zusammen entfernen.'
+                : 'Das Dokument wird unwiderruflich gelöscht.'}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Löschen</AlertDialogAction>
+            {deleteTarget?.invoice_id ? (
+              <>
+                <AlertDialogAction onClick={() => handleDelete(false)}>Nur Dokument löschen</AlertDialogAction>
+                <AlertDialogAction onClick={() => handleDelete(true)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Dokument + Rechnung löschen
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction onClick={() => handleDelete(false)}>Löschen</AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

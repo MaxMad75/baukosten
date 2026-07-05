@@ -8,6 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
+import { useContractors } from '@/hooks/useContractors';
+import { supabase } from '@/integrations/supabase/client';
 import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useEstimates } from '@/hooks/useEstimates';
@@ -70,6 +72,7 @@ export const Invoices: React.FC = () => {
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
   const { allSplits, getSplitsForInvoice, saveSplits } = useInvoiceSplits();
+  const { findOrCreateByName } = useContractors();
   const { toast } = useToast();
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
@@ -170,6 +173,18 @@ export const Invoices: React.FC = () => {
     });
 
     if (success) {
+      // Keep linked documents consistent: the invoice is the master record,
+      // so align the documents' contractor with the (possibly changed) company.
+      if (editFormData.company_name !== editingInvoice.company_name) {
+        const contractor = await findOrCreateByName(editFormData.company_name);
+        if (contractor) {
+          await supabase
+            .from('documents')
+            .update({ contractor_id: contractor.id })
+            .eq('invoice_id', editingInvoice.id);
+        }
+      }
+
       // Save allocations
       if (useMultiAllocation && editAllocations.length > 0) {
         const allocInputs = editAllocations.map(a => ({

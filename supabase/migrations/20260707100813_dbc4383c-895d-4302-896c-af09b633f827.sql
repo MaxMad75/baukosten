@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.recalc_invoice_payment_status() TO authenticated, service_role;

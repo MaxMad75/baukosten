@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,19 +6,23 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { PrivacyProvider } from "@/contexts/PrivacyContext";
-import Dashboard from "./pages/Dashboard";
-import Auth from "./pages/Auth";
-import Invoices from "./pages/Invoices";
-import { Estimates } from "./pages/Estimates";
-import Comparison from "./pages/Comparison";
-import Contractors from "./pages/Contractors";
-import Documents from "./pages/Documents";
-import ConstructionJournal from "./pages/ConstructionJournal";
-import Offers from "./pages/Offers";
-import Export from "./pages/Export";
-import Settings from "./pages/Settings";
-import NotFound from "./pages/NotFound";
-import OAuthConsent from "./pages/OAuthConsent";
+import { Loader2 } from "lucide-react";
+
+// Route-based code splitting: heavy dependencies (recharts, xlsx, pdfjs,
+// jszip) load with the page that needs them instead of on first paint.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Invoices = lazy(() => import("./pages/Invoices"));
+const Estimates = lazy(() => import("./pages/Estimates").then((m) => ({ default: m.Estimates })));
+const Comparison = lazy(() => import("./pages/Comparison"));
+const Contractors = lazy(() => import("./pages/Contractors"));
+const Documents = lazy(() => import("./pages/Documents"));
+const ConstructionJournal = lazy(() => import("./pages/ConstructionJournal"));
+const Offers = lazy(() => import("./pages/Offers"));
+const Export = lazy(() => import("./pages/Export"));
+const Settings = lazy(() => import("./pages/Settings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent"));
 
 // No automatic refetch on tab focus — combined with the AuthContext guard
 // this stops pages from visibly "reloading" when switching back to the app.
@@ -45,6 +49,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
@@ -60,6 +65,7 @@ const App = () => (
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
       </PrivacyProvider>

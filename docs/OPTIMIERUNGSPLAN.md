@@ -122,7 +122,10 @@ Function erweitert (Bilder, 5MB, Brutto/DE-Zahlenformat-Prompt).
 
 ## Phase 4 — Performance
 
-### 4.1 Bundle verkleinern / Code-Splitting (M)
+### 4.1 Bundle verkleinern / Code-Splitting (M) — ✅ umgesetzt 07.07.2026
+(Route-basiertes React.lazy für alle Seiten: Initial-Bundle 2.193 kB →
+495 kB, gzip 647 → 149 kB. recharts/xlsx/pdfjs/jszip laden mit ihrer Seite.
+manualChunks nicht nötig.)
 Der JS-Bundle ist 2,2 MB (gzip 647 kB); recharts, xlsx, pdfjs und jszip werden
 immer geladen.
 **Umsetzung:** Route-basiertes `React.lazy()` für alle Seiten;

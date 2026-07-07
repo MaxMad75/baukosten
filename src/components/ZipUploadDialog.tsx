@@ -8,11 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { extractZip, zipEntryToFile, ZipEntry } from '@/utils/zipExtractor';
 import { computeBlobHash } from '@/utils/fileHash';
 import { useDocuments } from '@/hooks/useDocuments';
-import { extractTextFromPDF } from '@/utils/pdfExtractor';
-import { extractTextFromExcel } from '@/utils/excelExtractor';
-import { fileToBase64 } from '@/utils/imageToBase64';
-import { supabase } from '@/integrations/supabase/client';
-import { useContractors } from '@/hooks/useContractors';
+import { useInvoices } from '@/hooks/useInvoices';
+import { analyzeDocumentFile, isAnalyzable } from '@/utils/analyzeFile';
+import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
 import { errorMessage } from '@/lib/utils';
 import { Loader2, FileText, Image, FileSpreadsheet, Check, X, Archive, AlertTriangle } from 'lucide-react';
@@ -66,7 +64,8 @@ const StatusIndicator: React.FC<{ status: FileStatus; error?: string }> = ({ sta
 
 export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenChange, zipFile }) => {
   const { uploadDocument, createDocument, fetchDocuments, checkDuplicate } = useDocuments();
-  const { contractors } = useContractors();
+  const { contractors, findOrCreateByName } = useContractors();
+  const { createInvoice } = useInvoices();
   const { toast } = useToast();
 
   const [entries, setEntries] = useState<ZipEntry[]>([]);
@@ -75,6 +74,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [fileStatuses, setFileStatuses] = useState<FileUploadStatus[]>([]);
   const [uploadDone, setUploadDone] = useState(false);
+  const [invoiceStats, setInvoiceStats] = useState({ created: 0, incomplete: 0 });
 
   React.useEffect(() => {
     if (!open || !zipFile) {
@@ -82,6 +82,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
       setFileStatuses([]);
       setProcessing(false);
       setUploadDone(false);
+      setInvoiceStats({ created: 0, incomplete: 0 });
       return;
     }
 
@@ -129,10 +130,13 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
   const handleUpload = async () => {
     setProcessing(true);
     setUploadDone(false);
+    setInvoiceStats({ created: 0, incomplete: 0 });
     const initial: FileUploadStatus[] = selectedEntries.map((e) => ({ name: e.name, status: 'pending' as FileStatus }));
     setFileStatuses(initial);
     const uploadedHashes = new Set<string>();
     let successCount = 0;
+    let invoicesCreated = 0;
+    let invoicesIncomplete = 0;
 
     for (let i = 0; i < selectedEntries.length; i++) {
       const entry = selectedEntries[i];
@@ -157,41 +161,54 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         let description: string | undefined;
         let documentType: string | undefined;
         let contractorId: string | undefined;
+        let invoiceId: string | undefined;
         let aiAnalyzed = false;
 
-        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-        const analyzableExts = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
-        if (analyzableExts.includes(ext)) {
+        if (isAnalyzable(file.name)) {
           updateFileStatus(entry.name, 'analyzing');
-          try {
-            const body: Record<string, string> = { fileName: file.name };
-            if (ext === '.pdf') {
-              body.textContent = await extractTextFromPDF(file);
-            } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-              body.imageBase64 = await fileToBase64(file);
-            } else if (['.xlsx', '.xls'].includes(ext)) {
-              body.textContent = await extractTextFromExcel(file);
-            }
+          const ai = await analyzeDocumentFile(file);
+          if (ai) {
+            title = ai.title || entry.name;
+            description = ai.description;
+            documentType = ai.document_type;
+            aiAnalyzed = true;
 
-            const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
-
-            if (!functionError && functionData?.data) {
-              const ai = functionData.data;
-              title = ai.title || entry.name;
-              description = ai.description;
-              documentType = ai.document_type;
-              aiAnalyzed = true;
-
-              if (ai.company_name) {
-                const match = contractors.find(
-                  (c) => c.company_name.toLowerCase().includes(ai.company_name.toLowerCase()) ||
-                    ai.company_name.toLowerCase().includes(c.company_name.toLowerCase())
-                );
-                if (match) contractorId = match.id;
+            if (ai.document_type === 'Rechnung') {
+              // Same flow as the single upload: create the invoice when the
+              // extracted data is complete; otherwise the document keeps its
+              // "Rechnung fehlt" badge for manual completion.
+              if (ai.company_name && ai.amount && ai.invoice_date) {
+                const contractor = await findOrCreateByName(ai.company_name);
+                contractorId = contractor?.id;
+                const invoice = await createInvoice({
+                  amount: ai.amount,
+                  invoice_date: ai.invoice_date,
+                  company_name: ai.company_name,
+                  invoice_number: ai.invoice_number || null,
+                  description: ai.description || null,
+                  kostengruppe_code: ai.kostengruppe_code || null,
+                  file_path: uploaded.path,
+                  file_name: uploaded.name,
+                  ai_extracted: true,
+                  is_gross: true,
+                });
+                if (invoice) {
+                  invoiceId = invoice.id;
+                  invoicesCreated++;
+                } else {
+                  invoicesIncomplete++;
+                }
+              } else {
+                invoicesIncomplete++;
+                if (ai.company_name) {
+                  const match = matchContractorByName(contractors, ai.company_name);
+                  if (match) contractorId = match.id;
+                }
               }
+            } else if (ai.company_name) {
+              const match = matchContractorByName(contractors, ai.company_name);
+              if (match) contractorId = match.id;
             }
-          } catch {
-            // AI failed, continue with defaults
           }
         }
 
@@ -205,6 +222,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           contractor_id: contractorId,
           ai_analyzed: aiAnalyzed,
           file_hash: entry.hash,
+          invoice_id: invoiceId,
         });
         if (entry.hash) uploadedHashes.add(entry.hash);
         updateFileStatus(entry.name, 'done');
@@ -217,10 +235,14 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
     await fetchDocuments();
     setProcessing(false);
     setUploadDone(true);
+    setInvoiceStats({ created: invoicesCreated, incomplete: invoicesIncomplete });
 
+    const invoiceInfo = invoicesCreated > 0 || invoicesIncomplete > 0
+      ? ` ${invoicesCreated} Rechnung${invoicesCreated === 1 ? '' : 'en'} angelegt${invoicesIncomplete > 0 ? `, ${invoicesIncomplete} unvollständig (siehe „Rechnung fehlt")` : ''}.`
+      : '';
     toast({
       title: 'ZIP-Upload abgeschlossen',
-      description: `${successCount} von ${selectedEntries.length} Dateien erfolgreich hochgeladen.`,
+      description: `${successCount} von ${selectedEntries.length} Dateien erfolgreich hochgeladen.${invoiceInfo}`,
     });
   };
 
@@ -327,7 +349,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
             )}
 
             {uploadDone && (
-              <div className="flex gap-4 justify-center">
+              <div className="flex flex-wrap gap-2 justify-center">
                 {fileStatuses.filter((f) => f.status === 'done').length > 0 && (
                   <Badge variant="secondary" className="bg-green-100 text-green-800">
                     <Check className="mr-1 h-3 w-3" /> {fileStatuses.filter((f) => f.status === 'done').length} erfolgreich
@@ -336,6 +358,16 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                 {fileStatuses.filter((f) => f.status === 'error' || f.status === 'skipped').length > 0 && (
                   <Badge variant="secondary" className="bg-red-100 text-red-800">
                     <X className="mr-1 h-3 w-3" /> {fileStatuses.filter((f) => f.status === 'error' || f.status === 'skipped').length} fehlgeschlagen
+                  </Badge>
+                )}
+                {invoiceStats.created > 0 && (
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                    {invoiceStats.created} Rechnung{invoiceStats.created === 1 ? '' : 'en'} angelegt
+                  </Badge>
+                )}
+                {invoiceStats.incomplete > 0 && (
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-800">
+                    <AlertTriangle className="mr-1 h-3 w-3" /> {invoiceStats.incomplete} Rechnung{invoiceStats.incomplete === 1 ? '' : 'en'} unvollständig
                   </Badge>
                 )}
               </div>

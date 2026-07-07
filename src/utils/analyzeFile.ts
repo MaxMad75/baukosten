@@ -1,11 +1,49 @@
 import { extractTextFromPDF } from './pdfExtractor';
 import { extractTextFromExcel } from './excelExtractor';
 import { fileToBase64 } from './imageToBase64';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface AnalysisBody {
   fileName: string;
   textContent?: string;
   imageBase64?: string;
+}
+
+/** Result of the analyze-document edge function. */
+export interface AiResult {
+  title?: string;
+  document_type?: string;
+  description?: string;
+  company_name?: string | null;
+  invoice_number?: string | null;
+  amount?: number | null;
+  invoice_date?: string | null;
+  kostengruppe_code?: string | null;
+}
+
+/** File extensions the AI analysis supports. */
+export const ANALYZABLE_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
+
+export function isAnalyzable(fileName: string): boolean {
+  const ext = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+  return ANALYZABLE_EXTENSIONS.includes(ext);
+}
+
+/**
+ * Run the full AI document analysis for a file: extract text/image content
+ * and call the analyze-document edge function. Returns null when the file
+ * type is unsupported or the analysis fails — callers fall back to defaults.
+ */
+export async function analyzeDocumentFile(file: File): Promise<AiResult | null> {
+  if (!isAnalyzable(file.name)) return null;
+  try {
+    const body = await buildAnalysisBody(file);
+    const { data, error } = await supabase.functions.invoke('analyze-document', { body });
+    if (error || !data?.data) return null;
+    return data.data as AiResult;
+  } catch {
+    return null;
+  }
 }
 
 /**

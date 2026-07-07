@@ -10,13 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useDocuments, Document } from '@/hooks/useDocuments';
-import { useContractors } from '@/hooks/useContractors';
+import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useOffers } from '@/hooks/useOffers';
-import { extractTextFromPDF } from '@/utils/pdfExtractor';
-import { extractTextFromExcel } from '@/utils/excelExtractor';
-import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
-import { buildAnalysisBody } from '@/utils/analyzeFile';
+import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, AiResult } from '@/utils/analyzeFile';
 import { InvoiceFieldsSection, InvoiceForm, emptyInvoiceForm } from '@/components/documents/InvoiceFieldsSection';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -51,17 +48,6 @@ const typeColors: Record<string, string> = {
 };
 
 const emptyForm = { title: '', document_type: '', description: '', contractor_id: '' };
-
-interface AiResult {
-  title?: string;
-  document_type?: string;
-  description?: string;
-  company_name?: string | null;
-  invoice_number?: string | null;
-  amount?: number | null;
-  invoice_date?: string | null;
-  kostengruppe_code?: string | null;
-}
 
 const invoiceFormFromAi = (ai: AiResult): InvoiceForm => ({
   company_name: ai.company_name || '',
@@ -244,46 +230,26 @@ export const Documents: React.FC = () => {
       setUploadedFile(result);
 
       // Try AI analysis for supported types
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      const analyzableExts = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
-      if (analyzableExts.includes(ext)) {
+      if (isAnalyzable(file.name)) {
         setAnalyzing(true);
-        try {
-          const body: Record<string, string> = { fileName: file.name };
-          if (ext === '.pdf') {
-            body.textContent = await extractTextFromPDF(file);
-          } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-            body.imageBase64 = await fileToBase64(file);
-          } else if (['.xlsx', '.xls'].includes(ext)) {
-            body.textContent = await extractTextFromExcel(file);
+        const ai = await analyzeDocumentFile(file);
+        if (ai) {
+          setPendingAiResult(ai);
+          setFormData({
+            title: ai.title || file.name,
+            document_type: ai.document_type || '',
+            description: ai.description || '',
+            contractor_id: '',
+          });
+          setInvoiceForm(invoiceFormFromAi(ai));
+
+          if (ai.company_name) {
+            const match = matchContractorByName(contractors, ai.company_name);
+            if (match) setFormData((prev) => ({ ...prev, contractor_id: match.id }));
           }
 
-          const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
-
-          if (!functionError && functionData?.data) {
-            const ai: AiResult = functionData.data;
-            setPendingAiResult(ai);
-            setFormData({
-              title: ai.title || file.name,
-              document_type: ai.document_type || '',
-              description: ai.description || '',
-              contractor_id: '',
-            });
-            setInvoiceForm(invoiceFormFromAi(ai));
-
-            if (ai.company_name) {
-              const match = contractors.find(
-                (c) => c.company_name.toLowerCase().includes(ai.company_name!.toLowerCase()) ||
-                  ai.company_name!.toLowerCase().includes(c.company_name.toLowerCase())
-              );
-              if (match) setFormData((prev) => ({ ...prev, contractor_id: match.id }));
-            }
-
-            toast({ title: 'KI-Analyse abgeschlossen', description: 'Bitte überprüfen Sie die erkannten Daten.' });
-          } else {
-            setFormData((prev) => ({ ...prev, title: file.name }));
-          }
-        } catch {
+          toast({ title: 'KI-Analyse abgeschlossen', description: 'Bitte überprüfen Sie die erkannten Daten.' });
+        } else {
           setFormData((prev) => ({ ...prev, title: file.name }));
         }
         setAnalyzing(false);
@@ -442,25 +408,9 @@ export const Documents: React.FC = () => {
     try {
       const url = await getDocumentUrl(doc.file_path);
       if (!url) throw new Error('URL nicht verfügbar');
-
-      const ext = doc.file_name.substring(doc.file_name.lastIndexOf('.')).toLowerCase();
-      const body: Record<string, string> = { fileName: doc.file_name };
-
-      if (ext === '.pdf') {
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const file = new File([blob], doc.file_name, { type: 'application/pdf' });
-        body.textContent = await extractTextFromPDF(file);
-      } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-        body.imageBase64 = await fetchFileAsBase64(url);
-      } else if (['.xlsx', '.xls'].includes(ext)) {
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const file = new File([blob], doc.file_name);
-        body.textContent = await extractTextFromExcel(file);
-      } else {
-        body.textContent = `Dateiname: ${doc.file_name}`;
-      }
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const body = await buildAnalysisBody(new File([blob], doc.file_name));
 
       const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-document', { body });
 

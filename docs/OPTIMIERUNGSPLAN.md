@@ -58,13 +58,16 @@ Erst ausführen, wenn 1.1 live ist.
 
 ## Phase 2 — ZIP-Upload gleichziehen
 
-### 2.1 Gemeinsame Analyse-Logik extrahieren (M)
+### 2.1 Gemeinsame Analyse-Logik extrahieren (M) — ✅ umgesetzt 07.07.2026
 `src/pages/Documents.tsx` und `src/components/ZipUploadDialog.tsx` duplizieren
 die komplette Datei-Analyse (Text-Extraktion je Dateityp + Edge-Function-Call).
 **Umsetzung:** `src/utils/analyzeFile.ts` mit
 `analyzeFile(file): Promise<AiResult | null>`; beide Stellen umstellen.
+**Status:** `analyzeDocumentFile()` + `isAnalyzable()` + `AiResult` in
+analyzeFile.ts; Documents.tsx (Upload + Re-Analyse) und ZipUploadDialog
+nutzen dieselbe Logik, Firmen-Matching überall via `matchContractorByName`.
 
-### 2.2 ZIP-Upload erstellt Rechnungen (M, nach 2.1)
+### 2.2 ZIP-Upload erstellt Rechnungen (M, nach 2.1) — ✅ umgesetzt 07.07.2026
 Der ZIP-Upload legt nie Rechnungen an — erkannte Rechnungen landen als bloße
 Dokumente. Seit dem Workflow-Umbau zeigt die Liste zwar „Rechnung fehlt", aber
 der Nutzer muss jede einzeln nacharbeiten.
@@ -72,6 +75,8 @@ der Nutzer muss jede einzeln nacharbeiten.
 Daten die Rechnung direkt anlegen (gleiche Logik wie Einzelupload); bei
 unvollständigen Daten bewusst nur das Badge stehen lassen. Ergebnisübersicht am
 Ende: „X Rechnungen angelegt, Y unvollständig".
+**Status:** Umgesetzt inkl. Firma-Anlage (find-or-create), Dokument-Verknüpfung
+(invoice_id), Zähler-Badges im Fertig-Screen und Abschluss-Toast.
 
 ---
 

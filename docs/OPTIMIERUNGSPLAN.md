@@ -254,4 +254,9 @@ Aufbewahrung und „Wiederherstellen"-Ansicht.
      via GitHub push and only need to be redeployed."*
   Migrationen immer idempotent schreiben (CREATE OR REPLACE, DROP IF EXISTS,
   DO-Block mit Exception-Handling).
+- **Doppelte Lockfiles (npm + bun) driften:** Lovable pflegt bun.lock, lokal
+  läuft npm mit package-lock.json. Ändert eine Seite package.json, muss die
+  jeweils andere Lockdatei nachgezogen werden — sonst schlägt entweder der
+  Lovable-Build (bun) oder die CI (`npm ci`, EUSAGE) fehl. Nach jedem
+  `git pull` mit package.json-Änderungen: `npm install` + Lockfile committen.
 - Vor DB-Migrationen (Phase 1) ein Backup über die Export-Seite ziehen.

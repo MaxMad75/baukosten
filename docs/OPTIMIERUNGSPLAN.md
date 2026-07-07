@@ -203,10 +203,16 @@ einen Export in einen separaten Storage-Bucket legt; Aufbewahrung 8 Wochen.
 - `npm install` **und** der Vite-Dev-Server verändern lokal
   `supabase/functions/mcp/index.ts` (Lovable-MCP-Plugin). Vor jedem Commit:
   `git checkout -- supabase/functions/mcp/index.ts`, falls nicht bewusst geändert.
-- Edge-Function-Änderungen werden erst nach Push via Lovable deployed.
-- **Gepushte Migrationsdateien wendet Lovable NICHT automatisch an**
-  (verifiziert 05.07.2026): Neue Dateien unter `supabase/migrations/` müssen
-  zusätzlich manuell im Supabase SQL-Editor ausgeführt werden. Migrationen
-  deshalb immer idempotent schreiben (CREATE OR REPLACE, DROP IF EXISTS,
+- **Arbeitsteilung bei Backend-Artefakten (festgelegt 07.07.2026):**
+  Gepushte **Migrationen** wendet Lovable NICHT automatisch an (verifiziert);
+  bei **Edge Functions** ist das Deployment nach Push unzuverlässig. Jede
+  Änderung wird deshalb so vorbereitet:
+  1. Code-Änderung per Git-Push (Frontend deployt Lovable automatisch),
+  2. bei Migrationen: SQL als Copy-Paste-Block für den Supabase SQL-Editor,
+  3. bei Edge Functions: fertiger Lovable-Prompt zum Deployen, z. B.
+     *"Redeploy the edge functions analyze-invoice and analyze-document from
+     the current repository code. Do not change any code — they were updated
+     via GitHub push and only need to be redeployed."*
+  Migrationen immer idempotent schreiben (CREATE OR REPLACE, DROP IF EXISTS,
   DO-Block mit Exception-Handling).
 - Vor DB-Migrationen (Phase 1) ein Backup über die Export-Seite ziehen.

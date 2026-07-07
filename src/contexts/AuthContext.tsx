@@ -32,15 +32,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadedUserIdRef = useRef<string | null>(null);
 
   const fetchProfile = async (userId: string) => {
+    // Claim the user id up front so concurrent auth events don't double-fetch,
+    // but RELEASE the claim on failure — otherwise a single flaky request
+    // leaves profile/household empty forever (guard would block all retries).
     loadedUserIdRef.current = userId;
+    try {
     const profileCols = 'id, user_id, household_id, name, has_iban, created_at, updated_at';
-    const { data: profileData } = await supabase
+    const { data: profileData, error } = await supabase
       .from('profiles')
       .select(profileCols)
       .eq('user_id', userId)
       .single();
 
-    if (profileData) {
+    if (error || !profileData) {
+      loadedUserIdRef.current = null; // retry on the next auth event / focus
+      return;
+    }
+
+    {
       // Fetch own IBAN via RPC (only the owner can read it)
       let ownIban: string | null = null;
       const { data: ibanData } = await supabase.rpc('get_my_iban');
@@ -67,6 +76,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profiles) {
         setHouseholdProfiles(profiles as unknown as Profile[]);
       }
+    }
+    } catch {
+      loadedUserIdRef.current = null; // retry on the next auth event / focus
     }
   };
 

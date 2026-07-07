@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import {
-  Loader2, CheckCircle2, XCircle, Euro, Trash2, Edit, Save, TrendingUp, Receipt, CreditCard, Plus, Link2,
+  Loader2, Trash2, Edit, Save, CreditCard, Plus, Link2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -39,12 +39,12 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-const PIE_COLORS = ['hsl(220, 70%, 55%)', 'hsl(150, 60%, 45%)', 'hsl(35, 85%, 55%)', 'hsl(0, 70%, 55%)', 'hsl(270, 60%, 55%)', 'hsl(180, 50%, 45%)'];
+import { InvoiceStatsCards } from '@/components/invoices/InvoiceStatsCards';
+import { PaymentDistributionChart } from '@/components/invoices/PaymentDistributionChart';
+import { PaymentsEditor } from '@/components/invoices/PaymentsEditor';
 
 const STATUS_CONFIG: Record<InvoiceStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
   draft: { label: 'Entwurf', variant: 'secondary', className: '' },
@@ -306,13 +306,6 @@ export const Invoices: React.FC = () => {
     return activeEstimateItems.filter(ei => ei.kostengruppe_code === kgCode);
   };
 
-  // Statistics using status
-  const totalAmount = invoices.reduce((s, i) => s + Number(i.amount), 0);
-  const paidAmount = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.amount), 0);
-  const partiallyPaidAmount = invoices.filter((i) => i.status === 'partially_paid').reduce((s, i) => s + Number(i.amount), 0);
-  const openAmount = totalAmount - paidAmount;
-  const openCount = invoices.filter((i) => i.status !== 'paid' && i.status !== 'cancelled').length;
-
   // Pie chart data — actual payments are the primary source, with
   // splits / paid_by as legacy fallback for old records.
   const pieData = useMemo(() => {
@@ -398,81 +391,10 @@ export const Invoices: React.FC = () => {
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Gesamt</CardTitle>
-              <Euro className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatAmount(totalAmount)}</div>
-              <p className="text-xs text-muted-foreground">{invoices.length} Rechnungen</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Bezahlt</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatAmount(paidAmount)}</div>
-              <p className="text-xs text-muted-foreground">{invoices.filter(i => i.status === 'paid').length} Rechnungen</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Offen</CardTitle>
-              <Receipt className="h-4 w-4 text-orange-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-500">{formatAmount(openAmount)}</div>
-              <p className="text-xs text-muted-foreground">{openCount} Rechnungen</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Bezahlquote</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0}%
-              </div>
-              <p className="text-xs text-muted-foreground">nach Betrag</p>
-            </CardContent>
-          </Card>
-        </div>
+        <InvoiceStatsCards invoices={invoices} formatAmount={formatAmount} />
 
         {/* Payment Distribution Pie Chart */}
-        {pieData.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Zahlungsverteilung</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                    >
-                      {pieData.map((_, idx) => (
-                        <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => formatAmount(value)} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <PaymentDistributionChart data={pieData} formatAmount={formatAmount} />
 
         {/* Invoice Table */}
         {invoices.length === 0 ? (
@@ -712,68 +634,18 @@ export const Invoices: React.FC = () => {
             </div>
 
             {/* Payments Editor — single source of truth for the Zahlungsverteilung */}
-            {editingInvoice && profiles && profiles.length > 0 && (() => {
-              const payments = getPaymentsForInvoice(editingInvoice.id);
-              const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
-              const invoiceAmt = parseFloat(editFormData.amount) || 0;
-              return (
-                <div className="space-y-3 border rounded-lg p-4 bg-muted/20">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-muted-foreground" />
-                      <Label className="font-semibold">Zahlungen</Label>
-                    </div>
-                    <span className={`text-sm ${Math.abs(totalPaid - invoiceAmt) < 0.01 ? 'text-green-600' : 'text-muted-foreground'}`}>
-                      {formatAmount(totalPaid)} / {formatAmount(invoiceAmt)} bezahlt
-                    </span>
-                  </div>
-
-                  {payments.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Noch keine Zahlungen erfasst.</p>
-                  )}
-
-                  {payments.map((p) => {
-                    const payer = profiles.find(pr => pr.id === p.profile_id);
-                    return (
-                      <div key={p.id} className="flex items-center gap-2 text-sm">
-                        <span className="min-w-[100px] font-medium">{payer?.name || 'Unbekannt'}</span>
-                        <span className="text-muted-foreground">{format(new Date(p.payment_date), 'dd.MM.yyyy', { locale: de })}</span>
-                        <span className="ml-auto">{formatAmount(Number(p.amount))}</span>
-                        <Button type="button" size="icon" variant="ghost" onClick={() => handleDeletePaymentInEdit(p.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-
-                  <div className="grid gap-2 grid-cols-[1fr_130px_110px_auto] items-end pt-2 border-t">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Person</Label>
-                      <Select value={newPayment.profile_id} onValueChange={(v) => setNewPayment({ ...newPayment, profile_id: v })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="Wählen…" /></SelectTrigger>
-                        <SelectContent>
-                          {profiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Datum</Label>
-                      <Input type="date" className="h-9" value={newPayment.payment_date} onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Betrag</Label>
-                      <Input type="number" step="0.01" className="h-9" placeholder="0,00" value={newPayment.amount} onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })} />
-                    </div>
-                    <Button type="button" size="sm" variant="outline" className="h-9" onClick={handleAddPaymentInEdit}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Zahlungen werden sofort gespeichert; der Rechnungsstatus wird automatisch aktualisiert.
-                  </p>
-                </div>
-              );
-            })()}
+            {editingInvoice && profiles && profiles.length > 0 && (
+              <PaymentsEditor
+                payments={getPaymentsForInvoice(editingInvoice.id)}
+                profiles={profiles}
+                invoiceAmount={parseFloat(editFormData.amount) || 0}
+                newPayment={newPayment}
+                onNewPaymentChange={setNewPayment}
+                onAdd={handleAddPaymentInEdit}
+                onDelete={handleDeletePaymentInEdit}
+                formatAmount={formatAmount}
+              />
+            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingInvoice(null); }}>Abbrechen</Button>

@@ -77,7 +77,7 @@ Ende: „X Rechnungen angelegt, Y unvollständig".
 
 ## Phase 3 — Code-Qualität & Wartbarkeit
 
-### 3.1 Große Seiten in Komponenten aufteilen (L)
+### 3.1 Große Seiten in Komponenten aufteilen (L) — 🔶 teilweise umgesetzt 05.07.2026
 `Documents.tsx` (~1.000 Zeilen) und `Invoices.tsx` (~950 Zeilen) sind schwer
 wartbar.
 **Umsetzung:** Extrahieren nach `src/components/documents/`
@@ -85,19 +85,33 @@ wartbar.
 (InvoiceEditDialog, PaymentsEditor, PayDialog, AllocationEditor,
 InvoiceStatsCards). Reine Verschiebung, kein Verhalten ändern — danach ist
 jeder weitere Schritt billiger.
+**Status:** Extrahiert: InvoiceStatsCards, PaymentDistributionChart,
+PaymentsEditor (invoices/), InvoiceFieldsSection (documents/).
+Invoices.tsx ~1000→739 Zeilen, Documents.tsx ~1080→910.
+**Offen:** DocumentsTable, UploadDialog, InvoiceEditDialog, PayDialog,
+AllocationEditor — die Dialoge hängen stark am Seiten-State und lohnen einen
+eigenen Durchgang.
 
-### 3.2 Restliche Lint-Fehler beheben + CI (S)
+### 3.2 Restliche Lint-Fehler beheben + CI (S) — ✅ umgesetzt 05.07.2026
 `npx eslint .` hat noch Altlasten (v. a. `no-explicit-any` in
 `excelExport.ts`, `useDocuments.ts`, `Export.tsx`).
 **Umsetzung:** Fehler beheben; GitHub Action mit `eslint + tsc --noEmit +
 vitest run` bei jedem Push (verhindert Regressionen, auch durch Lovable-Edits).
+**Status:** Alle 68 Fehler behoben (0 verbleibend); `.github/workflows/ci.yml`
+mit Lint/Typecheck/Tests/Build. supabase/functions (Deno) vom Web-Lint
+ausgenommen.
 
-### 3.3 Tote Edge Function `analyze-invoice` entscheiden (S)
+### 3.3 Tote Edge Function `analyze-invoice` entscheiden (S) — ✅ umgesetzt 05.07.2026
 Wird nirgends aufgerufen.
 **Umsetzung:** Entweder löschen oder als gezielten Zweitpass für
 „Rechnung fehlt"-Dokumente einsetzen (Button „Rechnungsdaten per KI ergänzen"
 im Dialog). Empfehlung: Zweitpass — löst genau den Fall unvollständiger
 Extraktion.
+**Status:** Als Zweitpass umgesetzt: „Per KI ergänzen"-Button in den
+Rechnungsfeldern (Upload- und Bearbeiten-Dialog) füllt nur LEERE Felder.
+Function erweitert (Bilder, 5MB, Brutto/DE-Zahlenformat-Prompt).
+**Prüfen:** ob Lovable die Function-Änderung nach Push deployed hat
+(Button einmal ausprobieren).
 
 ---
 

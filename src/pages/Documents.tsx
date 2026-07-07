@@ -17,9 +17,9 @@ import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { extractTextFromExcel } from '@/utils/excelExtractor';
 import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
 import { buildAnalysisBody } from '@/utils/analyzeFile';
+import { InvoiceFieldsSection, InvoiceForm, emptyInvoiceForm } from '@/components/documents/InvoiceFieldsSection';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import {
   Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt, FileCheck
 } from 'lucide-react';
@@ -51,7 +51,6 @@ const typeColors: Record<string, string> = {
 };
 
 const emptyForm = { title: '', document_type: '', description: '', contractor_id: '' };
-const emptyInvoiceForm = { company_name: '', invoice_number: '', amount: '', invoice_date: '', kostengruppe_code: '' };
 
 interface AiResult {
   title?: string;
@@ -62,15 +61,6 @@ interface AiResult {
   amount?: number | null;
   invoice_date?: string | null;
   kostengruppe_code?: string | null;
-}
-
-/** Editable invoice fields shown when a document is typed as "Rechnung". */
-interface InvoiceForm {
-  company_name: string;
-  invoice_number: string;
-  amount: string;
-  invoice_date: string;
-  kostengruppe_code: string;
 }
 
 const invoiceFormFromAi = (ai: AiResult): InvoiceForm => ({
@@ -605,53 +595,14 @@ export const Documents: React.FC = () => {
       </div>
       {/* Editable invoice fields */}
       {showInvoiceFields && (
-        <div className="col-span-2 space-y-3 rounded-lg border border-orange-200 bg-orange-50/50 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-orange-800">
-              <Receipt className="h-4 w-4" />
-              Rechnungsdaten – bitte prüfen und ggf. korrigieren
-            </div>
-            {(editingDoc?.file_path || uploadedFile?.path) && (
-              <Button type="button" size="sm" variant="outline" onClick={runInvoiceAiPass} disabled={invoiceAiLoading}>
-                {invoiceAiLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
-                Per KI ergänzen
-              </Button>
-            )}
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Firma *</Label>
-              <Input value={invoiceForm.company_name} onChange={(e) => setInvoiceForm({ ...invoiceForm, company_name: e.target.value })} placeholder="Firmenname" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Rechnungsnummer</Label>
-              <Input value={invoiceForm.invoice_number} onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })} placeholder="optional" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Betrag brutto (EUR) *</Label>
-              <Input type="number" step="0.01" value={invoiceForm.amount} onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })} placeholder="0,00" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Rechnungsdatum *</Label>
-              <Input type="date" value={invoiceForm.invoice_date} onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_date: e.target.value })} />
-            </div>
-            <div className="col-span-2 space-y-1">
-              <Label className="text-xs">Kostengruppe (DIN 276)</Label>
-              <KostengruppenSelect value={invoiceForm.kostengruppe_code} onValueChange={(v) => setInvoiceForm({ ...invoiceForm, kostengruppe_code: v })} />
-            </div>
-          </div>
-          {duplicateInvoice && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-              ⚠ Mögliches Duplikat: Es existiert bereits eine Rechnung von „{duplicateInvoice.company_name}"
-              {duplicateInvoice.invoice_number ? ` (Nr. ${duplicateInvoice.invoice_number})` : ''} über{' '}
-              {Number(duplicateInvoice.amount).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })} vom{' '}
-              {format(new Date(duplicateInvoice.invoice_date), 'dd.MM.yyyy', { locale: de })}.
-            </div>
-          )}
-          <p className="text-xs text-orange-700">
-            Beim Speichern wird die Rechnung in der Rechnungsverwaltung angelegt. Dort können Sie sie als bezahlt markieren und die Zahlung aufteilen.
-          </p>
-        </div>
+        <InvoiceFieldsSection
+          form={invoiceForm}
+          onChange={setInvoiceForm}
+          duplicate={duplicateInvoice}
+          showAiButton={!!(editingDoc?.file_path || uploadedFile?.path)}
+          aiLoading={invoiceAiLoading}
+          onAiPass={runInvoiceAiPass}
+        />
       )}
       {formData.document_type === 'Rechnung' && editingDoc?.invoice_id && (
         <div className="col-span-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">

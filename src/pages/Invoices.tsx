@@ -80,6 +80,9 @@ export const Invoices: React.FC = () => {
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
+  // Destructive actions require explicit confirmation
+  const [resetTarget, setResetTarget] = useState<Invoice | null>(null);
+  const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
 
   const [editFormData, setEditFormData] = useState({
     company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '', is_gross: true,
@@ -122,9 +125,11 @@ export const Invoices: React.FC = () => {
     });
     setNewPayment({ payment_date: format(new Date(), 'yyyy-MM-dd'), profile_id: '', amount: '' });
 
-    // Load allocations
+    // Load allocations into the editor whenever they carry information the
+    // simple single-KG path would silently drop on save (estimate links,
+    // notes, or multiple rows).
     const existingAllocs = getAllocationsForInvoice(invoice.id);
-    if (existingAllocs.length > 1) {
+    if (existingAllocs.length > 1 || existingAllocs.some(a => a.estimate_item_id || a.notes)) {
       setUseMultiAllocation(true);
       setEditAllocations(existingAllocs.map(a => ({
         kostengruppe_code: a.kostengruppe_code,
@@ -452,7 +457,7 @@ export const Invoices: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           {status === 'paid' || status === 'partially_paid' ? (
-                            <button onClick={() => handleResetPayments(invoice.id)} title="Klicken zum Zurücksetzen">
+                            <button onClick={() => setResetTarget(invoice)} title="Zahlungen zurücksetzen…">
                               <Badge variant={statusCfg.variant} className={statusCfg.className}>
                                 {statusCfg.label}
                               </Badge>
@@ -642,7 +647,7 @@ export const Invoices: React.FC = () => {
                 newPayment={newPayment}
                 onNewPaymentChange={setNewPayment}
                 onAdd={handleAddPaymentInEdit}
-                onDelete={handleDeletePaymentInEdit}
+                onDelete={(paymentId) => setDeletePaymentId(paymentId)}
                 formatAmount={formatAmount}
               />
             )}
@@ -729,6 +734,60 @@ export const Invoices: React.FC = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Löschen</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reset Payments Confirmation */}
+      <AlertDialog open={!!resetTarget} onOpenChange={(o) => { if (!o) setResetTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Zahlungen zurücksetzen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetTarget && (() => {
+                const payments = getPaymentsForInvoice(resetTarget.id);
+                const total = payments.reduce((s, p) => s + Number(p.amount), 0);
+                return `Für „${resetTarget.company_name}" werden ${payments.length} Zahlung${payments.length === 1 ? '' : 'en'} über insgesamt ${formatAmount(total)} sowie die Kostenaufteilung gelöscht. Die Rechnung gilt danach wieder als offen. Diese Aktion kann nicht rückgängig gemacht werden.`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => { if (resetTarget) { await handleResetPayments(resetTarget.id); setResetTarget(null); } }}
+            >
+              Zurücksetzen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Single Payment Confirmation */}
+      <AlertDialog open={!!deletePaymentId} onOpenChange={(o) => { if (!o) setDeletePaymentId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Zahlung löschen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const p = editingInvoice && deletePaymentId
+                  ? getPaymentsForInvoice(editingInvoice.id).find((x) => x.id === deletePaymentId)
+                  : null;
+                const payer = p ? profiles?.find((pr) => pr.id === p.profile_id) : null;
+                return p
+                  ? `Die Zahlung von ${payer?.name || 'Unbekannt'} über ${formatAmount(Number(p.amount))} vom ${format(new Date(p.payment_date), 'dd.MM.yyyy', { locale: de })} wird gelöscht. Der Rechnungsstatus wird neu berechnet.`
+                  : 'Die Zahlung wird gelöscht. Der Rechnungsstatus wird neu berechnet.';
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => { if (deletePaymentId) { await handleDeletePaymentInEdit(deletePaymentId); setDeletePaymentId(null); } }}
+            >
+              Löschen
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

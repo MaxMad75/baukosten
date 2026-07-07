@@ -286,6 +286,7 @@ export type Database = {
       documents: {
         Row: {
           ai_analyzed: boolean
+          ai_raw_result: Json | null
           ai_summary: string | null
           contractor_id: string | null
           created_at: string | null
@@ -304,6 +305,7 @@ export type Database = {
         }
         Insert: {
           ai_analyzed?: boolean
+          ai_raw_result?: Json | null
           ai_summary?: string | null
           contractor_id?: string | null
           created_at?: string | null
@@ -322,6 +324,7 @@ export type Database = {
         }
         Update: {
           ai_analyzed?: boolean
+          ai_raw_result?: Json | null
           ai_summary?: string | null
           contractor_id?: string | null
           created_at?: string | null

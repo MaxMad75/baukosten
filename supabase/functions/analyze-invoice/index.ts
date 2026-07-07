@@ -167,6 +167,28 @@ Antworte NUR mit gültigem JSON im folgenden Format, ohne zusätzlichen Text und
       });
     }
 
+    // Tool calling forces valid structured JSON (no markdown fences, no chatter)
+    const extractTool = {
+      type: "function",
+      function: {
+        name: "extract_invoice_data",
+        description: "Gibt die extrahierten Rechnungsdaten strukturiert zurück.",
+        parameters: {
+          type: "object",
+          properties: {
+            invoice_number: { type: "string", description: "Rechnungsnummer, weglassen wenn unbekannt" },
+            amount: { type: "number", description: "Brutto-Gesamtbetrag" },
+            invoice_date: { type: "string", description: "YYYY-MM-DD" },
+            company_name: { type: "string", description: "Firmenname/Rechnungssteller" },
+            description: { type: "string", description: "Kurze Beschreibung der Leistung" },
+            kostengruppe_code: { type: "string", description: "3-stelliger DIN 276 Code" },
+            kostengruppe_reasoning: { type: "string", description: "Kurze Begründung für die Zuordnung" },
+          },
+          required: ["description"],
+        },
+      },
+    };
+
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -179,6 +201,8 @@ Antworte NUR mit gültigem JSON im folgenden Format, ohne zusätzlichen Text und
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
+        tools: [extractTool],
+        tool_choice: { type: "function", function: { name: "extract_invoice_data" } },
       }),
     });
 
@@ -204,27 +228,36 @@ Antworte NUR mit gültigem JSON im folgenden Format, ohne zusätzlichen Text und
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const message = data.choices?.[0]?.message;
 
-    if (!content) {
-      console.error("Empty AI response");
+    // Preferred path: structured tool call. Fallback: JSON in plain content.
+    let extractedData: unknown = null;
+    const toolArgs = message?.tool_calls?.[0]?.function?.arguments;
+    if (toolArgs) {
+      try {
+        extractedData = JSON.parse(toolArgs);
+      } catch (e) {
+        console.error("Could not parse tool call arguments", toolArgs, e);
+      }
+    }
+    if (!extractedData && message?.content) {
+      const jsonMatch = message.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          extractedData = JSON.parse(jsonMatch[0]);
+        } catch (e) {
+          console.error("Could not parse AI response content", message.content, e);
+        }
+      }
+    }
+
+    if (!extractedData) {
+      console.error("No usable AI response", JSON.stringify(message));
       return new Response(
         JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Parse the JSON response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("Could not parse AI response", content);
-      return new Response(
-        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const extractedData = JSON.parse(jsonMatch[0]);
 
     console.log("Successfully extracted invoice data for user:", userId);
 

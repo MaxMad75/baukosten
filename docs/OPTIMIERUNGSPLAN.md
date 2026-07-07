@@ -177,13 +177,18 @@ und Dokumente.
 
 ## Phase 6 — KI-Extraktion weiter verbessern
 
-### 6.1 Tool-Calling statt Regex-JSON (S)
+### 6.1 Tool-Calling statt Regex-JSON (S) — ✅ umgesetzt 07.07.2026
+(analyze-document + analyze-invoice erzwingen strukturiertes JSON per
+tool_choice; Regex-Parsing bleibt als Fallback. Deploy via Lovable-Prompt.)
 `analyze-document` parst die Antwort per Regex — Markdown-Codeblöcke o. ä.
 können das brechen.
 **Umsetzung:** Lovable AI Gateway mit `tools`/`tool_choice` (function calling)
 aufrufen; das Schema erzwingt gültiges strukturiertes JSON.
 
-### 6.2 KI-Rohergebnis speichern + anzeigen (S)
+### 6.2 KI-Rohergebnis speichern + anzeigen (S) — ✅ umgesetzt 07.07.2026
+(documents.ai_raw_result jsonb — Migration 20260707151000 manuell anwenden;
+aufklappbares „Was hat die KI erkannt?" im Bearbeiten-Dialog; wird bei
+Upload, Re-Analyse und ZIP-Upload gespeichert.)
 Fehlgeschlagene Extraktionen sind nicht nachvollziehbar.
 **Umsetzung:** Spalte `documents.ai_raw_result jsonb`; im Bearbeiten-Dialog
 aufklappbar anzeigen („Was hat die KI erkannt?").

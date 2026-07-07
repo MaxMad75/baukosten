@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { errorMessage } from '@/lib/utils';
+import type { Json } from '@/integrations/supabase/types';
 
 export interface Document {
   id: string;
@@ -16,6 +17,8 @@ export interface Document {
   contractor_id: string | null;
   ai_analyzed: boolean;
   ai_summary: string | null;
+  /** Rohergebnis der letzten KI-Analyse (Debug/Nachvollziehbarkeit) */
+  ai_raw_result: Json | null;
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;
@@ -80,6 +83,7 @@ export function useDocuments() {
     contractor_id?: string;
     ai_analyzed?: boolean;
     ai_summary?: string;
+    ai_raw_result?: Json | null;
     file_hash?: string;
     invoice_id?: string;
   }) => {
@@ -97,6 +101,7 @@ export function useDocuments() {
         contractor_id: data.contractor_id || null,
         ai_analyzed: data.ai_analyzed || false,
         ai_summary: data.ai_summary || null,
+        ai_raw_result: data.ai_raw_result || null,
         file_hash: data.file_hash || null,
         invoice_id: data.invoice_id || null,
         created_by_profile_id: profile.id,

@@ -16,6 +16,7 @@ import { useOffers } from '@/hooks/useOffers';
 import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, AiResult } from '@/utils/analyzeFile';
 import { InvoiceFieldsSection, InvoiceForm, emptyInvoiceForm } from '@/components/documents/InvoiceFieldsSection';
 import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
+import type { Json } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -319,6 +320,7 @@ export const Documents: React.FC = () => {
       description: formData.description || undefined,
       contractor_id: contractorId || undefined,
       ai_analyzed: analyzing || !!formData.description,
+      ai_raw_result: pendingAiResult ? (pendingAiResult as unknown as Json) : undefined,
       file_hash: pendingFileHash || undefined,
       invoice_id: invoiceId || undefined,
     });
@@ -466,6 +468,7 @@ export const Documents: React.FC = () => {
         description: ai.description || doc.description,
         contractor_id: contractorId,
         ai_analyzed: true,
+        ai_raw_result: ai as unknown as Json,
         ...(invoiceId ? { invoice_id: invoiceId } : {}),
       };
       await updateDocument(doc.id, updates);
@@ -578,6 +581,22 @@ export const Documents: React.FC = () => {
           </div>
           <p className="mt-1 text-xs">Betrag, Status und Zahlungsaufteilung bearbeiten Sie in der Rechnungsverwaltung.</p>
         </div>
+      )}
+      {/* Raw AI result for traceability */}
+      {editingDoc?.ai_raw_result && typeof editingDoc.ai_raw_result === 'object' && !Array.isArray(editingDoc.ai_raw_result) && (
+        <details className="col-span-2 rounded-lg border bg-muted/20 p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-muted-foreground flex items-center gap-2">
+            <Sparkles className="h-4 w-4" /> Was hat die KI erkannt?
+          </summary>
+          <div className="mt-2 space-y-1 text-xs">
+            {Object.entries(editingDoc.ai_raw_result).map(([key, value]) => (
+              <div key={key} className="flex gap-2">
+                <span className="min-w-[140px] text-muted-foreground">{key}</span>
+                <span className="break-all">{value === null || value === undefined || value === '' ? '–' : String(value)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
       {formData.document_type === 'Angebot' && (
         <div className="col-span-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">

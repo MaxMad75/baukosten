@@ -12,6 +12,7 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { analyzeDocumentFile, isAnalyzable } from '@/utils/analyzeFile';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
+import type { Json } from '@/integrations/supabase/types';
 import { errorMessage } from '@/lib/utils';
 import { Loader2, FileText, Image, FileSpreadsheet, Check, X, Archive, AlertTriangle } from 'lucide-react';
 
@@ -163,11 +164,13 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         let contractorId: string | undefined;
         let invoiceId: string | undefined;
         let aiAnalyzed = false;
+        let aiRawResult: Json | null = null;
 
         if (isAnalyzable(file.name)) {
           updateFileStatus(entry.name, 'analyzing');
           const ai = await analyzeDocumentFile(file);
           if (ai) {
+            aiRawResult = ai as unknown as Json;
             title = ai.title || entry.name;
             description = ai.description;
             documentType = ai.document_type;
@@ -221,6 +224,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           document_type: documentType,
           contractor_id: contractorId,
           ai_analyzed: aiAnalyzed,
+          ai_raw_result: aiRawResult,
           file_hash: entry.hash,
           invoice_id: invoiceId,
         });

@@ -15,6 +15,8 @@ export interface Household {
   id: string;
   name: string;
   created_at: string;
+  /** Soll-Quote: profile_id -> Prozent; null/fehlend = gleichmäßig verteilt */
+  payment_target_shares?: Record<string, number> | null;
 }
 
 export interface DIN276Kostengruppe {

@@ -148,7 +148,11 @@ Die Rechnungstabelle hat weder Suche noch Filter (Dokumente haben beides).
 **Umsetzung:** Suchfeld (Firma/Nummer/Beschreibung), Filter für Status und
 Kostengruppe, sortierbare Spalten (Datum, Betrag), optional Zeitraumfilter.
 
-### 5.2 Saldo pro Person — „Wer schuldet wem?" (M)
+### 5.2 Saldo pro Person — „Wer schuldet wem?" (M) — ✅ umgesetzt 07.07.2026
+(BalanceCard auf der Rechnungsseite: gezahlt vs. Soll je Person,
+Ausgleichs-Vorschläge „A → B: X €", Soll-Quote inline editierbar und in
+households.payment_target_shares gespeichert — Migration
+20260707150000 muss manuell angewendet werden.)
 Die Zahlungsverteilung zeigt, wer wieviel gezahlt hat, aber nicht den
 Ausgleichssaldo bei ungleicher Verteilung.
 **Umsetzung:** Karte auf Dashboard/Rechnungsseite: Summe je Person, Abweichung

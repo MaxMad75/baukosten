@@ -46,6 +46,7 @@ import { InvoiceStatsCards } from '@/components/invoices/InvoiceStatsCards';
 import { PaymentDistributionChart } from '@/components/invoices/PaymentDistributionChart';
 import { PaymentsEditor } from '@/components/invoices/PaymentsEditor';
 import { DeductionsEditor, DeductionRow, deductionRowAmount } from '@/components/invoices/DeductionsEditor';
+import { BalanceCard } from '@/components/invoices/BalanceCard';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { DEDUCTION_TYPE_LABELS } from '@/lib/types';
 
@@ -71,7 +72,7 @@ export const Invoices: React.FC = () => {
   const { getAllocationsForInvoice, getEffectiveAllocations, saveAllocations, fetchAllAllocations } = useInvoiceAllocations();
   const { getKostengruppeByCode } = useKostengruppen();
   const { estimateItems: activeEstimateItems } = useEstimates();
-  const { profile } = useAuth();
+  const { profile, household, refreshProfile } = useAuth();
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
   const { allSplits, getSplitsForInvoice, saveSplits } = useInvoiceSplits();
@@ -394,9 +395,9 @@ export const Invoices: React.FC = () => {
   const sortIndicator = (key: 'date' | 'amount') =>
     sortBy === key ? (sortDir === 'asc' ? <ArrowUp className="inline h-3 w-3" /> : <ArrowDown className="inline h-3 w-3" />) : <ArrowUpDown className="inline h-3 w-3 opacity-40" />;
 
-  // Pie chart data — actual payments are the primary source, with
+  // Who paid what — actual payments are the primary source, with
   // splits / paid_by as legacy fallback for old records.
-  const pieData = useMemo(() => {
+  const paidByProfile = useMemo(() => {
     const byPayer = new Map<string, number>();
     for (const inv of invoices) {
       if (inv.status !== 'paid' && inv.status !== 'partially_paid') continue;
@@ -407,11 +408,31 @@ export const Invoices: React.FC = () => {
         byPayer.set(profileId, (byPayer.get(profileId) || 0) + amount);
       });
     }
-    return Array.from(byPayer.entries()).map(([profileId, amount]) => {
+    return byPayer;
+  }, [invoices, getPaymentsForInvoice, getSplitsForInvoice]);
+
+  const pieData = useMemo(
+    () => Array.from(paidByProfile.entries()).map(([profileId, amount]) => {
       const p = profiles?.find((pr) => pr.id === profileId);
       return { name: p?.name || 'Unbekannt', value: amount };
-    });
-  }, [invoices, profiles, getPaymentsForInvoice, getSplitsForInvoice]);
+    }),
+    [paidByProfile, profiles]
+  );
+
+  // Persist the target share quota on the household (null = equal split)
+  const handleSaveTargetShares = async (shares: Record<string, number> | null) => {
+    if (!household) return;
+    const { error } = await supabase
+      .from('households')
+      .update({ payment_target_shares: shares })
+      .eq('id', household.id);
+    if (error) {
+      toast({ title: 'Fehler', description: 'Soll-Quote konnte nicht gespeichert werden', variant: 'destructive' });
+      return;
+    }
+    await refreshProfile();
+    toast({ title: 'Erfolg', description: 'Soll-Quote wurde gespeichert' });
+  };
 
   if (loading) {
     return <Layout><div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></Layout>;
@@ -521,6 +542,17 @@ export const Invoices: React.FC = () => {
 
         {/* Payment Distribution Pie Chart */}
         <PaymentDistributionChart data={pieData} formatAmount={formatAmount} />
+
+        {/* Balance: who owes whom, measured against the target quota */}
+        {profiles && (
+          <BalanceCard
+            profiles={profiles}
+            paidByProfile={paidByProfile}
+            targetShares={household?.payment_target_shares || null}
+            onSaveShares={handleSaveTargetShares}
+            formatAmount={formatAmount}
+          />
+        )}
 
         {/* Invoice Table */}
         {invoices.length === 0 ? (

@@ -516,16 +516,19 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          payment_target_shares: Json | null
         }
         Insert: {
           created_at?: string
           id?: string
           name?: string
+          payment_target_shares?: Json | null
         }
         Update: {
           created_at?: string
           id?: string
           name?: string
+          payment_target_shares?: Json | null
         }
         Relationships: []
       }

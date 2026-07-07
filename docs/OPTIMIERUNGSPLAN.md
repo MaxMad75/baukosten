@@ -198,6 +198,23 @@ einen Export in einen separaten Storage-Bucket legt; Aufbewahrung 8 Wochen.
 
 ---
 
+## Neue Kandidaten (aus Nutzung entstanden, noch nicht priorisiert)
+
+### N.1 Abzüge im Excel-Export ausweisen (S)
+Der Export (Rechnungen-Blatt, Übersicht) rechnet mit dem Rechnungsbetrag;
+Abzüge und Zahlbetrag fehlen. Spalten „Abzüge" und „Zahlbetrag" ergänzen,
+Sicherheitseinbehalte als eigene Zeile in der Zusammenfassung.
+
+### N.2 Statistik-Karten auf Zahlbetrag umstellen (S)
+„Bezahlt"/„Offen" auf der Rechnungsseite basieren auf dem Rechnungsbetrag;
+mit Abzügen überzeichnet das den tatsächlichen Geldabfluss. Karten auf
+Zahlungssummen (invoice_payments) bzw. Zahlbeträge umstellen.
+
+### N.3 Papierkorb / Undo für Zahlungen und Rechnungen (M)
+Bestätigungsdialoge verhindern Versehen, aber bestätigt Gelöschtes ist weg.
+Soft-Delete (deleted_at) für invoices/invoice_payments mit 30 Tagen
+Aufbewahrung und „Wiederherstellen"-Ansicht.
+
 ## Bekannte Stolperfallen (für alle Schritte)
 
 - `npm install` **und** der Vite-Dev-Server verändern lokal

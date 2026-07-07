@@ -15,10 +15,11 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { useOffers } from '@/hooks/useOffers';
 import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, AiResult } from '@/utils/analyzeFile';
 import { InvoiceFieldsSection, InvoiceForm, emptyInvoiceForm } from '@/components/documents/InvoiceFieldsSection';
+import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt, FileCheck
+  Plus, Loader2, Trash2, Edit, Search, FileText, Upload, Download, FolderOpen, Sparkles, ExternalLink, RotateCw, Receipt, FileCheck, Eye
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -82,6 +83,21 @@ export const Documents: React.FC = () => {
   const [isZipOpen, setIsZipOpen] = useState(false);
   const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
   const [invoiceAiLoading, setInvoiceAiLoading] = useState(false);
+  // Inline preview (PDF/images)
+  const [previewDoc, setPreviewDoc] = useState<{ fileName: string } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const openPreview = async (filePath: string, fileName: string) => {
+    setPreviewDoc({ fileName });
+    setPreviewUrl(null);
+    const url = await getDocumentUrl(filePath);
+    if (url) {
+      setPreviewUrl(url);
+    } else {
+      setPreviewDoc(null);
+      toast({ title: 'Fehler', description: 'Vorschau konnte nicht geladen werden', variant: 'destructive' });
+    }
+  };
   // Store full AI result for invoice creation
   const [pendingAiResult, setPendingAiResult] = useState<AiResult | null>(null);
   // Editable invoice fields (prefilled by AI, always correctable by the user)
@@ -772,6 +788,9 @@ export const Documents: React.FC = () => {
                               </Tooltip>
                             </TooltipProvider>
                           )}
+                          <Button variant="ghost" size="icon" onClick={() => openPreview(doc.file_path, doc.file_name)} title="Vorschau">
+                            <Eye className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDownload(doc)} title="Herunterladen">
                             <ExternalLink className="h-4 w-4" />
                           </Button>
@@ -797,9 +816,16 @@ export const Documents: React.FC = () => {
           </DialogHeader>
           <div className="space-y-4">
             {documentFormFields}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => { resetForm(); setIsEditOpen(false); }}>Abbrechen</Button>
-              <Button onClick={handleUpdate}>Speichern</Button>
+            <div className="flex items-center justify-between gap-2">
+              {editingDoc ? (
+                <Button variant="outline" size="sm" onClick={() => openPreview(editingDoc.file_path, editingDoc.file_name)}>
+                  <Eye className="mr-2 h-4 w-4" /> Vorschau
+                </Button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => { resetForm(); setIsEditOpen(false); }}>Abbrechen</Button>
+                <Button onClick={handleUpdate}>Speichern</Button>
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -852,6 +878,13 @@ export const Documents: React.FC = () => {
         open={isZipOpen}
         onOpenChange={(o) => { setIsZipOpen(o); if (!o) setZipFile(null); }}
         zipFile={zipFile}
+      />
+
+      <DocumentPreviewDialog
+        open={!!previewDoc}
+        onOpenChange={(o) => { if (!o) { setPreviewDoc(null); setPreviewUrl(null); } }}
+        fileName={previewDoc?.fileName || null}
+        url={previewUrl}
       />
     </Layout>
   );

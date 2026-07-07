@@ -159,7 +159,9 @@ Ausgleichssaldo bei ungleicher Verteilung.
 von der Soll-Quote (z. B. 50/50, konfigurierbar in Settings), daraus
 Ausgleichsbetrag.
 
-### 5.3 PDF-Inline-Vorschau (M)
+### 5.3 PDF-Inline-Vorschau (M) — ✅ umgesetzt 07.07.2026
+(Auge-Button in der Dokumententabelle + „Vorschau" im Bearbeiten-Dialog;
+PDF via iframe, Bilder inline, andere Typen mit „In neuem Tab öffnen".)
 Dokumente öffnen aktuell nur als Download/neuer Tab.
 **Umsetzung:** Vorschau-Dialog mit `<iframe>` auf die signierte URL (PDFs und
 Bilder); Button neben Download. Besonders nützlich beim Prüfen der

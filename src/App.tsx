@@ -20,7 +20,15 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import OAuthConsent from "./pages/OAuthConsent";
 
-const queryClient = new QueryClient();
+// No automatic refetch on tab focus — combined with the AuthContext guard
+// this stops pages from visibly "reloading" when switching back to the app.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();

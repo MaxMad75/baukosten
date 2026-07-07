@@ -34,7 +34,8 @@ export function useInvoices() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   const createInvoice = async (invoiceData: Omit<Partial<Invoice>, 'household_id' | 'created_by_profile_id'> & { amount: number; invoice_date: string; company_name: string }) => {
     if (!household || !profile) return null;

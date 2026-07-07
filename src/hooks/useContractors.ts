@@ -57,7 +57,8 @@ export function useContractors() {
 
   useEffect(() => {
     fetchContractors();
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   const createContractor = async (data: {
     company_name: string;

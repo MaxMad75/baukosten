@@ -19,7 +19,8 @@ export function useInvoiceSplits() {
       setAllSplits(data as InvoiceSplit[]);
     }
     setLoading(false);
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   useEffect(() => {
     fetchAllSplits();

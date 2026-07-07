@@ -48,7 +48,8 @@ export function useOffers() {
       await fetchOffers();
     };
     load();
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   // Fetch all offer items whenever offers change
   useEffect(() => {

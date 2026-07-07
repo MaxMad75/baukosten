@@ -29,7 +29,8 @@ export function useConstructionJournal() {
 
   useEffect(() => {
     fetchEntries();
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   const createEntry = async (data: {
     entry_date: string;

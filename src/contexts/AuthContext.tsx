@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { Profile, Household } from '@/lib/types';
@@ -25,8 +25,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [household, setHousehold] = useState<Household | null>(null);
   const [householdProfiles, setHouseholdProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  // User id whose profile is currently loaded. Prevents re-fetching (and
+  // thus replacing profile/household object identities, which makes every
+  // page flash its loading spinner) when the tab regains focus and
+  // supabase-js re-emits auth events after a token refresh.
+  const loadedUserIdRef = useRef<string | null>(null);
 
   const fetchProfile = async (userId: string) => {
+    loadedUserIdRef.current = userId;
     const profileCols = 'id, user_id, household_id, name, has_iban, created_at, updated_at';
     const { data: profileData } = await supabase
       .from('profiles')
@@ -72,10 +78,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          setTimeout(() => {
-            fetchProfile(session.user.id);
-          }, 0);
+          // Only fetch when the signed-in user actually changed — token
+          // refreshes on tab focus re-emit events for the same user.
+          if (loadedUserIdRef.current !== session.user.id) {
+            const userId = session.user.id;
+            setTimeout(() => {
+              fetchProfile(userId);
+            }, 0);
+          }
         } else {
+          loadedUserIdRef.current = null;
           setProfile(null);
           setHousehold(null);
           setHouseholdProfiles([]);
@@ -88,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       
-      if (session?.user) {
+      if (session?.user && loadedUserIdRef.current !== session.user.id) {
         fetchProfile(session.user.id).finally(() => setLoading(false));
       } else {
         setLoading(false);
@@ -157,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    loadedUserIdRef.current = null;
     setProfile(null);
     setHousehold(null);
     setHouseholdProfiles([]);

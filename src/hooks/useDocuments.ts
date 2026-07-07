@@ -48,7 +48,8 @@ export function useDocuments() {
 
   useEffect(() => {
     fetchDocuments();
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   const uploadDocument = async (file: File) => {
     if (!household) return null;

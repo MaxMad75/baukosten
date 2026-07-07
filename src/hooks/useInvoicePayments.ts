@@ -21,7 +21,8 @@ export function useInvoicePayments() {
       setAllPayments(data as InvoicePayment[]);
     }
     setLoading(false);
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   useEffect(() => {
     fetchAllPayments();

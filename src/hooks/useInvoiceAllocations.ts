@@ -43,7 +43,8 @@ export function useInvoiceAllocations() {
       setAllAllocations(data as InvoiceAllocation[]);
     }
     setLoading(false);
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   useEffect(() => {
     fetchAllAllocations();

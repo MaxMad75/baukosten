@@ -92,7 +92,8 @@ export function useEstimates() {
 
   useEffect(() => {
     fetchEstimates();
-  }, [household]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household?.id]);
 
   /** Activate a specific version, deactivate all others, sync architect_estimates.is_active */
   const setActiveVersion = async (versionId: string) => {

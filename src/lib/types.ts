@@ -64,6 +64,29 @@ export interface InvoicePayment {
   created_at: string;
 }
 
+export type DeductionType = 'skonto' | 'sicherheitseinbehalt' | 'baustrom' | 'bauwesenversicherung' | 'sonstiges';
+
+export const DEDUCTION_TYPE_LABELS: Record<DeductionType, string> = {
+  skonto: 'Skonto',
+  sicherheitseinbehalt: 'Sicherheitseinbehalt',
+  baustrom: 'Anteil Baustrom',
+  bauwesenversicherung: 'Anteil Bauwesenversicherung',
+  sonstiges: 'Sonstiges',
+};
+
+/** Abzug aus der Rechnungsprüfung; Zahlbetrag = Rechnungsbetrag − Summe der Abzüge. */
+export interface InvoiceDeduction {
+  id: string;
+  invoice_id: string;
+  deduction_type: DeductionType;
+  label: string | null;
+  is_percentage: boolean;
+  percentage: number | null;
+  amount: number;
+  notes: string | null;
+  created_at: string | null;
+}
+
 export interface EstimateVersion {
   id: string;
   household_id: string;

@@ -574,6 +574,50 @@ export type Database = {
           },
         ]
       }
+      invoice_deductions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          deduction_type: string
+          id: string
+          invoice_id: string
+          is_percentage: boolean
+          label: string | null
+          notes: string | null
+          percentage: number | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          deduction_type: string
+          id?: string
+          invoice_id: string
+          is_percentage?: boolean
+          label?: string | null
+          notes?: string | null
+          percentage?: number | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          deduction_type?: string
+          id?: string
+          invoice_id?: string
+          is_percentage?: boolean
+          label?: string | null
+          notes?: string | null
+          percentage?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_deductions_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_payments: {
         Row: {
           amount: number

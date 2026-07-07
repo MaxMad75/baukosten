@@ -45,6 +45,9 @@ import {
 import { InvoiceStatsCards } from '@/components/invoices/InvoiceStatsCards';
 import { PaymentDistributionChart } from '@/components/invoices/PaymentDistributionChart';
 import { PaymentsEditor } from '@/components/invoices/PaymentsEditor';
+import { DeductionsEditor, DeductionRow, deductionRowAmount } from '@/components/invoices/DeductionsEditor';
+import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
+import { DEDUCTION_TYPE_LABELS } from '@/lib/types';
 
 const STATUS_CONFIG: Record<InvoiceStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
   draft: { label: 'Entwurf', variant: 'secondary', className: '' },
@@ -72,6 +75,7 @@ export const Invoices: React.FC = () => {
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
   const { allSplits, getSplitsForInvoice, saveSplits } = useInvoiceSplits();
+  const { allDeductions, getDeductionsForInvoice, saveDeductions } = useInvoiceDeductions();
   const { findOrCreateByName } = useContractors();
   const { toast } = useToast();
 
@@ -101,6 +105,9 @@ export const Invoices: React.FC = () => {
   const [useMultiAllocation, setUseMultiAllocation] = useState(false);
   const [editAllocations, setEditAllocations] = useState<AllocationRow[]>([]);
 
+  // Deductions (Rechnungsprüfung) state for edit dialog
+  const [editDeductions, setEditDeductions] = useState<DeductionRow[]>([]);
+
   // Pay dialog state
   const [paymentData, setPaymentData] = useState({
     payment_date: format(new Date(), 'yyyy-MM-dd'),
@@ -124,6 +131,15 @@ export const Invoices: React.FC = () => {
       status: (invoice.status as InvoiceStatus) || 'draft',
     });
     setNewPayment({ payment_date: format(new Date(), 'yyyy-MM-dd'), profile_id: '', amount: '' });
+
+    // Load deductions (Rechnungsprüfung)
+    setEditDeductions(getDeductionsForInvoice(invoice.id).map((d) => ({
+      deduction_type: d.deduction_type,
+      label: d.label || '',
+      mode: d.is_percentage ? 'percent' as const : 'absolute' as const,
+      percentage: d.percentage != null ? String(d.percentage) : '',
+      amount: String(d.amount),
+    })));
 
     // Load allocations into the editor whenever they carry information the
     // simple single-KG path would silently drop on save (estimate links,
@@ -213,6 +229,20 @@ export const Invoices: React.FC = () => {
         );
       }
 
+      // Save deductions; the DB trigger recalculates the status against the
+      // new payable amount, so refetch invoices afterwards.
+      await saveDeductions(editingInvoice.id, editDeductions
+        .filter((r) => deductionRowAmount(r, invoiceAmt) > 0)
+        .map((r) => ({
+          deduction_type: r.deduction_type,
+          label: r.deduction_type === 'sonstiges' ? r.label || null : null,
+          is_percentage: r.mode === 'percent',
+          percentage: r.mode === 'percent' ? parseFloat(r.percentage) || 0 : null,
+          amount: deductionRowAmount(r, invoiceAmt),
+          notes: null,
+        })));
+      await fetchInvoices();
+
       setIsEditOpen(false);
       setEditingInvoice(null);
     }
@@ -223,7 +253,9 @@ export const Invoices: React.FC = () => {
     const inv = invoices.find(i => i.id === selectedInvoice);
     if (!inv) return;
 
-    const payTarget = paymentData.amount ? parseFloat(paymentData.amount) : Number(inv.amount);
+    const payTarget = paymentData.amount
+      ? parseFloat(paymentData.amount)
+      : getPayableAmount(Number(inv.amount), getDeductionsForInvoice(inv.id));
 
     if (payUseSplit && paySplits.length > 0) {
       const totalAssigned = paySplits.reduce((s, e) => s + e.amount, 0);
@@ -279,7 +311,10 @@ export const Invoices: React.FC = () => {
 
   const openPayDialog = (invoiceId: string) => {
     const inv = invoices.find(i => i.id === invoiceId);
-    const remaining = inv ? Number(inv.amount) - getTotalPaid(invoiceId) : 0;
+    // Offen = Zahlbetrag (Rechnungsbetrag − Abzüge) minus bereits bezahlt
+    const remaining = inv
+      ? getPayableAmount(Number(inv.amount), getDeductionsForInvoice(invoiceId)) - getTotalPaid(invoiceId)
+      : 0;
     setSelectedInvoice(invoiceId);
     setPaymentData({
       payment_date: format(new Date(), 'yyyy-MM-dd'),
@@ -335,7 +370,9 @@ export const Invoices: React.FC = () => {
   }
 
   const selectedInvoiceObj = selectedInvoice ? invoices.find(i => i.id === selectedInvoice) : null;
-  const selectedRemainingAmount = selectedInvoiceObj ? Number(selectedInvoiceObj.amount) - getTotalPaid(selectedInvoiceObj.id) : 0;
+  const selectedDeductions = selectedInvoiceObj ? getDeductionsForInvoice(selectedInvoiceObj.id) : [];
+  const selectedPayable = selectedInvoiceObj ? getPayableAmount(Number(selectedInvoiceObj.amount), selectedDeductions) : 0;
+  const selectedRemainingAmount = selectedInvoiceObj ? selectedPayable - getTotalPaid(selectedInvoiceObj.id) : 0;
 
   // Allocation summary helper for invoice list
   const renderAllocationSummary = (invoice: Invoice) => {
@@ -398,6 +435,42 @@ export const Invoices: React.FC = () => {
         {/* Statistics Cards */}
         <InvoiceStatsCards invoices={invoices} formatAmount={formatAmount} />
 
+        {/* Sicherheitseinbehalte — einbehalten, kann später noch fällig werden */}
+        {(() => {
+          const retentions = allDeductions
+            .filter((d) => d.deduction_type === 'sicherheitseinbehalt')
+            .map((d) => ({ deduction: d, invoice: invoices.find((i) => i.id === d.invoice_id) }))
+            .filter((r): r is { deduction: typeof r.deduction; invoice: Invoice } => !!r.invoice);
+          if (retentions.length === 0) return null;
+          const total = retentions.reduce((s, r) => s + Number(r.deduction.amount), 0);
+          return (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Sicherheitseinbehalte</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {retentions.map(({ deduction, invoice }) => (
+                  <div key={deduction.id} className="flex items-center justify-between text-sm">
+                    <span>
+                      {invoice.company_name}
+                      {invoice.invoice_number && <span className="text-muted-foreground"> · Nr. {invoice.invoice_number}</span>}
+                      <span className="text-muted-foreground"> · {format(new Date(invoice.invoice_date), 'dd.MM.yyyy', { locale: de })}</span>
+                    </span>
+                    <span className="font-medium">{formatAmount(Number(deduction.amount))}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between border-t pt-2 text-sm font-semibold">
+                  <span>Gesamt einbehalten</span>
+                  <span>{formatAmount(total)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Einbehaltene Beträge können nach Ablauf der Gewährleistung (oder gegen Bürgschaft) noch nachgefordert werden.
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
         {/* Payment Distribution Pie Chart */}
         <PaymentDistributionChart data={pieData} formatAmount={formatAmount} />
 
@@ -449,7 +522,33 @@ export const Invoices: React.FC = () => {
                             {formatAmount(Number(invoice.amount))}
                             <span className="ml-1 text-xs text-muted-foreground">({invoice.is_gross ? 'brutto' : 'netto'})</span>
                           </div>
-                          {totalPaid > 0 && totalPaid < Number(invoice.amount) && (
+                          {(() => {
+                            const deductions = getDeductionsForInvoice(invoice.id);
+                            if (deductions.length === 0) return null;
+                            const payable = getPayableAmount(Number(invoice.amount), deductions);
+                            return (
+                              <TooltipProvider>
+                                <UiTooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="text-xs text-muted-foreground cursor-help">
+                                      Zahlbetrag {formatAmount(payable)}
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="space-y-0.5 text-xs">
+                                      {deductions.map((d) => (
+                                        <div key={d.id} className="flex justify-between gap-4">
+                                          <span>{d.deduction_type === 'sonstiges' && d.label ? d.label : DEDUCTION_TYPE_LABELS[d.deduction_type]}{d.is_percentage && d.percentage != null ? ` (${d.percentage}%)` : ''}</span>
+                                          <span>−{formatAmount(Number(d.amount))}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </TooltipContent>
+                                </UiTooltip>
+                              </TooltipProvider>
+                            );
+                          })()}
+                          {totalPaid > 0 && totalPaid < getPayableAmount(Number(invoice.amount), getDeductionsForInvoice(invoice.id)) && (
                             <div className="text-xs text-muted-foreground">
                               {formatAmount(totalPaid)} bezahlt
                             </div>
@@ -638,19 +737,32 @@ export const Invoices: React.FC = () => {
               )}
             </div>
 
-            {/* Payments Editor — single source of truth for the Zahlungsverteilung */}
-            {editingInvoice && profiles && profiles.length > 0 && (
-              <PaymentsEditor
-                payments={getPaymentsForInvoice(editingInvoice.id)}
-                profiles={profiles}
-                invoiceAmount={parseFloat(editFormData.amount) || 0}
-                newPayment={newPayment}
-                onNewPaymentChange={setNewPayment}
-                onAdd={handleAddPaymentInEdit}
-                onDelete={(paymentId) => setDeletePaymentId(paymentId)}
-                formatAmount={formatAmount}
-              />
-            )}
+            {/* Deductions Editor — Skonto, Sicherheitseinbehalt etc. */}
+            <DeductionsEditor
+              invoiceAmount={parseFloat(editFormData.amount) || 0}
+              rows={editDeductions}
+              onChange={setEditDeductions}
+              formatAmount={formatAmount}
+            />
+
+            {/* Payments Editor — single source of truth for the Zahlungsverteilung.
+                Measured against the payable amount (invoice minus deductions). */}
+            {editingInvoice && profiles && profiles.length > 0 && (() => {
+              const amt = parseFloat(editFormData.amount) || 0;
+              const payable = Math.max(Math.round((amt - editDeductions.reduce((s, r) => s + deductionRowAmount(r, amt), 0)) * 100) / 100, 0);
+              return (
+                <PaymentsEditor
+                  payments={getPaymentsForInvoice(editingInvoice.id)}
+                  profiles={profiles}
+                  invoiceAmount={payable}
+                  newPayment={newPayment}
+                  onNewPaymentChange={setNewPayment}
+                  onAdd={handleAddPaymentInEdit}
+                  onDelete={(paymentId) => setDeletePaymentId(paymentId)}
+                  formatAmount={formatAmount}
+                />
+              );
+            })()}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingInvoice(null); }}>Abbrechen</Button>
@@ -668,8 +780,11 @@ export const Invoices: React.FC = () => {
             <DialogDescription>
               {selectedInvoiceObj && (
                 <>
-                  {selectedInvoiceObj.company_name} — Gesamt: {formatAmount(Number(selectedInvoiceObj.amount))}
-                  {selectedRemainingAmount < Number(selectedInvoiceObj.amount) && selectedRemainingAmount > 0 && (
+                  {selectedInvoiceObj.company_name} — Rechnungsbetrag: {formatAmount(Number(selectedInvoiceObj.amount))}
+                  {selectedDeductions.length > 0 && (
+                    <> — Abzüge: −{formatAmount(Number(selectedInvoiceObj.amount) - selectedPayable)} — Zahlbetrag: {formatAmount(selectedPayable)}</>
+                  )}
+                  {selectedRemainingAmount < selectedPayable && selectedRemainingAmount > 0 && (
                     <> — Offen: {formatAmount(selectedRemainingAmount)}</>
                   )}
                 </>
@@ -706,7 +821,7 @@ export const Invoices: React.FC = () => {
             ) : (
               profiles && selectedInvoiceObj && (
                 <InvoiceSplitEditor
-                  invoiceAmount={paymentData.amount ? parseFloat(paymentData.amount) : Number(selectedInvoiceObj.amount)}
+                  invoiceAmount={paymentData.amount ? parseFloat(paymentData.amount) : selectedPayable}
                   profiles={profiles}
                   splits={paySplits}
                   onChange={setPaySplits}

@@ -140,7 +140,10 @@ Mount alles. `useProfiles` nutzt bereits React Query (Vorbild).
 
 ## Phase 5 — UX-Verbesserungen
 
-### 5.1 Rechnungsliste: Suche, Filter, Sortierung (M)
+### 5.1 Rechnungsliste: Suche, Filter, Sortierung (M) — ✅ umgesetzt 07.07.2026
+(Suche Firma/Nummer/Beschreibung, Status- und Kostengruppen-Filter inkl.
+Mehrfach-Zuordnungen, sortierbare Spalten Datum/Betrag. Zeitraumfilter
+bewusst weggelassen — bei Bedarf nachrüstbar.)
 Die Rechnungstabelle hat weder Suche noch Filter (Dokumente haben beides).
 **Umsetzung:** Suchfeld (Firma/Nummer/Beschreibung), Filter für Status und
 Kostengruppe, sortierbare Spalten (Datum, Betrag), optional Zeitraumfilter.

@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import {
-  Loader2, Trash2, Edit, Save, CreditCard, Plus, Link2,
+  Loader2, Trash2, Edit, Save, CreditCard, Plus, Link2, Search, ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -87,6 +87,13 @@ export const Invoices: React.FC = () => {
   // Destructive actions require explicit confirmation
   const [resetTarget, setResetTarget] = useState<Invoice | null>(null);
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
+
+  // List search / filter / sort
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterKg, setFilterKg] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [editFormData, setEditFormData] = useState({
     company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '', is_gross: true,
@@ -346,6 +353,47 @@ export const Invoices: React.FC = () => {
     return activeEstimateItems.filter(ei => ei.kostengruppe_code === kgCode);
   };
 
+  // Cost groups actually used by invoices (incl. multi-allocations) for the filter
+  const usedKgCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const inv of invoices) {
+      for (const a of getEffectiveAllocations(inv)) codes.add(a.kostengruppe_code);
+    }
+    return Array.from(codes).sort();
+  }, [invoices, getEffectiveAllocations]);
+
+  // Filtered + sorted list
+  const visibleInvoices = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const list = invoices.filter((inv) => {
+      if (filterStatus !== 'all' && ((inv.status as InvoiceStatus) || 'draft') !== filterStatus) return false;
+      if (filterKg !== 'all' && !getEffectiveAllocations(inv).some((a) => a.kostengruppe_code === filterKg)) return false;
+      if (q) {
+        const haystack = `${inv.company_name} ${inv.invoice_number || ''} ${inv.description || ''}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) =>
+      sortBy === 'amount'
+        ? (Number(a.amount) - Number(b.amount)) * dir
+        : (new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()) * dir
+    );
+  }, [invoices, searchQuery, filterStatus, filterKg, sortBy, sortDir, getEffectiveAllocations]);
+
+  const toggleSort = (key: 'date' | 'amount') => {
+    if (sortBy === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(key);
+      setSortDir('desc');
+    }
+  };
+
+  const sortIndicator = (key: 'date' | 'amount') =>
+    sortBy === key ? (sortDir === 'asc' ? <ArrowUp className="inline h-3 w-3" /> : <ArrowDown className="inline h-3 w-3" />) : <ArrowUpDown className="inline h-3 w-3 opacity-40" />;
+
   // Pie chart data — actual payments are the primary source, with
   // splits / paid_by as legacy fallback for old records.
   const pieData = useMemo(() => {
@@ -486,22 +534,69 @@ export const Invoices: React.FC = () => {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Alle Rechnungen ({invoices.length})</CardTitle>
+              <CardTitle>
+                Alle Rechnungen ({visibleInvoices.length === invoices.length
+                  ? invoices.length
+                  : `${visibleInvoices.length} von ${invoices.length}`})
+              </CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Search & Filter */}
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-10"
+                    placeholder="Suche nach Firma, Rechnungsnummer oder Beschreibung…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Alle Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Alle Status</SelectItem>
+                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                      <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filterKg} onValueChange={setFilterKg}>
+                  <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Alle Kostengruppen" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Alle Kostengruppen</SelectItem>
+                    {usedKgCodes.map((code) => {
+                      const kg = getKostengruppeByCode(code);
+                      return <SelectItem key={code} value={code}>{kg ? `${kg.code} - ${kg.name}` : code}</SelectItem>;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {visibleInvoices.length === 0 ? (
+                <p className="py-8 text-center text-muted-foreground">Keine Rechnungen entsprechen der Suche/den Filtern.</p>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Datum</TableHead>
+                    <TableHead>
+                      <button className="flex items-center gap-1" onClick={() => toggleSort('date')}>
+                        Datum {sortIndicator('date')}
+                      </button>
+                    </TableHead>
                     <TableHead>Firma</TableHead>
                     <TableHead className="hidden md:table-cell">Kostengruppe</TableHead>
-                    <TableHead className="text-right">Betrag</TableHead>
+                    <TableHead className="text-right">
+                      <button className="ml-auto flex items-center gap-1" onClick={() => toggleSort('amount')}>
+                        Betrag {sortIndicator('amount')}
+                      </button>
+                    </TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aktionen</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {invoices.map((invoice) => {
+                  {visibleInvoices.map((invoice) => {
                     const status = (invoice.status as InvoiceStatus) || 'draft';
                     const statusCfg = STATUS_CONFIG[status];
                     const totalPaid = getTotalPaid(invoice.id);
@@ -581,6 +676,7 @@ export const Invoices: React.FC = () => {
                   })}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
         )}

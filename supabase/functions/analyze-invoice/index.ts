@@ -31,8 +31,19 @@ const DIN276_CATEGORIES = `
 800 - Finanzierung (Finanzierungsnebenkosten, Zinsen)
 `;
 
-// Maximum allowed payload size (500KB)
-const MAX_PAYLOAD_SIZE = 500 * 1024;
+// Maximum allowed payload size (5MB, images are sent base64-encoded)
+const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024;
+
+/**
+ * Truncate long document text while keeping both the beginning (header,
+ * company, invoice number) and the end (totals, payment terms).
+ */
+function truncateKeepingEnds(text: string, maxLen = 10000): string {
+  if (text.length <= maxLen) return text;
+  const headLen = Math.floor(maxLen * 0.6);
+  const tailLen = maxLen - headLen;
+  return `${text.substring(0, headLen)}\n\n[... gekürzt ...]\n\n${text.substring(text.length - tailLen)}`;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -87,19 +98,19 @@ serve(async (req) => {
       );
     }
 
-    const { pdfContent, fileName } = await req.json();
+    const { pdfContent, textContent, imageBase64, fileName } = await req.json();
+    const text = textContent || pdfContent; // pdfContent = legacy param name
 
-    if (!pdfContent) {
+    if (!text && !imageBase64) {
       return new Response(
-        JSON.stringify({ error: "PDF content is required" }),
+        JSON.stringify({ error: "textContent or imageBase64 is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Validate input size
-    if (typeof pdfContent !== "string" || pdfContent.length > MAX_PAYLOAD_SIZE) {
+    if (text && (typeof text !== "string" || text.length > MAX_PAYLOAD_SIZE)) {
       return new Response(
-        JSON.stringify({ error: "PDF content too large or invalid" }),
+        JSON.stringify({ error: "Text content too large or invalid" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -116,25 +127,45 @@ serve(async (req) => {
     const systemPrompt = `Du bist ein Experte für deutsche Baurechnungen und die DIN 276 Kostenstruktur.
 Analysiere die Rechnung und extrahiere folgende Informationen:
 - Rechnungsnummer
-- Gesamtbetrag (nur die Zahl, z.B. 1234.56)
+- Gesamtbetrag BRUTTO, also inklusive MwSt (nur die Zahl mit Punkt als Dezimaltrenner, z.B. 1234.56 — achte auf deutsche Zahlenformate: "1.234,56 €" bedeutet 1234.56)
 - Rechnungsdatum (im Format YYYY-MM-DD)
 - Firmenname/Rechnungssteller
 - Kurze Beschreibung der Leistung
 - Die passende DIN 276 Kostengruppe (3-stelliger Code wenn möglich, z.B. 311, 421, 731)
 
+Der Gesamtbetrag steht meist am ENDE des Dokuments (Zeilen wie "Gesamtbetrag", "Rechnungsbetrag", "zu zahlen", "Bruttobetrag").
+Wenn du dir bei einem Feld nicht sicher bist, setze es auf null statt zu raten.
+
 DIN 276 Kategorien:
 ${DIN276_CATEGORIES}
 
-Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
+Antworte NUR mit gültigem JSON im folgenden Format, ohne zusätzlichen Text und ohne Markdown-Codeblöcke:
 {
   "invoice_number": "string oder null",
-  "amount": number,
-  "invoice_date": "YYYY-MM-DD",
-  "company_name": "string",
+  "amount": "number oder null",
+  "invoice_date": "YYYY-MM-DD oder null",
+  "company_name": "string oder null",
   "description": "string",
-  "kostengruppe_code": "3-stelliger Code",
+  "kostengruppe_code": "3-stelliger Code oder null",
   "kostengruppe_reasoning": "Kurze Begründung für die Zuordnung"
 }`;
+
+    const userContent: Array<Record<string, unknown>> = [];
+    if (imageBase64) {
+      userContent.push({
+        type: "image_url",
+        image_url: { url: `data:image/jpeg;base64,${imageBase64}` },
+      });
+      userContent.push({
+        type: "text",
+        text: `Analysiere diese Rechnung (Dateiname: ${fileName}).`,
+      });
+    } else {
+      userContent.push({
+        type: "text",
+        text: `Analysiere diese Rechnung (Dateiname: ${fileName}):\n\n${truncateKeepingEnds(text)}`,
+      });
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -146,10 +177,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
-          { 
-            role: "user", 
-            content: `Analysiere diese Rechnung (Dateiname: ${fileName}):\n\n${pdfContent}` 
-          },
+          { role: "user", content: userContent },
         ],
       }),
     });

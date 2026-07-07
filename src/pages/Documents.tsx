@@ -16,6 +16,7 @@ import { useOffers } from '@/hooks/useOffers';
 import { extractTextFromPDF } from '@/utils/pdfExtractor';
 import { extractTextFromExcel } from '@/utils/excelExtractor';
 import { fileToBase64, fetchFileAsBase64 } from '@/utils/imageToBase64';
+import { buildAnalysisBody } from '@/utils/analyzeFile';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
@@ -104,6 +105,7 @@ export const Documents: React.FC = () => {
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [isZipOpen, setIsZipOpen] = useState(false);
   const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
+  const [invoiceAiLoading, setInvoiceAiLoading] = useState(false);
   // Store full AI result for invoice creation
   const [pendingAiResult, setPendingAiResult] = useState<AiResult | null>(null);
   // Editable invoice fields (prefilled by AI, always correctable by the user)
@@ -122,6 +124,49 @@ export const Documents: React.FC = () => {
   /** The linked invoice is the master record for invoice-typed documents. */
   const getLinkedInvoice = (doc: Document) =>
     doc.invoice_id ? invoices.find((i) => i.id === doc.invoice_id) || null : null;
+
+  /**
+   * Second AI pass, dedicated to invoice extraction: fills the EMPTY invoice
+   * fields from the uploaded file. User-entered values are never overwritten.
+   */
+  const runInvoiceAiPass = async () => {
+    const path = editingDoc?.file_path || uploadedFile?.path;
+    const name = editingDoc?.file_name || uploadedFile?.name;
+    if (!path || !name) return;
+
+    setInvoiceAiLoading(true);
+    try {
+      const url = await getDocumentUrl(path);
+      if (!url) throw new Error('Datei nicht verfügbar');
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const body = await buildAnalysisBody(new File([blob], name));
+
+      const { data: functionData, error: functionError } = await supabase.functions.invoke('analyze-invoice', { body });
+      if (functionError) throw new Error(functionError.message);
+      if (!functionData?.data) throw new Error('Keine Daten von der KI erhalten');
+
+      const ai = functionData.data as {
+        company_name?: string | null; invoice_number?: string | null;
+        amount?: number | null; invoice_date?: string | null; kostengruppe_code?: string | null;
+      };
+      setInvoiceForm((prev) => ({
+        company_name: prev.company_name || ai.company_name || '',
+        invoice_number: prev.invoice_number || ai.invoice_number || '',
+        amount: prev.amount || (ai.amount != null ? String(ai.amount) : ''),
+        invoice_date: prev.invoice_date || ai.invoice_date || '',
+        kostengruppe_code: prev.kostengruppe_code || ai.kostengruppe_code || '',
+      }));
+      toast({ title: 'KI-Ergänzung abgeschlossen', description: 'Leere Felder wurden ausgefüllt — bitte prüfen.' });
+    } catch (err) {
+      toast({
+        title: 'KI-Ergänzung fehlgeschlagen',
+        description: err instanceof Error ? err.message : 'Unbekannter Fehler',
+        variant: 'destructive',
+      });
+    }
+    setInvoiceAiLoading(false);
+  };
 
   /**
    * Validate the editable invoice fields. Returns an error message or null.
@@ -561,9 +606,17 @@ export const Documents: React.FC = () => {
       {/* Editable invoice fields */}
       {showInvoiceFields && (
         <div className="col-span-2 space-y-3 rounded-lg border border-orange-200 bg-orange-50/50 p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-orange-800">
-            <Receipt className="h-4 w-4" />
-            Rechnungsdaten – bitte prüfen und ggf. korrigieren
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-orange-800">
+              <Receipt className="h-4 w-4" />
+              Rechnungsdaten – bitte prüfen und ggf. korrigieren
+            </div>
+            {(editingDoc?.file_path || uploadedFile?.path) && (
+              <Button type="button" size="sm" variant="outline" onClick={runInvoiceAiPass} disabled={invoiceAiLoading}>
+                {invoiceAiLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
+                Per KI ergänzen
+              </Button>
+            )}
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">

@@ -1,6 +1,7 @@
 import * as XLSX from '@e965/xlsx';
-import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoiceSplit, InvoicePayment } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoiceSplit, InvoicePayment, InvoiceDeduction, DEDUCTION_TYPE_LABELS } from '@/lib/types';
 import { getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
+import { getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 
@@ -14,6 +15,7 @@ interface ExportData {
   comparisons: CostComparison[];
   splits?: InvoiceSplit[];
   payments?: InvoicePayment[];
+  deductions?: InvoiceDeduction[];
 }
 
 export function exportToExcel(data: ExportData, fileName: string = 'hausbau-export') {
@@ -43,6 +45,19 @@ function createSummarySheet(data: ExportData): SheetRow[] {
   const totalActual = data.comparisons.reduce((sum, c) => sum + c.actual, 0);
   const paidInvoices = data.invoices.filter(i => i.is_paid);
   const unpaidInvoices = data.invoices.filter(i => !i.is_paid);
+  const deductions = data.deductions || [];
+  const payments = data.payments || [];
+
+  // Zahlbetrag-basierte Summen: Abzüge (Skonto, Einbehalte …) reduzieren,
+  // was tatsächlich zu überweisen ist.
+  const totalDeductions = deductions.reduce((s, d) => s + Number(d.amount), 0);
+  const totalRetention = deductions
+    .filter(d => d.deduction_type === 'sicherheitseinbehalt')
+    .reduce((s, d) => s + Number(d.amount), 0);
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const totalPayable = data.invoices
+    .filter(i => i.status !== 'cancelled')
+    .reduce((s, i) => s + getPayableAmount(Number(i.amount), deductions.filter(d => d.invoice_id === i.id)), 0);
 
   return [
     ['HAUSBAU KOSTEN-ÜBERSICHT'],
@@ -59,20 +74,28 @@ function createSummarySheet(data: ExportData): SheetRow[] {
     ['Anzahl Rechnungen gesamt', data.invoices.length],
     ['Davon bezahlt', paidInvoices.length],
     ['Davon offen', unpaidInvoices.length],
-    ['Summe bezahlt', formatCurrency(paidInvoices.reduce((s, i) => s + Number(i.amount), 0))],
-    ['Summe offen', formatCurrency(unpaidInvoices.reduce((s, i) => s + Number(i.amount), 0))],
+    ['Rechnungssumme gesamt', formatCurrency(data.invoices.reduce((s, i) => s + Number(i.amount), 0))],
+    ['Summe Abzüge (Skonto, Einbehalte, …)', formatCurrency(totalDeductions)],
+    ['Davon Sicherheitseinbehalte (können noch fällig werden)', formatCurrency(totalRetention)],
+    ['Zahlbetrag gesamt (nach Abzügen)', formatCurrency(totalPayable)],
+    ['Summe bezahlt (erfasste Zahlungen)', formatCurrency(totalPaid)],
+    ['Summe offen (Zahlbetrag − bezahlt)', formatCurrency(Math.max(totalPayable - totalPaid, 0))],
   ];
 }
 
 function createInvoicesSheet(data: ExportData): SheetRow[] {
   const header = [
     'Rechnungsnr.', 'Datum', 'Firma', 'Beschreibung', 'Kostengruppe',
-    'Betrag', 'Brutto/Netto', 'Status', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
+    'Betrag', 'Abzüge', 'Zahlbetrag', 'Brutto/Netto', 'Status', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
   ];
 
   const rows = data.invoices.map(inv => {
     const kg = data.kostengruppen.find(k => k.code === inv.kostengruppe_code);
     const invSplits = (data.splits || []).filter(s => s.invoice_id === inv.id);
+    const invDeductions = (data.deductions || []).filter(d => d.invoice_id === inv.id);
+    const deductionInfo = invDeductions.length > 0
+      ? invDeductions.map(d => `${d.deduction_type === 'sonstiges' && d.label ? d.label : DEDUCTION_TYPE_LABELS[d.deduction_type]}: ${formatCurrency(Number(d.amount))}`).join('; ')
+      : '-';
     let payerInfo = '-';
     if (invSplits.length > 0) {
       payerInfo = invSplits.map(s => {
@@ -91,6 +114,8 @@ function createInvoicesSheet(data: ExportData): SheetRow[] {
       inv.description || '-',
       kg ? `${kg.code} - ${kg.name}` : inv.kostengruppe_code || '-',
       Number(inv.amount),
+      deductionInfo,
+      getPayableAmount(Number(inv.amount), invDeductions),
       inv.is_gross ? 'Brutto' : 'Netto',
       inv.status || (inv.is_paid ? 'paid' : 'draft'),
       inv.is_paid ? 'Ja' : 'Nein',

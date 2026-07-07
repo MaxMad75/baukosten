@@ -67,7 +67,7 @@ interface AllocationRow {
 
 export const Invoices: React.FC = () => {
   const { invoices, loading, updateInvoice, deleteInvoice, fetchInvoices } = useInvoices();
-  const { getPaymentsForInvoice, getTotalPaid, addPayment, deletePayment, deleteAllPayments, fetchAllPayments } = useInvoicePayments();
+  const { allPayments, getPaymentsForInvoice, getTotalPaid, addPayment, deletePayment, deleteAllPayments, fetchAllPayments } = useInvoicePayments();
   const { getAllocationsForInvoice, getEffectiveAllocations, saveAllocations, fetchAllAllocations } = useInvoiceAllocations();
   const { getKostengruppeByCode } = useKostengruppen();
   const { estimateItems: activeEstimateItems } = useEstimates();
@@ -433,7 +433,7 @@ export const Invoices: React.FC = () => {
         </div>
 
         {/* Statistics Cards */}
-        <InvoiceStatsCards invoices={invoices} formatAmount={formatAmount} />
+        <InvoiceStatsCards invoices={invoices} deductions={allDeductions} payments={allPayments} formatAmount={formatAmount} />
 
         {/* Sicherheitseinbehalte — einbehalten, kann später noch fällig werden */}
         {(() => {

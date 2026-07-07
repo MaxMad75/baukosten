@@ -205,12 +205,12 @@ einen Export in einen separaten Storage-Bucket legt; Aufbewahrung 8 Wochen.
 
 ## Neue Kandidaten (aus Nutzung entstanden, noch nicht priorisiert)
 
-### N.1 Abzüge im Excel-Export ausweisen (S)
+### N.1 Abzüge im Excel-Export ausweisen (S) — ✅ umgesetzt 07.07.2026
 Der Export (Rechnungen-Blatt, Übersicht) rechnet mit dem Rechnungsbetrag;
 Abzüge und Zahlbetrag fehlen. Spalten „Abzüge" und „Zahlbetrag" ergänzen,
 Sicherheitseinbehalte als eigene Zeile in der Zusammenfassung.
 
-### N.2 Statistik-Karten auf Zahlbetrag umstellen (S)
+### N.2 Statistik-Karten auf Zahlbetrag umstellen (S) — ✅ umgesetzt 07.07.2026
 „Bezahlt"/„Offen" auf der Rechnungsseite basieren auf dem Rechnungsbetrag;
 mit Abzügen überzeichnet das den tatsächlichen Geldabfluss. Karten auf
 Zahlungssummen (invoice_payments) bzw. Zahlbeträge umstellen.

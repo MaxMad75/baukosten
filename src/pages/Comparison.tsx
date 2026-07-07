@@ -8,7 +8,7 @@ import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
 import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { useOffers } from '@/hooks/useOffers';
-import { Invoice, ArchitectEstimateItem, Offer, OfferItem, TaxStatus } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, InvoiceSplit, Offer, OfferItem, TaxStatus } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -79,7 +79,7 @@ export const Comparison: React.FC = () => {
   const toggleOffer = (id: string) => {
     setSelectedOfferIds(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -108,7 +108,7 @@ export const Comparison: React.FC = () => {
   const toggleRow = (code: string) => {
     setOpenRows(prev => {
       const next = new Set(prev);
-      next.has(code) ? next.delete(code) : next.add(code);
+      if (next.has(code)) next.delete(code); else next.add(code);
       return next;
     });
   };
@@ -116,7 +116,7 @@ export const Comparison: React.FC = () => {
   const toggleTradeRow = (tradeId: string) => {
     setOpenTradeRows(prev => {
       const next = new Set(prev);
-      next.has(tradeId) ? next.delete(tradeId) : next.add(tradeId);
+      if (next.has(tradeId)) next.delete(tradeId); else next.add(tradeId);
       return next;
     });
   };
@@ -489,7 +489,7 @@ function buildTradeGroup(tradeId: string, children: ComparisonRow[]): TradeCompa
 function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offersActive }: {
   row: ComparisonRow;
   formatCurrency: (n: number) => string;
-  getSplitsForInvoice: (id: string) => any[];
+  getSplitsForInvoice: (id: string) => InvoiceSplit[];
   profiles: { id: string; name: string }[];
   offersActive: boolean;
 }) {
@@ -582,7 +582,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
                     </div>
                     {splits.length > 0 && (
                       <div className="ml-4 text-xs text-muted-foreground">
-                        {splits.map((s: any) => {
+                        {splits.map((s) => {
                           const p = profiles.find(pr => pr.id === s.profile_id);
                           return <span key={s.id} className="mr-2">{p?.name || '?'}: {formatCurrency(Number(s.amount))}</span>;
                         })}

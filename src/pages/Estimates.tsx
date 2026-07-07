@@ -205,7 +205,7 @@ export const Estimates: React.FC = () => {
   // Pre-analysis result
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [showNotEstimateWarning, setShowNotEstimateWarning] = useState(false);
-  const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<any>(null);
+  const [pendingAnalysisPayload, setPendingAnalysisPayload] = useState<{ textContent?: string; fileBase64?: string; fileName: string } | null>(null);
 
   // Redundancy warning after import
   const [redundancyWarnings, setRedundancyWarnings] = useState<Array<{ importedLabel: string; manualLabel: string; codes: string[] }>>([]);
@@ -763,7 +763,7 @@ export const Estimates: React.FC = () => {
       notes: editFormData.notes || null,
       is_gross: editFormData.tax_status === 'gross',
       tax_status: editFormData.tax_status,
-    } as any);
+    });
     if (success) {
       toast({ title: 'Erfolg', description: 'Position wurde aktualisiert.' });
       cancelEditing();
@@ -1348,7 +1348,7 @@ export const Estimates: React.FC = () => {
                           </TableRow>
                         );
                       })}
-                      <VatSummaryRows items={extractedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), tax_status: (i as any).tax_status || (i.is_gross ? 'gross' : 'net') as TaxStatus }))} colSpan={3} />
+                      <VatSummaryRows items={extractedItems.map(i => ({ estimated_amount: Number(i.estimated_amount), tax_status: i.tax_status || (i.is_gross ? 'gross' : 'net') as TaxStatus }))} colSpan={3} />
                     </TableBody>
                   </Table>
 

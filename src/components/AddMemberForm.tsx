@@ -30,7 +30,7 @@ export function AddMemberForm({ onMemberAdded }: AddMemberFormProps) {
         name: name.trim(),
         iban: iban.trim() || null,
         household_id: household.id,
-        user_id: null as any, // placeholder profile without login
+        user_id: null as unknown as string, // placeholder profile without login
       });
 
     if (error) {

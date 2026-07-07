@@ -78,7 +78,7 @@ export function useOffers() {
         is_gross: data.is_gross ?? true,
         notes: data.notes || null,
         created_by_profile_id: profile?.id || null,
-      } as any)
+      })
       .select()
       .single();
 
@@ -94,7 +94,7 @@ export function useOffers() {
   const updateOffer = async (id: string, updates: Partial<Offer>) => {
     const { error } = await supabase
       .from('offers')
-      .update(updates as any)
+      .update(updates)
       .eq('id', id);
 
     if (error) {
@@ -147,7 +147,7 @@ export function useOffers() {
           amount: item.amount,
           description: item.description || null,
           is_gross: item.is_gross ?? true,
-        })) as any);
+        })));
 
       if (error) {
         toast({ title: 'Fehler', description: 'Angebotspositionen konnten nicht gespeichert werden', variant: 'destructive' });
@@ -157,7 +157,7 @@ export function useOffers() {
 
     // Update total on offer
     const total = items.reduce((sum, i) => sum + (i.amount || 0), 0);
-    await supabase.from('offers').update({ total_amount: total } as any).eq('id', offerId);
+    await supabase.from('offers').update({ total_amount: total }).eq('id', offerId);
     await fetchOffers();
     toast({ title: 'Erfolg', description: 'Angebotspositionen gespeichert' });
     return true;

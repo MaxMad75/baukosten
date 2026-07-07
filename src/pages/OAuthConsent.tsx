@@ -4,10 +4,31 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+// The OAuth authorization API is provided by @lovable.dev/cloud-auth-js at
+// runtime but is not part of the supabase-js type surface.
+interface AuthorizationDetails {
+  client?: { name?: string };
+  redirect_url?: string;
+  redirect_to?: string;
+}
+
+interface OAuthResult {
+  data: AuthorizationDetails | null;
+  error: { message: string } | null;
+}
+
+interface OAuthApi {
+  getAuthorizationDetails: (id: string) => Promise<OAuthResult>;
+  approveAuthorization: (id: string) => Promise<OAuthResult>;
+  denyAuthorization: (id: string) => Promise<OAuthResult>;
+}
+
+const getOAuthApi = (): OAuthApi => (supabase.auth as unknown as { oauth: OAuthApi }).oauth;
+
 export default function OAuthConsent() {
   const [params] = useSearchParams();
   const authorizationId = params.get("authorization_id") ?? "";
-  const [details, setDetails] = useState<any>(null);
+  const [details, setDetails] = useState<AuthorizationDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -21,7 +42,7 @@ export default function OAuthConsent() {
         window.location.href = "/auth?next=" + encodeURIComponent(next);
         return;
       }
-      const { data, error } = await (supabase.auth as any).oauth.getAuthorizationDetails(authorizationId);
+      const { data, error } = await getOAuthApi().getAuthorizationDetails(authorizationId);
       if (!active) return;
       if (error) return setError(error.message);
       const immediate = data?.redirect_url ?? data?.redirect_to;
@@ -38,7 +59,7 @@ export default function OAuthConsent() {
 
   async function decide(approve: boolean) {
     setBusy(true);
-    const oauth = (supabase.auth as any).oauth;
+    const oauth = getOAuthApi();
     const { data, error } = approve
       ? await oauth.approveAuthorization(authorizationId)
       : await oauth.denyAuthorization(authorizationId);

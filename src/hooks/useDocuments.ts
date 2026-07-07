@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { errorMessage } from '@/lib/utils';
 
 export interface Document {
   id: string;
@@ -53,7 +54,7 @@ export function useDocuments() {
     if (!household) return null;
     const sanitizedName = file.name
       .replace(/[äÄ]/g, 'ae').replace(/[öÖ]/g, 'oe').replace(/[üÜ]/g, 'ue').replace(/[ß]/g, 'ss')
-      .replace(/[^a-zA-Z0-9.\-]/g, '_')
+      .replace(/[^a-zA-Z0-9.-]/g, '_')
       .replace(/_{2,}/g, '_');
     const filePath = `${household.id}/${Date.now()}_${sanitizedName}`;
     const { error } = await supabase.storage.from('documents').upload(filePath, file);
@@ -179,9 +180,9 @@ export function useDocuments() {
         });
         success++;
         results.push({ name: file.name, ok: true });
-      } catch (err: any) {
+      } catch (err) {
         failed++;
-        results.push({ name: file.name, ok: false, error: err?.message || 'Unbekannter Fehler' });
+        results.push({ name: file.name, ok: false, error: errorMessage(err, 'Unbekannter Fehler') });
       }
     }
 

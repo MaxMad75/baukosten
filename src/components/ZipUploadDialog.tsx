@@ -14,6 +14,7 @@ import { fileToBase64 } from '@/utils/imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
 import { useContractors } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
+import { errorMessage } from '@/lib/utils';
 import { Loader2, FileText, Image, FileSpreadsheet, Check, X, Archive, AlertTriangle } from 'lucide-react';
 
 interface ZipUploadDialogProps {
@@ -101,8 +102,8 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
           })
         );
         setEntries(extracted);
-      } catch (err: any) {
-        toast({ title: 'Fehler', description: err.message || 'ZIP konnte nicht entpackt werden', variant: 'destructive' });
+      } catch (err) {
+        toast({ title: 'Fehler', description: errorMessage(err, 'ZIP konnte nicht entpackt werden'), variant: 'destructive' });
         onOpenChange(false);
       }
       setExtracting(false);
@@ -163,7 +164,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         if (analyzableExts.includes(ext)) {
           updateFileStatus(entry.name, 'analyzing');
           try {
-            let body: Record<string, string> = { fileName: file.name };
+            const body: Record<string, string> = { fileName: file.name };
             if (ext === '.pdf') {
               body.textContent = await extractTextFromPDF(file);
             } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
@@ -208,8 +209,8 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
         if (entry.hash) uploadedHashes.add(entry.hash);
         updateFileStatus(entry.name, 'done');
         successCount++;
-      } catch (err: any) {
-        updateFileStatus(entry.name, 'error', err?.message || 'Unbekannter Fehler');
+      } catch (err) {
+        updateFileStatus(entry.name, 'error', errorMessage(err, 'Unbekannter Fehler'));
       }
     }
 

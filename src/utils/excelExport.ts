@@ -4,6 +4,8 @@ import { getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 
+type SheetRow = (string | number)[];
+
 interface ExportData {
   invoices: Invoice[];
   estimateItems: ArchitectEstimateItem[];
@@ -36,7 +38,7 @@ export function exportToExcel(data: ExportData, fileName: string = 'hausbau-expo
   XLSX.writeFile(workbook, `${fileName}_${dateStr}.xlsx`);
 }
 
-function createSummarySheet(data: ExportData): any[][] {
+function createSummarySheet(data: ExportData): SheetRow[] {
   const totalEstimated = data.comparisons.reduce((sum, c) => sum + c.estimated, 0);
   const totalActual = data.comparisons.reduce((sum, c) => sum + c.actual, 0);
   const paidInvoices = data.invoices.filter(i => i.is_paid);
@@ -62,7 +64,7 @@ function createSummarySheet(data: ExportData): any[][] {
   ];
 }
 
-function createInvoicesSheet(data: ExportData): any[][] {
+function createInvoicesSheet(data: ExportData): SheetRow[] {
   const header = [
     'Rechnungsnr.', 'Datum', 'Firma', 'Beschreibung', 'Kostengruppe',
     'Betrag', 'Brutto/Netto', 'Status', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
@@ -90,7 +92,7 @@ function createInvoicesSheet(data: ExportData): any[][] {
       kg ? `${kg.code} - ${kg.name}` : inv.kostengruppe_code || '-',
       Number(inv.amount),
       inv.is_gross ? 'Brutto' : 'Netto',
-      (inv as any).status || (inv.is_paid ? 'paid' : 'draft'),
+      inv.status || (inv.is_paid ? 'paid' : 'draft'),
       inv.is_paid ? 'Ja' : 'Nein',
       inv.payment_date ? format(new Date(inv.payment_date), 'dd.MM.yyyy', { locale: de }) : '-',
       payerInfo,
@@ -101,7 +103,7 @@ function createInvoicesSheet(data: ExportData): any[][] {
   return [header, ...rows];
 }
 
-function createComparisonSheet(data: ExportData): any[][] {
+function createComparisonSheet(data: ExportData): SheetRow[] {
   const header = ['Kostengruppe', 'Bezeichnung', 'Soll (geschätzt)', 'Ist (tatsächlich)', 'Differenz', 'Abweichung %'];
 
   const rows = data.comparisons.map(c => [
@@ -120,7 +122,7 @@ function createComparisonSheet(data: ExportData): any[][] {
   return [header, ...rows, [], totalRow];
 }
 
-function createByKostengruppeSheet(data: ExportData): any[][] {
+function createByKostengruppeSheet(data: ExportData): SheetRow[] {
   const grouped: Record<string, { name: string; invoices: Invoice[] }> = {};
 
   data.invoices.forEach(inv => {
@@ -132,7 +134,7 @@ function createByKostengruppeSheet(data: ExportData): any[][] {
     grouped[code].invoices.push(inv);
   });
 
-  const result: any[][] = [['KOSTEN NACH KOSTENGRUPPE']];
+  const result: SheetRow[] = [['KOSTEN NACH KOSTENGRUPPE']];
 
   Object.entries(grouped)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -154,8 +156,8 @@ function createByKostengruppeSheet(data: ExportData): any[][] {
   return result;
 }
 
-function createByPayerSheet(data: ExportData): any[][] {
-  const result: any[][] = [['ZAHLUNGEN NACH PERSON (inkl. Aufteilungen)']];
+function createByPayerSheet(data: ExportData): SheetRow[] {
+  const result: SheetRow[] = [['ZAHLUNGEN NACH PERSON (inkl. Aufteilungen)']];
   const splits = data.splits || [];
   const payments = data.payments || [];
 

@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel } from '@/utils/excelExport';
 import { createBackupZip, downloadBlob, restoreBackupZip } from '@/utils/backup';
 import { CostComparison } from '@/lib/types';
+import { errorMessage } from '@/lib/utils';
 import { Download, FileSpreadsheet, Loader2, Archive, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
@@ -77,8 +78,8 @@ export const Export: React.FC = () => {
       });
       downloadBlob(blob, household.name);
       toast({ title: 'Backup erstellt', description: 'Das vollständige Backup wurde heruntergeladen.' });
-    } catch (err: any) {
-      toast({ title: 'Fehler', description: err?.message || 'Backup konnte nicht erstellt werden.', variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Fehler', description: errorMessage(err, 'Backup konnte nicht erstellt werden.'), variant: 'destructive' });
     } finally {
       setBackupProgress(null);
       setBackupPercent(0);
@@ -124,8 +125,8 @@ export const Export: React.FC = () => {
       } else {
         toast({ title: 'Fehler', description: result.message, variant: 'destructive' });
       }
-    } catch (err: any) {
-      toast({ title: 'Fehler', description: err?.message || 'Wiederherstellung fehlgeschlagen.', variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Fehler', description: errorMessage(err, 'Wiederherstellung fehlgeschlagen.'), variant: 'destructive' });
     } finally {
       setRestoreProgress(null);
       setRestorePercent(0);

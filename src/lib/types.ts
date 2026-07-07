@@ -132,6 +132,7 @@ export interface ExtractedEstimateData {
     estimated_amount: number;
     notes: string;
     is_gross: boolean;
+    tax_status?: TaxStatus;
   }>;
   total: number;
 }

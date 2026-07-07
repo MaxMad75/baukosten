@@ -152,7 +152,7 @@ export const Offers: React.FC = () => {
     setItemRows(prev => prev.filter((_, i) => i !== index));
   };
 
-  const updateItemRow = (index: number, field: keyof OfferItemRow, value: any) => {
+  const updateItemRow = (index: number, field: keyof OfferItemRow, value: OfferItemRow[keyof OfferItemRow]) => {
     setItemRows(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
   };
 

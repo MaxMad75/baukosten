@@ -39,13 +39,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let ownIban: string | null = null;
       const { data: ibanData } = await supabase.rpc('get_my_iban');
       if (typeof ibanData === 'string') ownIban = ibanData;
-      setProfile({ ...(profileData as any), iban: ownIban } as Profile);
+      setProfile({ ...profileData, iban: ownIban } as Profile);
 
       // Fetch household
       const { data: householdData } = await supabase
         .from('households')
         .select('*')
-        .eq('id', (profileData as any).household_id)
+        .eq('id', profileData.household_id)
         .single();
 
       if (householdData) {
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: profiles } = await supabase
         .from('profiles')
         .select(profileCols)
-        .eq('household_id', (profileData as any).household_id);
+        .eq('household_id', profileData.household_id);
 
       if (profiles) {
         setHouseholdProfiles(profiles as unknown as Profile[]);

@@ -7,6 +7,7 @@ import {
   BACKUP_SCHEMA_VERSION,
 } from './types';
 import { format } from 'date-fns';
+import type { Tables } from '@/integrations/supabase/types';
 
 interface ExportContext {
   householdId: string;
@@ -48,10 +49,10 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
 
   // 3. Invoice splits, payments, allocations
   progress('Kostenaufteilungen laden…');
-  const invoiceIds = (invoices || []).map((i: any) => i.id);
-  let splits: any[] = [];
-  let payments: any[] = [];
-  let allocations: any[] = [];
+  const invoiceIds = (invoices || []).map((i) => i.id);
+  let splits: Tables<'invoice_splits'>[] = [];
+  let payments: Tables<'invoice_payments'>[] = [];
+  let allocations: Tables<'invoice_allocations'>[] = [];
   if (invoiceIds.length > 0) {
     const { data: splitsData } = await supabase
       .from('invoice_splits')
@@ -79,8 +80,8 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     .select('*')
     .eq('household_id', householdId);
 
-  let estimateItems: any[] = [];
-  const estimateIds = (estimates || []).map((e: any) => e.id);
+  let estimateItems: Tables<'architect_estimate_items'>[] = [];
+  const estimateIds = (estimates || []).map((e) => e.id);
   if (estimateIds.length > 0) {
     const { data } = await supabase
       .from('architect_estimate_items')
@@ -94,8 +95,8 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     .from('estimate_versions')
     .select('id')
     .eq('household_id', householdId);
-  const versionIds = (versionRows || []).map((v: any) => v.id);
-  let estimateBlocks: any[] = [];
+  const versionIds = (versionRows || []).map((v) => v.id);
+  let estimateBlocks: Tables<'estimate_blocks'>[] = [];
   if (versionIds.length > 0) {
     const { data } = await supabase
       .from('estimate_blocks')
@@ -182,9 +183,10 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
   // 9. Build backup.json
   progress('Backup erstellen…');
 
-  const stripHouseholdId = (obj: any) => {
-    const { household_id, ...rest } = obj;
-    return rest;
+  const stripHouseholdId = <T extends object>(obj: T): Omit<T, 'household_id'> => {
+    const rest = { ...obj } as Record<string, unknown>;
+    delete rest.household_id;
+    return rest as Omit<T, 'household_id'>;
   };
 
   const backupData: BackupData = {
@@ -197,7 +199,7 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       created_at: ctx.householdCreatedAt,
     },
     data: {
-      profiles: (profiles || []).map((p: any) => ({
+      profiles: (profiles || []).map((p) => ({
         id: p.id,
         user_id: p.user_id,
         name: p.name,
@@ -205,16 +207,16 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
         created_at: p.created_at,
         updated_at: p.updated_at,
       })),
-      invoices: (invoices || []).map((i: any) => stripHouseholdId(i)),
-      invoiceSplits: splits.map((s: any) => ({ ...s })),
-      invoicePayments: payments.map((p: any) => ({ ...p })),
-      invoiceAllocations: allocations.map((a: any) => ({ ...a })),
-      estimates: (estimates || []).map((e: any) => stripHouseholdId(e)),
-      estimateItems: estimateItems.map((i: any) => ({ ...i })),
-      contractors: (contractors || []).map((c: any) => stripHouseholdId(c)),
-      journalEntries: (journalEntries || []).map((j: any) => stripHouseholdId(j)),
-      documents: (documents || []).map((d: any) => stripHouseholdId(d)),
-      estimateBlocks: estimateBlocks.map((b: any) => ({ ...b })),
+      invoices: (invoices || []).map((i) => stripHouseholdId(i)),
+      invoiceSplits: splits.map((s) => ({ ...s })),
+      invoicePayments: payments.map((p) => ({ ...p })),
+      invoiceAllocations: allocations.map((a) => ({ ...a })),
+      estimates: (estimates || []).map((e) => stripHouseholdId(e)),
+      estimateItems: estimateItems.map((i) => ({ ...i })),
+      contractors: (contractors || []).map((c) => stripHouseholdId(c)),
+      journalEntries: (journalEntries || []).map((j) => stripHouseholdId(j)),
+      documents: (documents || []).map((d) => stripHouseholdId(d)),
+      estimateBlocks: estimateBlocks.map((b) => ({ ...b })),
     },
     attachments,
   };

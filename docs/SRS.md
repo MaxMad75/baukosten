@@ -283,10 +283,20 @@ loan_payments: id, loan_id, payment_date, total_amount,
 
 ### Offene Fragen an den Bauherrn (zu Beginn der nächsten Session klären)
 
-- ~~OF-1~~: ✅ beantwortet 08.07.2026 — Bautagebuch nicht genutzt, aus App entfernt (Daten bleiben in DB/Backup)
-- **OF-2**: Werden **Angebote** als eigene Objekte gepflegt, oder reicht die Auftragssumme am Gewerk (Excel-Spalte „günstigste oder beauftragt")?
-- **OF-3**: Gewerkliste initial aus dem Architekten-Excel übernehmen (≈ 30 Zeilen)? Excel dann bitte einmal als Datei bereitstellen.
-- **OF-4**: Kredit: ein Kredit oder mehrere? Tilgungsplan als Datei vorhanden?
+Alle beantwortet am 08.07.2026:
+
+- ~~OF-1~~: ✅ Bautagebuch nicht genutzt → aus App entfernt (Daten bleiben in DB/Backup)
+- ~~OF-2~~: ✅ Bauphasen-Kontext: Es gibt pro Gewerk eine (schwierige) **Angebotsphase**, aber der
+  Haushalt ist bereits in der **Umsetzungsphase** → für R1 reicht die **Auftragssumme am Gewerk**
+  („beauftragt"). Ein Angebotsvergleichs-Modul (mehrere Angebote je Gewerk, Vergleich, Zuschlag)
+  ist als **späteres Feature** im Backlog (nach R3/R4) — relevant für künftige Bauherren-Nutzer
+  bzw. Restgewerke, nicht jetzt. Bestehende Angebote-Seite geht wie geplant in Budget auf.
+- ~~OF-3~~: ✅ Gewerkliste initial aus dem Architekten-Excel: liegt lokal unter
+  `C:\Projekte\baukosten\Kostenverfolgung-Oberanger10.xlsx` (**absichtlich NICHT im Git** —
+  private Daten, *.xlsx ist gitignored; Repo synct zu Lovable). Struktur siehe 1.3. R1.2 nutzt
+  diese Datei als Quelle für Gewerke, Schätzversionen (02.03.2026 + 12.12.2025), Auftragssummen,
+  Firmen und Skonto-Sätze.
+- ~~OF-4~~: ✅ Kredit-Details „später" → R3 bleibt hinten, keine Vorarbeiten nötig.
 
 ---
 

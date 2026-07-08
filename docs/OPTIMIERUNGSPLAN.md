@@ -1,5 +1,9 @@
 # Optimierungsplan Baukosten-App
 
+> **Hinweis (08.07.2026):** Die Produkt-Roadmap lebt jetzt in **`docs/SRS.md`**
+> (Vision, User Stories, Gewerke-Konzept, Releases R1–R5, Arbeitsvereinbarungen).
+> Diese Datei bleibt als technisches Backlog-Archiv; neue Arbeit startet im SRS.
+
 Stand: 05.07.2026 — nach dem Umbau des Rechnungs-Workflows (Commits `5cb98b8`, `660860c`, `1f1c39e`).
 
 Jeder Schritt ist eigenständig umsetzbar. Aufwand: **S** = < 1 h, **M** = 1–3 h, **L** = > 3 h.

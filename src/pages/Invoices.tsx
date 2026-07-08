@@ -46,7 +46,7 @@ import { InvoiceStatsCards } from '@/components/invoices/InvoiceStatsCards';
 import { PaymentDistributionChart } from '@/components/invoices/PaymentDistributionChart';
 import { PaymentsEditor } from '@/components/invoices/PaymentsEditor';
 import { DeductionsEditor, DeductionRow, deductionRowAmount } from '@/components/invoices/DeductionsEditor';
-import { BalanceCard } from '@/components/invoices/BalanceCard';
+import { PaymentsByPersonCard } from '@/components/invoices/PaymentsByPersonCard';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { DEDUCTION_TYPE_LABELS } from '@/lib/types';
 
@@ -72,7 +72,7 @@ export const Invoices: React.FC = () => {
   const { getAllocationsForInvoice, getEffectiveAllocations, saveAllocations, fetchAllAllocations } = useInvoiceAllocations();
   const { getKostengruppeByCode } = useKostengruppen();
   const { estimateItems: activeEstimateItems } = useEstimates();
-  const { profile, household, refreshProfile } = useAuth();
+  const { profile } = useAuth();
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
   const { allDeductions, getDeductionsForInvoice, saveDeductions } = useInvoiceDeductions();
@@ -410,20 +410,6 @@ export const Invoices: React.FC = () => {
     [paidByProfile, profiles]
   );
 
-  // Persist the target share quota on the household (null = equal split)
-  const handleSaveTargetShares = async (shares: Record<string, number> | null) => {
-    if (!household) return;
-    const { error } = await supabase
-      .from('households')
-      .update({ payment_target_shares: shares })
-      .eq('id', household.id);
-    if (error) {
-      toast({ title: 'Fehler', description: 'Soll-Quote konnte nicht gespeichert werden', variant: 'destructive' });
-      return;
-    }
-    await refreshProfile();
-    toast({ title: 'Erfolg', description: 'Soll-Quote wurde gespeichert' });
-  };
 
   if (loading) {
     return <Layout><div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></Layout>;
@@ -534,13 +520,12 @@ export const Invoices: React.FC = () => {
         {/* Payment Distribution Pie Chart */}
         <PaymentDistributionChart data={pieData} formatAmount={formatAmount} />
 
-        {/* Balance: who owes whom, measured against the target quota */}
+        {/* Drill-down: which invoices were paid by whom, to what share */}
         {profiles && (
-          <BalanceCard
+          <PaymentsByPersonCard
             profiles={profiles}
-            paidByProfile={paidByProfile}
-            targetShares={household?.payment_target_shares || null}
-            onSaveShares={handleSaveTargetShares}
+            invoices={invoices}
+            payments={allPayments}
             formatAmount={formatAmount}
           />
         )}

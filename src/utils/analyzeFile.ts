@@ -1,7 +1,10 @@
-import { extractTextFromPDF } from './pdfExtractor';
+import { extractTextFromPDF, renderPdfToImageBase64 } from './pdfExtractor';
 import { extractTextFromExcel } from './excelExtractor';
 import { fileToBase64 } from './imageToBase64';
 import { supabase } from '@/integrations/supabase/client';
+
+/** Below this, a PDF's text layer is considered missing (scanned document). */
+const MIN_PDF_TEXT_LENGTH = 100;
 
 export interface AnalysisBody {
   fileName: string;
@@ -56,7 +59,18 @@ export async function buildAnalysisBody(file: File): Promise<AnalysisBody> {
   const body: AnalysisBody = { fileName: file.name };
 
   if (ext === '.pdf') {
-    body.textContent = await extractTextFromPDF(file);
+    try {
+      const text = await extractTextFromPDF(file);
+      if (text.trim().length >= MIN_PDF_TEXT_LENGTH) {
+        body.textContent = text;
+      }
+    } catch {
+      // fall through to the image path
+    }
+    if (!body.textContent) {
+      // Scanned PDF without a text layer: send first + last page as image
+      body.imageBase64 = await renderPdfToImageBase64(file);
+    }
   } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
     body.imageBase64 = await fileToBase64(file);
   } else if (['.xlsx', '.xls'].includes(ext)) {

@@ -202,7 +202,10 @@ Fehlgeschlagene Extraktionen sind nicht nachvollziehbar.
 **Umsetzung:** Spalte `documents.ai_raw_result jsonb`; im Bearbeiten-Dialog
 aufklappbar anzeigen („Was hat die KI erkannt?").
 
-### 6.3 Mehrseitige/gescannte PDFs (M)
+### 6.3 Mehrseitige/gescannte PDFs (M) — ✅ umgesetzt 08.07.2026
+(Liefert die Textextraktion < 100 Zeichen, werden erste + letzte Seite als
+ein JPEG gerendert und als Bild analysiert — Gesamtbetrag steht meist auf der
+letzten Seite. Greift in allen Analyse-Wegen via buildAnalysisBody.)
 Gescannte PDFs ohne Textlayer liefern leeren `textContent` → Analyse läuft ins
 Leere.
 **Umsetzung:** Wenn extrahierter Text < 100 Zeichen: erste Seite als Bild

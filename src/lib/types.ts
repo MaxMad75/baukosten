@@ -54,6 +54,8 @@ export interface Invoice {
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;
+  /** Papierkorb: gesetzt = gelöscht, 30 Tage wiederherstellbar */
+  deleted_at?: string | null;
 }
 
 export interface InvoicePayment {
@@ -64,6 +66,8 @@ export interface InvoicePayment {
   payment_date: string;
   notes: string | null;
   created_at: string;
+  /** Papierkorb: gesetzt = gelöscht, 30 Tage wiederherstellbar */
+  deleted_at?: string | null;
 }
 
 export type DeductionType = 'skonto' | 'sicherheitseinbehalt' | 'baustrom' | 'bauwesenversicherung' | 'sonstiges';

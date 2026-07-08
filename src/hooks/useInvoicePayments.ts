@@ -30,7 +30,8 @@ export function useInvoicePayments() {
     setLoading(true);
     const { data, error } = await supabase
       .from('invoice_payments')
-      .select('*');
+      .select('*')
+      .is('deleted_at', null);
 
     if (!error && data) {
       setAllPayments(data as InvoicePayment[]);
@@ -88,10 +89,12 @@ export function useInvoicePayments() {
     return true;
   };
 
+  // Soft delete: 30 Tage im Papierkorb wiederherstellbar. Das UPDATE feuert
+  // den Status-Trigger, der gelöschte Zahlungen nicht mehr mitzählt.
   const deletePayment = async (paymentId: string) => {
     const { error } = await supabase
       .from('invoice_payments')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', paymentId);
 
     if (error) {
@@ -106,13 +109,43 @@ export function useInvoicePayments() {
   const deleteAllPayments = async (invoiceId: string) => {
     const { error } = await supabase
       .from('invoice_payments')
-      .delete()
-      .eq('invoice_id', invoiceId);
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('invoice_id', invoiceId)
+      .is('deleted_at', null);
 
     if (error) return false;
 
     await fetchAllPayments();
     return true;
+  };
+
+  /** Zahlungen im Papierkorb (nur von nicht gelöschten Rechnungen) */
+  const fetchTrashedPayments = async (): Promise<InvoicePayment[]> => {
+    const { data } = await supabase
+      .from('invoice_payments')
+      .select('*')
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
+    return (data as InvoicePayment[]) || [];
+  };
+
+  const restorePayment = async (paymentId: string) => {
+    const { error } = await supabase
+      .from('invoice_payments')
+      .update({ deleted_at: null })
+      .eq('id', paymentId);
+    if (error) {
+      toast({ title: 'Fehler', description: 'Zahlung konnte nicht wiederhergestellt werden', variant: 'destructive' });
+      return false;
+    }
+    await fetchAllPayments();
+    toast({ title: 'Erfolg', description: 'Zahlung wurde wiederhergestellt' });
+    return true;
+  };
+
+  const purgePayment = async (paymentId: string) => {
+    const { error } = await supabase.from('invoice_payments').delete().eq('id', paymentId);
+    return !error;
   };
 
   return {
@@ -124,5 +157,8 @@ export function useInvoicePayments() {
     deletePayment,
     deleteAllPayments,
     fetchAllPayments,
+    fetchTrashedPayments,
+    restorePayment,
+    purgePayment,
   };
 }

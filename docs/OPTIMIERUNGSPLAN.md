@@ -238,10 +238,14 @@ Sicherheitseinbehalte als eigene Zeile in der Zusammenfassung.
 mit Abzügen überzeichnet das den tatsächlichen Geldabfluss. Karten auf
 Zahlungssummen (invoice_payments) bzw. Zahlbeträge umstellen.
 
-### N.3 Papierkorb / Undo für Zahlungen und Rechnungen (M)
+### N.3 Papierkorb / Undo für Zahlungen und Rechnungen (M) — ✅ umgesetzt 08.07.2026
 Bestätigungsdialoge verhindern Versehen, aber bestätigt Gelöschtes ist weg.
 Soft-Delete (deleted_at) für invoices/invoice_payments mit 30 Tagen
 Aufbewahrung und „Wiederherstellen"-Ansicht.
+**Status:** Migration 20260708090000 (deleted_at-Spalten, Duplikat-Index und
+Status-Trigger ignorieren Gelöschtes — manuell anwenden!). Löschen = Soft-Delete;
+TrashCard unten auf der Rechnungsseite mit Wiederherstellen/endgültig
+löschen/Papierkorb leeren; Auto-Bereinigung nach 30 Tagen beim Laden.
 
 ## Bekannte Stolperfallen (für alle Schritte)
 

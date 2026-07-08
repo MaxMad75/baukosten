@@ -47,6 +47,7 @@ import { PaymentDistributionChart } from '@/components/invoices/PaymentDistribut
 import { PaymentsEditor } from '@/components/invoices/PaymentsEditor';
 import { DeductionsEditor, DeductionRow, deductionRowAmount } from '@/components/invoices/DeductionsEditor';
 import { PaymentsByPersonCard } from '@/components/invoices/PaymentsByPersonCard';
+import { TrashCard } from '@/components/invoices/TrashCard';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { DEDUCTION_TYPE_LABELS } from '@/lib/types';
 
@@ -67,8 +68,8 @@ interface AllocationRow {
 }
 
 export const Invoices: React.FC = () => {
-  const { invoices, loading, updateInvoice, deleteInvoice, fetchInvoices } = useInvoices();
-  const { allPayments, getPaymentsForInvoice, getTotalPaid, addPayment, deletePayment, deleteAllPayments, fetchAllPayments } = useInvoicePayments();
+  const { invoices, loading, updateInvoice, deleteInvoice, fetchInvoices, fetchTrashedInvoices, restoreInvoice, purgeInvoice } = useInvoices();
+  const { allPayments, getPaymentsForInvoice, getTotalPaid, addPayment, deletePayment, deleteAllPayments, fetchAllPayments, fetchTrashedPayments, restorePayment, purgePayment } = useInvoicePayments();
   const { getAllocationsForInvoice, getEffectiveAllocations, saveAllocations, fetchAllAllocations } = useInvoiceAllocations();
   const { getKostengruppeByCode } = useKostengruppen();
   const { estimateItems: activeEstimateItems } = useEstimates();
@@ -687,6 +688,23 @@ export const Invoices: React.FC = () => {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* Papierkorb — soft-gelöschte Rechnungen und Zahlungen, 30 Tage wiederherstellbar */}
+        {profiles && (
+          <TrashCard
+            profiles={profiles}
+            invoices={invoices}
+            formatAmount={formatAmount}
+            fetchTrashedInvoices={fetchTrashedInvoices}
+            fetchTrashedPayments={fetchTrashedPayments}
+            restoreInvoice={restoreInvoice}
+            purgeInvoice={purgeInvoice}
+            restorePayment={restorePayment}
+            purgePayment={purgePayment}
+            refreshSignal={`${invoices.length}:${allPayments.length}`}
+            onChanged={async () => { await fetchInvoices(); await fetchAllPayments(); }}
+          />
         )}
       </div>
 

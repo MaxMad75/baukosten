@@ -18,6 +18,7 @@ export function useInvoices() {
       .from('invoices')
       .select('*')
       .eq('household_id', household.id)
+      .is('deleted_at', null)
       .order('invoice_date', { ascending: false });
 
     if (error) {
@@ -30,6 +31,39 @@ export function useInvoices() {
       setInvoices((data as Invoice[]) || []);
     }
     setLoading(false);
+  };
+
+  /** Rechnungen im Papierkorb (deleted_at gesetzt) */
+  const fetchTrashedInvoices = async (): Promise<Invoice[]> => {
+    if (!household) return [];
+    const { data } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('household_id', household.id)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
+    return (data as Invoice[]) || [];
+  };
+
+  const restoreInvoice = async (id: string) => {
+    const { error } = await supabase.from('invoices').update({ deleted_at: null }).eq('id', id);
+    if (error) {
+      toast({ title: 'Fehler', description: 'Rechnung konnte nicht wiederhergestellt werden', variant: 'destructive' });
+      return false;
+    }
+    await fetchInvoices();
+    toast({ title: 'Erfolg', description: 'Rechnung wurde wiederhergestellt' });
+    return true;
+  };
+
+  /** Endgültig löschen (kaskadiert Zahlungen/Abzüge/Zuordnungen) */
+  const purgeInvoice = async (id: string) => {
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (error) {
+      toast({ title: 'Fehler', description: 'Rechnung konnte nicht endgültig gelöscht werden', variant: 'destructive' });
+      return false;
+    }
+    return true;
   };
 
   useEffect(() => {
@@ -107,10 +141,11 @@ export function useInvoices() {
     return true;
   };
 
+  // Soft delete: 30 Tage im Papierkorb wiederherstellbar
   const deleteInvoice = async (id: string) => {
     const { error } = await supabase
       .from('invoices')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
 
     if (error) {
@@ -124,8 +159,8 @@ export function useInvoices() {
 
     await fetchInvoices();
     toast({
-      title: 'Erfolg',
-      description: 'Rechnung wurde gelöscht',
+      title: 'In den Papierkorb verschoben',
+      description: 'Die Rechnung kann 30 Tage lang wiederhergestellt werden.',
     });
     return true;
   };
@@ -137,8 +172,11 @@ export function useInvoices() {
     invoices,
     loading,
     fetchInvoices,
+    fetchTrashedInvoices,
     createInvoice,
     updateInvoice,
     deleteInvoice,
+    restoreInvoice,
+    purgeInvoice,
   };
 }

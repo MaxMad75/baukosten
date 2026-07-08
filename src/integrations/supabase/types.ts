@@ -628,6 +628,7 @@ export type Database = {
         Row: {
           amount: number
           created_at: string | null
+          deleted_at: string | null
           id: string
           invoice_id: string
           notes: string | null
@@ -637,6 +638,7 @@ export type Database = {
         Insert: {
           amount: number
           created_at?: string | null
+          deleted_at?: string | null
           id?: string
           invoice_id: string
           notes?: string | null
@@ -646,6 +648,7 @@ export type Database = {
         Update: {
           amount?: number
           created_at?: string | null
+          deleted_at?: string | null
           id?: string
           invoice_id?: string
           notes?: string | null
@@ -735,6 +738,7 @@ export type Database = {
           company_name: string
           created_at: string
           created_by_profile_id: string | null
+          deleted_at: string | null
           description: string | null
           file_name: string | null
           file_path: string | null
@@ -758,6 +762,7 @@ export type Database = {
           company_name: string
           created_at?: string
           created_by_profile_id?: string | null
+          deleted_at?: string | null
           description?: string | null
           file_name?: string | null
           file_path?: string | null
@@ -781,6 +786,7 @@ export type Database = {
           company_name?: string
           created_at?: string
           created_by_profile_id?: string | null
+          deleted_at?: string | null
           description?: string | null
           file_name?: string | null
           file_path?: string | null

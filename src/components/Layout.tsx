@@ -6,7 +6,7 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { Button } from '@/components/ui/button';
 import { 
   Home, FileText, Calculator, BarChart3, Download, LogOut, User,
-  Users, BookOpen, FolderOpen, Menu, X, Settings, Eye, EyeOff
+  Users, FolderOpen, Menu, X, Settings, Eye, EyeOff
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,6 @@ const navItems = [
   { to: '/comparison', icon: BarChart3, label: 'Soll/Ist' },
   { to: '/documents', icon: FolderOpen, label: 'Dokumente' },
   { to: '/contractors', icon: Users, label: 'Firmen' },
-  { to: '/journal', icon: BookOpen, label: 'Bautagebuch' },
   { to: '/export', icon: Download, label: 'Export' },
   { to: '/settings', icon: Settings, label: 'Einstellungen' },
 ];

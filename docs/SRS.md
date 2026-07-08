@@ -200,7 +200,7 @@ Von 10 auf 6 Punkte; Zusammenlegung statt Streichung von Funktionalität:
 | **Budget** | Gewerke-Tabelle (4.1) inkl. Schätzversionen, Angebots-/Auftragssummen, Excel-Import | Kostenschätzung + Soll/Ist + Angebote |
 | **Rechnungen** | Liste, Zahlungen, Abzüge, Papierkorb | Rechnungen |
 | **Dokumente** | Upload/ZIP, Vorschau, Suche | Dokumente |
-| **Bautagebuch** | unverändert — NUR falls genutzt, sonst raus (→ offene Frage OF-1) | Bautagebuch |
+| ~~Bautagebuch~~ | **entfernt 08.07.2026 (OF-1: nicht genutzt)** — Seite/Route/Hook gelöscht; DB-Tabelle `construction_journal`, Storage-Bucket und Backup-Abdeckung bleiben (Alt-Daten erhalten, Reaktivierung möglich) | Bautagebuch |
 | **Einstellungen** | Haushalt & Mitglieder, **Firmen**, **Export & Sicherung**, Kredit (später) | Einstellungen + Firmen + Export |
 
 - Firmen und Export sind Verwaltungs-, keine Alltagsthemen → unter Einstellungen (als Tabs/Unterpunkte)
@@ -283,7 +283,7 @@ loan_payments: id, loan_id, payment_date, total_amount,
 
 ### Offene Fragen an den Bauherrn (zu Beginn der nächsten Session klären)
 
-- **OF-1**: Wird das **Bautagebuch** genutzt? (behalten / hinter Einstellungen / entfernen)
+- ~~OF-1~~: ✅ beantwortet 08.07.2026 — Bautagebuch nicht genutzt, aus App entfernt (Daten bleiben in DB/Backup)
 - **OF-2**: Werden **Angebote** als eigene Objekte gepflegt, oder reicht die Auftragssumme am Gewerk (Excel-Spalte „günstigste oder beauftragt")?
 - **OF-3**: Gewerkliste initial aus dem Architekten-Excel übernehmen (≈ 30 Zeilen)? Excel dann bitte einmal als Datei bereitstellen.
 - **OF-4**: Kredit: ein Kredit oder mehrere? Tilgungsplan als Datei vorhanden?

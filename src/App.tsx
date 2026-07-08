@@ -17,7 +17,6 @@ const Estimates = lazy(() => import("./pages/Estimates").then((m) => ({ default:
 const Comparison = lazy(() => import("./pages/Comparison"));
 const Contractors = lazy(() => import("./pages/Contractors"));
 const Documents = lazy(() => import("./pages/Documents"));
-const ConstructionJournal = lazy(() => import("./pages/ConstructionJournal"));
 const Offers = lazy(() => import("./pages/Offers"));
 const Export = lazy(() => import("./pages/Export"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -60,7 +59,6 @@ const App = () => (
               <Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
               <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
               <Route path="/contractors" element={<ProtectedRoute><Contractors /></ProtectedRoute>} />
-              <Route path="/journal" element={<ProtectedRoute><ConstructionJournal /></ProtectedRoute>} />
               <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />

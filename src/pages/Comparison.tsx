@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
-import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
+import { useInvoicePayments, aggregatePaymentsByProfile } from '@/hooks/useInvoicePayments';
 import { useInvoiceAllocations } from '@/hooks/useInvoiceAllocations';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { useOffers } from '@/hooks/useOffers';
-import { Invoice, ArchitectEstimateItem, InvoiceSplit, Offer, OfferItem, TaxStatus } from '@/lib/types';
+import { Invoice, ArchitectEstimateItem, InvoicePayment, Offer, OfferItem, TaxStatus } from '@/lib/types';
 import { TrendingUp, TrendingDown, Minus, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -63,7 +63,7 @@ export const Comparison: React.FC = () => {
   const { invoices, loading: invLoading } = useInvoices();
   const { allEstimates, allEstimateItems, allBlocks, versions, activeVersion, loading: estLoading } = useEstimates();
   const { kostengruppen, getKostengruppeByCode } = useKostengruppen();
-  const { getSplitsForInvoice } = useInvoiceSplits();
+  const { getPaymentsForInvoice } = useInvoicePayments();
   const { getEffectiveAllocations } = useInvoiceAllocations();
   const { data: profiles } = useHouseholdProfiles();
   const { offers, allOfferItems } = useOffers();
@@ -375,7 +375,7 @@ export const Comparison: React.FC = () => {
                         <CollapsibleContent asChild>
                           <TableRow>
                             <TableCell colSpan={offersActive ? 9 : 7} className="bg-muted/30 p-0">
-                              <DetailPanel row={c} formatCurrency={formatCurrency} getSplitsForInvoice={getSplitsForInvoice} profiles={profiles || []} offersActive={offersActive} />
+                              <DetailPanel row={c} formatCurrency={formatCurrency} getPaymentsForInvoice={getPaymentsForInvoice} profiles={profiles || []} offersActive={offersActive} />
                             </TableCell>
                           </TableRow>
                         </CollapsibleContent>
@@ -486,10 +486,10 @@ function buildTradeGroup(tradeId: string, children: ComparisonRow[]): TradeCompa
   };
 }
 
-function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offersActive }: {
+function DetailPanel({ row, formatCurrency, getPaymentsForInvoice, profiles, offersActive }: {
   row: ComparisonRow;
   formatCurrency: (n: number) => string;
-  getSplitsForInvoice: (id: string) => InvoiceSplit[];
+  getPaymentsForInvoice: (id: string) => InvoicePayment[];
   profiles: { id: string; name: string }[];
   offersActive: boolean;
 }) {
@@ -564,7 +564,7 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
           ) : (
             <div className="space-y-1">
               {row.invoiceItems.map(({ invoice: inv, allocatedAmount }, idx) => {
-                const splits = getSplitsForInvoice(inv.id);
+                const payerAmounts = aggregatePaymentsByProfile(getPaymentsForInvoice(inv.id));
                 const isPartial = allocatedAmount !== Number(inv.amount);
                 return (
                   <div key={`${inv.id}-${idx}`} className="text-sm">
@@ -580,11 +580,11 @@ function DetailPanel({ row, formatCurrency, getSplitsForInvoice, profiles, offer
                         {inv.status === 'partially_paid' && <Badge variant="secondary" className="text-xs">teilw. bezahlt</Badge>}
                       </span>
                     </div>
-                    {splits.length > 0 && (
+                    {payerAmounts.size > 0 && (
                       <div className="ml-4 text-xs text-muted-foreground">
-                        {splits.map((s) => {
-                          const p = profiles.find(pr => pr.id === s.profile_id);
-                          return <span key={s.id} className="mr-2">{p?.name || '?'}: {formatCurrency(Number(s.amount))}</span>;
+                        {Array.from(payerAmounts.entries()).map(([profileId, amount]) => {
+                          const p = profiles.find(pr => pr.id === profileId);
+                          return <span key={profileId} className="mr-2">{p?.name || '?'}: {formatCurrency(amount)}</span>;
                         })}
                       </div>
                     )}

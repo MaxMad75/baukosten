@@ -6,7 +6,6 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
-import { useInvoiceSplits } from '@/hooks/useInvoiceSplits';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions } from '@/hooks/useInvoiceDeductions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,7 +26,6 @@ export const Export: React.FC = () => {
   const { estimateItems, loading: estLoading, fetchEstimates } = useEstimates();
   const { kostengruppen, loading: kgLoading, getKostengruppeByCode } = useKostengruppen();
   const { data: profiles, isLoading: profLoading } = useHouseholdProfiles();
-  const { allSplits } = useInvoiceSplits();
   const { allPayments } = useInvoicePayments();
   const { allDeductions } = useInvoiceDeductions();
   const { household, profile } = useAuth();
@@ -59,7 +57,7 @@ export const Export: React.FC = () => {
       return { kostengruppe_code: code, kostengruppe_name: kg?.name || code, estimated, actual, difference: actual - estimated, percentage: estimated > 0 ? ((actual - estimated) / estimated) * 100 : 0 };
     });
 
-    exportToExcel({ invoices, estimateItems, kostengruppen, profiles: profiles || [], comparisons, splits: allSplits, payments: allPayments, deductions: allDeductions }, 'hausbau-kosten');
+    exportToExcel({ invoices, estimateItems, kostengruppen, profiles: profiles || [], comparisons, payments: allPayments, deductions: allDeductions }, 'hausbau-kosten');
     toast({ title: 'Export erfolgreich', description: 'Die Excel-Datei wurde heruntergeladen.' });
   };
 

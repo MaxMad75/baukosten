@@ -16,7 +16,7 @@ import { useEstimates } from '@/hooks/useEstimates';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
-import { useInvoiceSplits, getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
+import { aggregatePaymentsByProfile } from '@/hooks/useInvoicePayments';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { InvoiceSplitEditor, SplitEntry, SplitMode } from '@/components/InvoiceSplitEditor';
 import { useToast } from '@/hooks/use-toast';
@@ -75,7 +75,6 @@ export const Invoices: React.FC = () => {
   const { profile, household, refreshProfile } = useAuth();
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
-  const { allSplits, getSplitsForInvoice, saveSplits } = useInvoiceSplits();
   const { allDeductions, getDeductionsForInvoice, saveDeductions } = useInvoiceDeductions();
   const { findOrCreateByName } = useContractors();
   const { toast } = useToast();
@@ -307,7 +306,6 @@ export const Invoices: React.FC = () => {
 
   const handleResetPayments = async (invoiceId: string) => {
     await deleteAllPayments(invoiceId);
-    await saveSplits(invoiceId, []);
     await fetchInvoices();
   };
 
@@ -395,21 +393,14 @@ export const Invoices: React.FC = () => {
   const sortIndicator = (key: 'date' | 'amount') =>
     sortBy === key ? (sortDir === 'asc' ? <ArrowUp className="inline h-3 w-3" /> : <ArrowDown className="inline h-3 w-3" />) : <ArrowUpDown className="inline h-3 w-3 opacity-40" />;
 
-  // Who paid what — actual payments are the primary source, with
-  // splits / paid_by as legacy fallback for old records.
+  // Who paid what — invoice_payments is the single source of truth
+  // (legacy splits/paid_by were backfilled by migration 20260707160000).
   const paidByProfile = useMemo(() => {
-    const byPayer = new Map<string, number>();
-    for (const inv of invoices) {
-      if (inv.status !== 'paid' && inv.status !== 'partially_paid') continue;
-      const payments = getPaymentsForInvoice(inv.id);
-      const splits = getSplitsForInvoice(inv.id);
-      const amounts = getEffectivePayerAmounts(inv, splits, payments);
-      amounts.forEach((amount, profileId) => {
-        byPayer.set(profileId, (byPayer.get(profileId) || 0) + amount);
-      });
-    }
-    return byPayer;
-  }, [invoices, getPaymentsForInvoice, getSplitsForInvoice]);
+    const relevant = invoices
+      .filter((inv) => inv.status === 'paid' || inv.status === 'partially_paid')
+      .flatMap((inv) => getPaymentsForInvoice(inv.id));
+    return aggregatePaymentsByProfile(relevant);
+  }, [invoices, getPaymentsForInvoice]);
 
   const pieData = useMemo(
     () => Array.from(paidByProfile.entries()).map(([profileId, amount]) => {

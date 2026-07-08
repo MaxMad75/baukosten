@@ -46,7 +46,12 @@ Contractors-Seite für bestehende Dubletten.
 **Status:** `matchContractorByName` (pure, mit Tests) + „Zusammenführen"-Dialog
 auf der Firmen-Seite (hängt documents/offers/construction_journal um).
 
-### 1.4 Legacy-Felder ausmustern (L, erst nach 1.1)
+### 1.4 Legacy-Felder ausmustern (L, erst nach 1.1) — ✅ umgesetzt 07.07.2026
+(Migration 20260707160000 überführt Alt-Splits/paid_by in invoice_payments —
+manuell anwenden! Client liest nur noch invoice_payments: Pie, BalanceCard,
+Excel-Export, Comparison. useInvoiceSplits-Hook gelöscht; invoice_splits-Tabelle
+bleibt für Backup/Restore bestehen. invoices.is_paid/payment_date/
+paid_by_profile_id werden weiter vom Trigger gepflegt, aber nicht mehr gelesen.)
 `invoices.is_paid` / `payment_date` / `paid_by_profile_id` und die Tabelle
 `invoice_splits` sind nur noch Fallback für Altdaten.
 **Umsetzung:** Datenmigration: für alle Alt-Rechnungen mit Splits, aber ohne

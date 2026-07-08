@@ -4,6 +4,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { InvoicePayment } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
+/**
+ * Aggregate payments to a Map of profileId -> total amount.
+ * invoice_payments is the single source of truth for "wer hat was gezahlt"
+ * (legacy splits/paid_by were backfilled by migration 20260707160000).
+ */
+export function aggregatePaymentsByProfile(
+  payments: Pick<InvoicePayment, 'profile_id' | 'amount'>[]
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const p of payments) {
+    map.set(p.profile_id, (map.get(p.profile_id) || 0) + Number(p.amount));
+  }
+  return map;
+}
+
 export function useInvoicePayments() {
   const { household } = useAuth();
   const { toast } = useToast();

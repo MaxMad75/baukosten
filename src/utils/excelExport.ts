@@ -1,6 +1,6 @@
 import * as XLSX from '@e965/xlsx';
-import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoiceSplit, InvoicePayment, InvoiceDeduction, DEDUCTION_TYPE_LABELS } from '@/lib/types';
-import { getEffectivePayerAmounts } from '@/hooks/useInvoiceSplits';
+import { Invoice, ArchitectEstimateItem, DIN276Kostengruppe, Profile, CostComparison, InvoicePayment, InvoiceDeduction, DEDUCTION_TYPE_LABELS } from '@/lib/types';
+import { aggregatePaymentsByProfile } from '@/hooks/useInvoicePayments';
 import { getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -13,7 +13,6 @@ interface ExportData {
   kostengruppen: DIN276Kostengruppe[];
   profiles: Profile[];
   comparisons: CostComparison[];
-  splits?: InvoiceSplit[];
   payments?: InvoicePayment[];
   deductions?: InvoiceDeduction[];
 }
@@ -91,21 +90,18 @@ function createInvoicesSheet(data: ExportData): SheetRow[] {
 
   const rows = data.invoices.map(inv => {
     const kg = data.kostengruppen.find(k => k.code === inv.kostengruppe_code);
-    const invSplits = (data.splits || []).filter(s => s.invoice_id === inv.id);
+    const invPayments = (data.payments || []).filter(p => p.invoice_id === inv.id);
     const invDeductions = (data.deductions || []).filter(d => d.invoice_id === inv.id);
     const deductionInfo = invDeductions.length > 0
       ? invDeductions.map(d => `${d.deduction_type === 'sonstiges' && d.label ? d.label : DEDUCTION_TYPE_LABELS[d.deduction_type]}: ${formatCurrency(Number(d.amount))}`).join('; ')
       : '-';
-    let payerInfo = '-';
-    if (invSplits.length > 0) {
-      payerInfo = invSplits.map(s => {
-        const p = data.profiles.find(pr => pr.id === s.profile_id);
-        return `${p?.name || '?'}: ${formatCurrency(Number(s.amount))}`;
-      }).join('; ');
-    } else {
-      const payer = data.profiles.find(p => p.id === inv.paid_by_profile_id);
-      payerInfo = payer?.name || '-';
-    }
+    const payerAmounts = aggregatePaymentsByProfile(invPayments);
+    const payerInfo = payerAmounts.size > 0
+      ? Array.from(payerAmounts.entries()).map(([profileId, amount]) => {
+          const p = data.profiles.find(pr => pr.id === profileId);
+          return `${p?.name || '?'}: ${formatCurrency(amount)}`;
+        }).join('; ')
+      : '-';
 
     return [
       inv.invoice_number || '-',
@@ -121,7 +117,7 @@ function createInvoicesSheet(data: ExportData): SheetRow[] {
       inv.is_paid ? 'Ja' : 'Nein',
       inv.payment_date ? format(new Date(inv.payment_date), 'dd.MM.yyyy', { locale: de }) : '-',
       payerInfo,
-      invSplits.length > 0 ? 'Aufgeteilt' : 'Einzelzahler',
+      payerAmounts.size > 1 ? 'Aufgeteilt' : 'Einzelzahler',
     ];
   });
 
@@ -183,19 +179,15 @@ function createByKostengruppeSheet(data: ExportData): SheetRow[] {
 
 function createByPayerSheet(data: ExportData): SheetRow[] {
   const result: SheetRow[] = [['ZAHLUNGEN NACH PERSON (inkl. Aufteilungen)']];
-  const splits = data.splits || [];
   const payments = data.payments || [];
 
   data.profiles.forEach(profile => {
     const amounts = new Map<string, { invoice: Invoice; amount: number }>();
 
-    // Aggregate from payments (primary), splits/paid_by as legacy fallback
+    // invoice_payments is the single source of truth
     for (const inv of data.invoices) {
-      if (!inv.is_paid) continue;
-      const invSplits = splits.filter(s => s.invoice_id === inv.id);
       const invPayments = payments.filter(p => p.invoice_id === inv.id);
-      const effectiveAmounts = getEffectivePayerAmounts(inv, invSplits, invPayments);
-      const myAmount = effectiveAmounts.get(profile.id);
+      const myAmount = aggregatePaymentsByProfile(invPayments).get(profile.id);
       if (myAmount && myAmount > 0) {
         amounts.set(inv.id, { invoice: inv, amount: myAmount });
       }

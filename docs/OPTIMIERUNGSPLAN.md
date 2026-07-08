@@ -212,7 +212,7 @@ rendern (pdfjs `page.render()` auf Canvas) und als `imageBase64` schicken.
 
 ## Phase 7 — Sicherheit & Betrieb
 
-### 7.1 RLS-Review (S)
+### 7.1 RLS-Review (S) — ✅ umgesetzt 08.07.2026, Ergebnis: docs/SECURITY_REVIEW.md
 `fetchAllPayments` / `fetchAllSplits` selektieren ohne `household_id`-Filter
 und verlassen sich allein auf Row Level Security.
 **Umsetzung:** RLS-Policies aller Tabellen gegen die Migrationen prüfen

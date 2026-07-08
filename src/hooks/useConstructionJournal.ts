@@ -112,11 +112,7 @@ export function useConstructionJournal() {
     return filePath;
   };
 
-  const getPhotoUrl = (path: string) => {
-    const { data } = supabase.storage.from('journal-photos').getPublicUrl(path);
-    return data.publicUrl;
-  };
-
+  // journal-photos is a private bucket — only signed URLs work
   const getSignedPhotoUrl = async (path: string) => {
     const { data } = await supabase.storage.from('journal-photos').createSignedUrl(path, 3600);
     return data?.signedUrl || null;
@@ -130,7 +126,6 @@ export function useConstructionJournal() {
     updateEntry,
     deleteEntry,
     uploadPhoto,
-    getPhotoUrl,
     getSignedPhotoUrl,
   };
 }

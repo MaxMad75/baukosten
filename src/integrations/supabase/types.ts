@@ -132,6 +132,41 @@ export type Database = {
           },
         ]
       }
+      backups: {
+        Row: {
+          created_at: string
+          household_id: string
+          id: string
+          note: string | null
+          payload: Json
+          size_bytes: number
+        }
+        Insert: {
+          created_at?: string
+          household_id: string
+          id?: string
+          note?: string | null
+          payload: Json
+          size_bytes?: number
+        }
+        Update: {
+          created_at?: string
+          household_id?: string
+          id?: string
+          note?: string | null
+          payload?: Json
+          size_bytes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backups_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       construction_journal: {
         Row: {
           category: string | null
@@ -1003,6 +1038,7 @@ export type Database = {
       }
     }
     Functions: {
+      create_household_backup: { Args: never; Returns: string }
       get_my_iban: { Args: never; Returns: string }
       get_user_household_id: { Args: never; Returns: string }
       is_household_member: {

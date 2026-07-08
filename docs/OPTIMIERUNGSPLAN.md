@@ -222,7 +222,12 @@ und verlassen sich allein auf Row Level Security.
 (insb. `invoice_payments`, `invoice_splits`, `documents`-Storage-Policies);
 Client-seitige household-Filter als Defense-in-Depth ergänzen.
 
-### 7.2 Automatisches Backup (M)
+### 7.2 Automatisches Backup (M) — ✅ umgesetzt 08.07.2026
+(Migration 20260708110000 — manuell anwenden: backups-Tabelle (RLS),
+Snapshot-Funktionen ohne IBAN, pg_cron Mo 03:00 UTC, 8 Stände Aufbewahrung.
+Karte „Automatische Sicherungen" auf der Export-Seite mit „Jetzt sichern",
+Download als JSON und Löschen. Karte bleibt unsichtbar, bis die Migration
+angewendet ist — kein Bruch. Dateien sichert weiterhin nur das manuelle ZIP.)
 Backup existiert nur manuell (Export-Seite, ZIP).
 **Umsetzung:** Supabase Scheduled Edge Function (pg_cron), die wöchentlich
 einen Export in einen separaten Storage-Bucket legt; Aufbewahrung 8 Wochen.

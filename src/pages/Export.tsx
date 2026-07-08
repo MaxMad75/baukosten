@@ -11,6 +11,7 @@ import { useInvoiceDeductions } from '@/hooks/useInvoiceDeductions';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel } from '@/utils/excelExport';
 import { createBackupZip, downloadBlob, restoreBackupZip } from '@/utils/backup';
+import { AutoBackupCard } from '@/components/export/AutoBackupCard';
 import { CostComparison } from '@/lib/types';
 import { errorMessage } from '@/lib/utils';
 import { Download, FileSpreadsheet, Loader2, Archive, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -230,6 +231,9 @@ export const Export: React.FC = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Automatic weekly data snapshots */}
+        <AutoBackupCard />
       </div>
 
       {/* Restore Confirmation Dialog */}

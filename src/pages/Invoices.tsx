@@ -760,8 +760,12 @@ export const Invoices: React.FC = () => {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Gewerk</Label>
-                <TradeSelect value={editFormData.trade_id || null} onValueChange={(v) => setEditFormData({ ...editFormData, trade_id: v || '' })} />
+                <Label>Gewerk (optional)</Label>
+                <TradeSelect
+                  value={editFormData.trade_id || null}
+                  onValueChange={(v) => setEditFormData({ ...editFormData, trade_id: v || '' })}
+                  companyName={editFormData.company_name}
+                />
               </div>
               {!useMultiAllocation && (
                 <div className="space-y-2">

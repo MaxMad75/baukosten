@@ -280,7 +280,11 @@ loan_payments: id, loan_id, payment_date, total_amount,
    nach Abschnitten gruppiert). Angewendet in: Upload-Dialog (ersetzt dort das DIN-Feld; DIN-Code aus
    der KI wird weiter still gespeichert), ZIP-Auto-Anlage, Rechnungs-Bearbeiten-Dialog (Gewerk-Feld,
    Vorschlag beim Öffnen) und Budget-Auto-Zuordnung. Nur eindeutige Firma→Gewerk-Treffer werden
-   automatisch gesetzt. **KI-Vorschlag für unbekannte Firmen bewusst zurückgestellt** (alle Gewerke
+   automatisch gesetzt. **User-Feedback 10.07.2026 umgesetzt:** Der Bauherr denkt bei Rechnungen in
+   Firmen, nicht Gewerken → Gewerk-Feld überall optional („später nachtragen" ist der Normalfall),
+   und das Dropdown zeigt nur die Gewerke der gematchten Firma (SRS 4.1 Punkt 2; „Alle Gewerke
+   anzeigen…" als Ausweg). Manuelle Gewerk-Wahl ist damit nur nötig, wenn eine Firma mehrere
+   Gewerke hat — und dann nur zwischen diesen. **KI-Vorschlag für unbekannte Firmen bewusst zurückgestellt** (alle Gewerke
    haben Firmen aus dem Seed; bei Bedarf in R4 mit Konfidenz/Review-Queue umsetzen)
 4. R1.4 Budget-Seite (Excel-Ansicht) mit Abschnitts-Summen, Ampeln, Prognose, aufklappbaren Zeilen —
    ✅ v1 10.07.2026 (src/pages/Budget.tsx, Route /budget): Brutto/Netto-Umschalter, Beauftragt mit

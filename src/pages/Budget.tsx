@@ -3,7 +3,7 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TradeSelect } from '@/components/TradeSelect';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -342,16 +342,13 @@ const Budget: React.FC = () => {
                         {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}
                         <span className="ml-2 text-muted-foreground">{formatAmount(Number(inv.amount))}</span>
                       </span>
-                      <Select onValueChange={(tradeId) => assignInvoice(inv.id, tradeId)}>
-                        <SelectTrigger className="w-[260px] h-8 text-sm">
-                          <SelectValue placeholder="Gewerk wählen…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {trades.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="w-[260px]">
+                        <TradeSelect
+                          value={inv.trade_id || null}
+                          onValueChange={(tradeId) => { if (tradeId) assignInvoice(inv.id, tradeId); }}
+                          companyName={inv.company_name}
+                        />
+                      </div>
                     </div>
                   ))}
                 </CardContent>

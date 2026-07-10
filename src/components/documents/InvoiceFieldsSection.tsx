@@ -69,8 +69,12 @@ export const InvoiceFieldsSection: React.FC<Props> = ({ form, onChange, duplicat
         <Input type="date" value={form.invoice_date} onChange={(e) => onChange({ ...form, invoice_date: e.target.value })} />
       </div>
       <div className="col-span-2 space-y-1">
-        <Label className="text-xs">Gewerk</Label>
-        <TradeSelect value={form.trade_id || null} onValueChange={(v) => onChange({ ...form, trade_id: v || '' })} />
+        <Label className="text-xs">Gewerk (optional — Vorschlag über die Firma, kann später nachgetragen werden)</Label>
+        <TradeSelect
+          value={form.trade_id || null}
+          onValueChange={(v) => onChange({ ...form, trade_id: v || '' })}
+          companyName={form.company_name}
+        />
       </div>
     </div>
     {duplicate && (

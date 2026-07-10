@@ -18,6 +18,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { aggregatePaymentsByProfile } from '@/hooks/useInvoicePayments';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
+import { TradeSelect } from '@/components/TradeSelect';
+import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { InvoiceSplitEditor, SplitEntry, SplitMode } from '@/components/InvoiceSplitEditor';
 import { useToast } from '@/hooks/use-toast';
 import { Invoice, InvoiceStatus } from '@/lib/types';
@@ -77,7 +79,8 @@ export const Invoices: React.FC = () => {
   const { formatAmount } = usePrivacy();
   const { data: profiles } = useHouseholdProfiles();
   const { allDeductions, getDeductionsForInvoice, saveDeductions } = useInvoiceDeductions();
-  const { findOrCreateByName } = useContractors();
+  const { contractors, findOrCreateByName } = useContractors();
+  const { trades } = useTrades();
   const { toast } = useToast();
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
@@ -97,7 +100,7 @@ export const Invoices: React.FC = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [editFormData, setEditFormData] = useState({
-    company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '', is_gross: true,
+    company_name: '', invoice_number: '', invoice_date: '', amount: '', description: '', kostengruppe_code: '', trade_id: '', is_gross: true,
     status: 'draft' as InvoiceStatus,
   });
 
@@ -128,6 +131,11 @@ export const Invoices: React.FC = () => {
 
   const openEditDialog = (invoice: Invoice) => {
     setEditingInvoice(invoice);
+    // Firma→Gewerk-Regel (SRS 4.1): ohne bestehende Zuordnung das Gewerk
+    // über die Firma vorschlagen; nur eindeutige Treffer, immer übersteuerbar.
+    const suggestedTrade = invoice.trade_id
+      ? null
+      : suggestTradeForCompany(trades, contractors, invoice.company_name).trade;
     setEditFormData({
       company_name: invoice.company_name,
       invoice_number: invoice.invoice_number || '',
@@ -135,6 +143,7 @@ export const Invoices: React.FC = () => {
       amount: String(invoice.amount),
       description: invoice.description || '',
       kostengruppe_code: invoice.kostengruppe_code || '',
+      trade_id: invoice.trade_id || suggestedTrade?.id || '',
       is_gross: invoice.is_gross ?? true,
       status: (invoice.status as InvoiceStatus) || 'draft',
     });
@@ -197,6 +206,7 @@ export const Invoices: React.FC = () => {
       amount: invoiceAmt,
       description: editFormData.description || null,
       kostengruppe_code: primaryKg,
+      trade_id: editFormData.trade_id || null,
       is_gross: editFormData.is_gross,
       status: editFormData.status,
     });
@@ -748,6 +758,10 @@ export const Invoices: React.FC = () => {
                     })}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Gewerk</Label>
+                <TradeSelect value={editFormData.trade_id || null} onValueChange={(v) => setEditFormData({ ...editFormData, trade_id: v || '' })} />
               </div>
               {!useMultiAllocation && (
                 <div className="space-y-2">

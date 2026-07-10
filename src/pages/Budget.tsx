@@ -12,9 +12,9 @@ import { de } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTrades } from '@/hooks/useTrades';
+import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
-import { useContractors, matchContractorByName } from '@/hooks/useContractors';
+import { useContractors } from '@/hooks/useContractors';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import {
@@ -206,12 +206,11 @@ const Budget: React.FC = () => {
     let unmatched = 0;
 
     for (const inv of unassigned) {
-      const contractor = matchContractorByName(contractors, inv.company_name);
-      const candidates = contractor ? trades.filter((t) => t.contractor_id === contractor.id) : [];
-      if (candidates.length === 1) {
-        const list = byTrade.get(candidates[0].id) || [];
+      const { trade, candidates } = suggestTradeForCompany(trades, contractors, inv.company_name);
+      if (trade) {
+        const list = byTrade.get(trade.id) || [];
         list.push(inv.id);
-        byTrade.set(candidates[0].id, list);
+        byTrade.set(trade.id, list);
       } else if (candidates.length > 1) {
         ambiguous += 1;
       } else {

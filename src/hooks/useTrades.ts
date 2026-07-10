@@ -1,8 +1,26 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Trade, TradeEstimate, TradeWithEstimates } from '@/lib/types';
+import { Contractor, Trade, TradeEstimate, TradeWithEstimates } from '@/lib/types';
+import { matchContractorByName } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
+
+/**
+ * Firma→Gewerk-Regel (SRS 4.1): deterministische Zuordnung einer Rechnung
+ * über ihre Firma. Genau ein Gewerk der gematchten Firma → dieses Gewerk
+ * (gleiche Firma ⇒ immer gleiches Gewerk ⇒ konsistent). Mehrere Gewerke →
+ * candidates für ein eingeschränktes Dropdown. Unbekannte Firma → leer.
+ */
+export function suggestTradeForCompany<T extends Pick<Trade, 'id' | 'contractor_id'>>(
+  trades: T[],
+  contractors: Contractor[],
+  companyName: string
+): { trade: T | null; candidates: T[] } {
+  const contractor = matchContractorByName(contractors, companyName);
+  if (!contractor) return { trade: null, candidates: [] };
+  const candidates = trades.filter((t) => t.contractor_id === contractor.id);
+  return { trade: candidates.length === 1 ? candidates[0] : null, candidates };
+}
 
 /**
  * Gewerke (SRS 4.1): zentrale Budgetposten, wie die Zeilen im

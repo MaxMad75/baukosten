@@ -84,7 +84,7 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 | C1 | Als Bauherr lege ich **Gewerke** an (Erdarbeiten, Elektro, Küche …), wie im Architekten-Excel. | MUSS | 🔶 (Datenmodell + Seed ✅ R1.1; UI/Assistent → R1.2) |
 | C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | 🔶 (trade_estimates ✅ R1.1 inkl. beider Excel-Versionen; UI fehlt) |
 | C3 | Als Bauherr hinterlege ich pro Gewerk die **Auftragssumme** („günstigste oder beauftragt") und die Firma. | MUSS | 🔶 (awarded_amount/contractor_id am Gewerk ✅ R1.1; UI fehlt) |
-| C4 | Als Bauherr ordne ich Rechnungen einem **Gewerk** zu (nicht einem DIN-Subcode) — die App schlägt es **über die Firma** vor (deterministisch, konsistent). | MUSS | 🔶 (Bestand: Auto-Zuordnung + Dropdown auf Budget-Seite ✅; Upload-/Bearbeiten-Flow → R1.3) |
+| C4 | Als Bauherr ordne ich Rechnungen einem **Gewerk** zu (nicht einem DIN-Subcode) — die App schlägt es **über die Firma** vor (deterministisch, konsistent). | MUSS | ✅ (R1.3 10.07.2026: Upload/ZIP/Bearbeiten/Budget; KI-Fallback für unbekannte Firmen → R4) |
 | C5 | Als Bauherr sehe ich das Excel als App-Ansicht: pro Gewerk Schätzung V1/V2 → beauftragt → abgerechnet → bezahlt, mit Ampelfarben und Abschnitts-Zwischensummen, die **garantiert korrekt aufsummieren**. | MUSS | 🔶 (Budget-Seite v1 ✅ 10.07.2026; Verifikation + Rückbau alter Seiten R1.6 offen) |
 | C6 | Als Bauherr sehe ich die realisierte **Skonto-Ersparnis** pro Gewerk und gesamt (aus den erfassten Abzügen). | SOLL | ✅ (Skonto-Spalte auf Budget-Seite: realisiert aus Abzügen, sonst erwartet aus skonto_percent) |
 | C7 | Als Bauherr importiere ich die Kostenberechnung des Architekten (Excel) als neue Schätzversion. | SOLL | 🔶 (KI-Import existiert für DIN-Positionen; auf Gewerke umstellen) |
@@ -275,8 +275,13 @@ loan_payments: id, loan_id, payment_date, total_amount,
 2. R1.2 Einrichtungs-Assistent — ✅ obsolet/erledigt 10.07.2026: Gewerke kamen vollständig aus dem
    Excel-Seed (R1.1); der verbliebene Rest (Bestandsrechnungen zuordnen) ist auf der Budget-Seite
    umgesetzt („Rechnungen ohne Gewerk": Auto-Zuordnung über Firma→Gewerk-Regel + manuelles Dropdown)
-3. R1.3 Zuordnung: Firma→Gewerk-Regel im Upload-/Bearbeiten-Flow; KI nur für unbekannte Firmen (geschlossene Gewerkliste)
-   — 🔶 Zuordnungs-UI für Bestand auf Budget-Seite vorhanden; Upload-/Bearbeiten-Flow + KI-Vorschlag offen
+3. R1.3 Zuordnung: Firma→Gewerk-Regel im Upload-/Bearbeiten-Flow — ✅ 10.07.2026:
+   `suggestTradeForCompany` (useTrades.ts, unit-getestet) + `TradeSelect` (geschlossene Gewerkliste,
+   nach Abschnitten gruppiert). Angewendet in: Upload-Dialog (ersetzt dort das DIN-Feld; DIN-Code aus
+   der KI wird weiter still gespeichert), ZIP-Auto-Anlage, Rechnungs-Bearbeiten-Dialog (Gewerk-Feld,
+   Vorschlag beim Öffnen) und Budget-Auto-Zuordnung. Nur eindeutige Firma→Gewerk-Treffer werden
+   automatisch gesetzt. **KI-Vorschlag für unbekannte Firmen bewusst zurückgestellt** (alle Gewerke
+   haben Firmen aus dem Seed; bei Bedarf in R4 mit Konfidenz/Review-Queue umsetzen)
 4. R1.4 Budget-Seite (Excel-Ansicht) mit Abschnitts-Summen, Ampeln, Prognose, aufklappbaren Zeilen —
    ✅ v1 10.07.2026 (src/pages/Budget.tsx, Route /budget): Brutto/Netto-Umschalter, Beauftragt mit
    kursivem Schätzwert-Ansatz, Status abgeleitet (offen→beauftragt→in Abrechnung→abgerechnet),

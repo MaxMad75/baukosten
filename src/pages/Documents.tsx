@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
+import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useOffers } from '@/hooks/useOffers';
 import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, AiResult } from '@/utils/analyzeFile';
@@ -62,6 +63,7 @@ const invoiceFormFromAi = (ai: AiResult): InvoiceForm => ({
 export const Documents: React.FC = () => {
   const { documents, loading, uploadDocument, createDocument, updateDocument, deleteDocument, getDocumentUrl, checkDuplicate } = useDocuments();
   const { contractors, findOrCreateByName, fetchContractors } = useContractors();
+  const { trades } = useTrades();
   const { invoices, createInvoice, deleteInvoice, fetchInvoices } = useInvoices();
   const { offers, createOffer } = useOffers();
   const navigate = useNavigate();
@@ -117,6 +119,16 @@ export const Documents: React.FC = () => {
   /** The linked invoice is the master record for invoice-typed documents. */
   const getLinkedInvoice = (doc: Document) =>
     doc.invoice_id ? invoices.find((i) => i.id === doc.invoice_id) || null : null;
+
+  /**
+   * Firma→Gewerk-Regel (SRS 4.1): schlägt beim Prefill das Gewerk über die
+   * Firma vor; nur eindeutige Treffer, der Nutzer kann immer übersteuern.
+   */
+  const withTradeSuggestion = (form: InvoiceForm): InvoiceForm => {
+    if (form.trade_id || !form.company_name.trim()) return form;
+    const { trade } = suggestTradeForCompany(trades, contractors, form.company_name.trim());
+    return trade ? { ...form, trade_id: trade.id } : form;
+  };
 
   /**
    * Second AI pass, dedicated to invoice extraction: fills the EMPTY invoice
@@ -189,6 +201,7 @@ export const Documents: React.FC = () => {
       invoice_number: form.invoice_number.trim() || null,
       description: description || null,
       kostengruppe_code: form.kostengruppe_code || null,
+      trade_id: form.trade_id || null,
       file_path: filePath,
       file_name: fileName,
       ai_extracted: aiExtracted,
@@ -258,7 +271,7 @@ export const Documents: React.FC = () => {
             description: ai.description || '',
             contractor_id: '',
           });
-          setInvoiceForm(invoiceFormFromAi(ai));
+          setInvoiceForm(withTradeSuggestion(invoiceFormFromAi(ai)));
 
           if (ai.company_name) {
             const match = matchContractorByName(contractors, ai.company_name);
@@ -354,7 +367,7 @@ export const Documents: React.FC = () => {
       description: doc.description || '',
       contractor_id: doc.contractor_id || '',
     });
-    setInvoiceForm(prefillInvoice || { ...emptyInvoiceForm, company_name: getContractorName(doc.contractor_id) || '' });
+    setInvoiceForm(withTradeSuggestion(prefillInvoice || { ...emptyInvoiceForm, company_name: getContractorName(doc.contractor_id) || '' }));
     setPendingAiResult(null);
     setIsEditOpen(true);
   };
@@ -451,7 +464,7 @@ export const Documents: React.FC = () => {
       let invoiceId = doc.invoice_id || null;
       let needsCompletion = false;
       if (ai.document_type === 'Rechnung' && !invoiceId) {
-        const form = invoiceFormFromAi(ai);
+        const form = withTradeSuggestion(invoiceFormFromAi(ai));
         if (!getInvoiceFormError(form)) {
           invoiceId = await createInvoiceRecord(form, doc.file_path, doc.file_name, ai.description || null, true);
           if (invoiceId) {
@@ -476,7 +489,7 @@ export const Documents: React.FC = () => {
       if (needsCompletion) {
         // Open the edit dialog prefilled with what the AI found so the user
         // can complete the missing fields instead of the invoice silently missing.
-        openEdit({ ...doc, ...updates }, invoiceFormFromAi(ai));
+        openEdit({ ...doc, ...updates }, withTradeSuggestion(invoiceFormFromAi(ai)));
         toast({
           title: 'Rechnung erkannt – Daten unvollständig',
           description: 'Bitte ergänzen Sie die fehlenden Rechnungsfelder und speichern Sie.',

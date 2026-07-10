@@ -11,6 +11,7 @@ import { useDocuments } from '@/hooks/useDocuments';
 import { useInvoices } from '@/hooks/useInvoices';
 import { analyzeDocumentFile, isAnalyzable } from '@/utils/analyzeFile';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
+import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useToast } from '@/hooks/use-toast';
 import type { Json } from '@/integrations/supabase/types';
 import { errorMessage } from '@/lib/utils';
@@ -66,6 +67,7 @@ const StatusIndicator: React.FC<{ status: FileStatus; error?: string }> = ({ sta
 export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenChange, zipFile }) => {
   const { uploadDocument, createDocument, fetchDocuments, checkDuplicate } = useDocuments();
   const { contractors, findOrCreateByName } = useContractors();
+  const { trades } = useTrades();
   const { createInvoice } = useInvoices();
   const { toast } = useToast();
 
@@ -183,6 +185,8 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
               if (ai.company_name && ai.amount && ai.invoice_date) {
                 const contractor = await findOrCreateByName(ai.company_name);
                 contractorId = contractor?.id;
+                // Firma→Gewerk-Regel (SRS 4.1): nur eindeutige Treffer zuordnen
+                const { trade } = suggestTradeForCompany(trades, contractors, ai.company_name);
                 const invoice = await createInvoice({
                   amount: ai.amount,
                   invoice_date: ai.invoice_date,
@@ -190,6 +194,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                   invoice_number: ai.invoice_number || null,
                   description: ai.description || null,
                   kostengruppe_code: ai.kostengruppe_code || null,
+                  trade_id: trade?.id || null,
                   file_path: uploaded.path,
                   file_name: uploaded.name,
                   ai_extracted: true,

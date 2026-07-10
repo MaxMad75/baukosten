@@ -83,6 +83,7 @@ export function useInvoices() {
         invoice_number: invoiceData.invoice_number || null,
         description: invoiceData.description || null,
         kostengruppe_code: invoiceData.kostengruppe_code || null,
+        trade_id: invoiceData.trade_id || null,
         file_path: invoiceData.file_path || null,
         file_name: invoiceData.file_name || null,
         

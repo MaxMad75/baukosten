@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { KostengruppenSelect } from '@/components/KostengruppenSelect';
+import { TradeSelect } from '@/components/TradeSelect';
 import { Invoice } from '@/lib/types';
 import { Loader2, Receipt, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
@@ -14,11 +14,14 @@ export interface InvoiceForm {
   invoice_number: string;
   amount: string;
   invoice_date: string;
+  /** DIN-Code aus der KI-Extraktion; wird nur noch gespeichert, nicht mehr angezeigt (SRS R1.6) */
   kostengruppe_code: string;
+  /** Primäre Gewerk-Zuordnung; vorgeschlagen über die Firma→Gewerk-Regel (SRS 4.1) */
+  trade_id: string;
 }
 
 export const emptyInvoiceForm: InvoiceForm = {
-  company_name: '', invoice_number: '', amount: '', invoice_date: '', kostengruppe_code: '',
+  company_name: '', invoice_number: '', amount: '', invoice_date: '', kostengruppe_code: '', trade_id: '',
 };
 
 interface Props {
@@ -66,8 +69,8 @@ export const InvoiceFieldsSection: React.FC<Props> = ({ form, onChange, duplicat
         <Input type="date" value={form.invoice_date} onChange={(e) => onChange({ ...form, invoice_date: e.target.value })} />
       </div>
       <div className="col-span-2 space-y-1">
-        <Label className="text-xs">Kostengruppe (DIN 276)</Label>
-        <KostengruppenSelect value={form.kostengruppe_code} onValueChange={(v) => onChange({ ...form, kostengruppe_code: v })} />
+        <Label className="text-xs">Gewerk</Label>
+        <TradeSelect value={form.trade_id || null} onValueChange={(v) => onChange({ ...form, trade_id: v || '' })} />
       </div>
     </div>
     {duplicate && (

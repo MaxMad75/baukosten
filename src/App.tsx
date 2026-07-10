@@ -14,11 +14,8 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 const Budget = lazy(() => import("./pages/Budget"));
-const Estimates = lazy(() => import("./pages/Estimates").then((m) => ({ default: m.Estimates })));
-const Comparison = lazy(() => import("./pages/Comparison"));
 const Contractors = lazy(() => import("./pages/Contractors"));
 const Documents = lazy(() => import("./pages/Documents"));
-const Offers = lazy(() => import("./pages/Offers"));
 const Export = lazy(() => import("./pages/Export"));
 const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -56,9 +53,10 @@ const App = () => (
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
               <Route path="/budget" element={<ProtectedRoute><Budget /></ProtectedRoute>} />
-              <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
-              <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
-              <Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
+              {/* R1.6: Kostenschätzung, Soll/Ist und Angebote sind im Budget aufgegangen */}
+              <Route path="/estimates" element={<Navigate to="/budget" replace />} />
+              <Route path="/comparison" element={<Navigate to="/budget" replace />} />
+              <Route path="/offers" element={<Navigate to="/budget" replace />} />
               <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
               <Route path="/contractors" element={<ProtectedRoute><Contractors /></ProtectedRoute>} />
               <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />

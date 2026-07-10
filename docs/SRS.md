@@ -101,7 +101,7 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 | # | Story | Prio | Status |
 |---|---|---|---|
 | E1 | Als Bauherr sehe ich auf dem Dashboard die 4–5 wichtigsten Zahlen: Budget gesamt, beauftragt, abgerechnet, bezahlt, Prognose-Abweichung. | MUSS | 🔶 (Dashboard existiert, auf Gewerke-Kennzahlen umstellen) |
-| E2 | Als Bauherr habe ich eine **aufgeräumte Navigation** ohne tote Punkte. | MUSS | ⬜ Konzept 4.2 |
+| E2 | Als Bauherr habe ich eine **aufgeräumte Navigation** ohne tote Punkte. | MUSS | 🔶 (R1.6: 10→7 Punkte; Firmen/Export unter Einstellungen + Gruppierung → R2.1) |
 | E3 | Als Bauherr kann ich die App am Handy auf der Baustelle nutzen (Foto → Rechnung; Karten statt Tabellen). | SOLL | ⬜ (Plan 5.4) |
 | E4 | Als Haushalt arbeiten wir zu zweit gleichzeitig ohne Datenverlust. | MUSS | ✅ (DB-Trigger, RLS) |
 
@@ -300,7 +300,16 @@ loan_payments: id, loan_id, payment_date, total_amount,
    Datum aus der Kopfzeile vorbefüllt, Vorschau alt→neu vor dem Import. Idempotent: gleiches Label
    überschreibt (UNIQUE trade_id+version_label); „als aktuelle Schätzung setzen" resetzt is_current nur
    für betroffene Gewerke. Gewerke ohne Excel-Zeile bleiben unverändert (Hinweis im Dialog)
-6. R1.6 Rückbau: Kostenschätzung-/Soll-Ist-/Angebote-Seiten in Budget aufgehen lassen; DIN-Subcode-Felder ausblenden (Daten behalten)
+6. R1.6 Rückbau — ✅ 10.07.2026: Seiten Kostenschätzung/Soll-Ist/Angebote entfernt (Routen leiten auf
+   /budget um; Navigation von 10 auf 7 Punkte), Dashboard-Karten auf Budget/Dokumente umgestellt,
+   „Angebot strukturieren"-Aktion aus Dokumenten entfernt (Auftragssumme lebt am Gewerk).
+   Rechnungsliste: Gewerk-Spalte + Gewerk-Filter (inkl. „Ohne Gewerk") statt DIN; Bearbeiten-Dialog
+   ohne DIN-Feld und ohne Kostengruppen-Pflicht. **Daten behalten:** kostengruppe_code/invoice_allocations/
+   offers/architect_estimates bleiben in der DB; DIN-Mehrfach-Zuordnungen von Alt-Rechnungen bleiben
+   editierbar (Editor erscheint nur bei Bestand) und erscheinen als Tooltip in der Liste.
+   Gelöscht: pages/Estimates|Comparison|Offers, EstimateDocumentPicker, useOffers, lib/tradeMapping.
+
+**R1 damit komplett (10.07.2026) — Bauherren-Verifikation der Gesamtstrecke ausstehend.**
 
 **R2 — Navigation & Dashboard**
 7. R2.1 Sidebar neu (6 Punkte, Gruppierung), Firmen/Export unter Einstellungen

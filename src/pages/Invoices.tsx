@@ -95,7 +95,7 @@ export const Invoices: React.FC = () => {
   // List search / filter / sort
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterKg, setFilterKg] = useState<string>('all');
+  const [filterTrade, setFilterTrade] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -183,14 +183,8 @@ export const Invoices: React.FC = () => {
       toast({ title: 'Fehler', description: 'Bitte füllen Sie alle Pflichtfelder aus', variant: 'destructive' });
       return;
     }
-    // Enforce cost group assignment
-    const hasKg = useMultiAllocation
-      ? editAllocations.some(a => !!a.kostengruppe_code)
-      : !!editFormData.kostengruppe_code;
-    if (!hasKg) {
-      toast({ title: 'Fehler', description: 'Bitte weisen Sie mindestens eine Kostengruppe zu', variant: 'destructive' });
-      return;
-    }
+    // R1.6/User-Feedback: Gewerk-Zuordnung ist optional (nachtragen erlaubt),
+    // eine DIN-Kostengruppe wird nicht mehr verlangt.
     const invoiceAmt = parseFloat(editFormData.amount);
 
     // Determine the primary kostengruppe_code (for legacy column)
@@ -363,21 +357,19 @@ export const Invoices: React.FC = () => {
     return activeEstimateItems.filter(ei => ei.kostengruppe_code === kgCode);
   };
 
-  // Cost groups actually used by invoices (incl. multi-allocations) for the filter
-  const usedKgCodes = useMemo(() => {
-    const codes = new Set<string>();
-    for (const inv of invoices) {
-      for (const a of getEffectiveAllocations(inv)) codes.add(a.kostengruppe_code);
-    }
-    return Array.from(codes).sort();
-  }, [invoices, getEffectiveAllocations]);
+  // Gewerke, die tatsächlich an Rechnungen hängen (für den Filter)
+  const usedTrades = useMemo(
+    () => trades.filter((t) => invoices.some((inv) => inv.trade_id === t.id)),
+    [trades, invoices]
+  );
 
   // Filtered + sorted list
   const visibleInvoices = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = invoices.filter((inv) => {
       if (filterStatus !== 'all' && ((inv.status as InvoiceStatus) || 'draft') !== filterStatus) return false;
-      if (filterKg !== 'all' && !getEffectiveAllocations(inv).some((a) => a.kostengruppe_code === filterKg)) return false;
+      if (filterTrade === 'none' && inv.trade_id) return false;
+      if (filterTrade !== 'all' && filterTrade !== 'none' && inv.trade_id !== filterTrade) return false;
       if (q) {
         const haystack = `${inv.company_name} ${inv.invoice_number || ''} ${inv.description || ''}`.toLowerCase();
         if (!haystack.includes(q)) return false;
@@ -390,7 +382,7 @@ export const Invoices: React.FC = () => {
         ? (Number(a.amount) - Number(b.amount)) * dir
         : (new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()) * dir
     );
-  }, [invoices, searchQuery, filterStatus, filterKg, sortBy, sortDir, getEffectiveAllocations]);
+  }, [invoices, searchQuery, filterStatus, filterTrade, sortBy, sortDir]);
 
   const toggleSort = (key: 'date' | 'amount') => {
     if (sortBy === key) {
@@ -431,52 +423,42 @@ export const Invoices: React.FC = () => {
   const selectedPayable = selectedInvoiceObj ? getPayableAmount(Number(selectedInvoiceObj.amount), selectedDeductions) : 0;
   const selectedRemainingAmount = selectedInvoiceObj ? selectedPayable - getTotalPaid(selectedInvoiceObj.id) : 0;
 
-  // Allocation summary helper for invoice list
-  const renderAllocationSummary = (invoice: Invoice) => {
+  // Gewerk-Anzeige für die Rechnungsliste (R1.6: ersetzt die DIN-Spalte;
+  // DIN-Daten bleiben erhalten und erscheinen nur noch im Tooltip von
+  // Alt-Rechnungen mit Mehrfach-Zuordnung).
+  const renderTradeSummary = (invoice: Invoice) => {
+    const trade = invoice.trade_id ? trades.find((t) => t.id === invoice.trade_id) : null;
+    if (trade) return <span className="text-sm">{trade.name}</span>;
+
     const allocs = getAllocationsForInvoice(invoice.id);
-    if (allocs.length === 0) {
-      // Legacy fallback
-      const kg = getKostengruppeByCode(invoice.kostengruppe_code || '');
-      if (kg) return <span className="text-sm">{kg.code} - {kg.name}</span>;
-      return <span className="text-sm text-muted-foreground">–</span>;
-    }
-    if (allocs.length === 1) {
-      const kg = getKostengruppeByCode(allocs[0].kostengruppe_code);
-      const hasEstLink = !!allocs[0].estimate_item_id;
+    if (allocs.length > 1) {
       return (
-        <span className="text-sm flex items-center gap-1">
-          {kg ? `${kg.code} - ${kg.name}` : allocs[0].kostengruppe_code}
-          {hasEstLink && <Link2 className="h-3 w-3 text-muted-foreground" />}
-        </span>
+        <TooltipProvider>
+          <UiTooltip>
+            <TooltipTrigger asChild>
+              <span className="text-sm flex items-center gap-1 cursor-help">
+                <Badge variant="outline" className="text-xs">{allocs.length} Zuordnungen</Badge>
+                {allocs.some(a => a.estimate_item_id) && <Link2 className="h-3 w-3 text-muted-foreground" />}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <div className="space-y-1">
+                {allocs.map((a, idx) => {
+                  const kg = getKostengruppeByCode(a.kostengruppe_code);
+                  return (
+                    <div key={idx} className="text-xs flex justify-between gap-4">
+                      <span>{kg ? `${kg.code} ${kg.name}` : a.kostengruppe_code}</span>
+                      <span className="font-medium">{formatAmount(Number(a.amount))}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </TooltipContent>
+          </UiTooltip>
+        </TooltipProvider>
       );
     }
-    // Multiple allocations
-    const hasEstLinks = allocs.some(a => a.estimate_item_id);
-    return (
-      <TooltipProvider>
-        <UiTooltip>
-          <TooltipTrigger asChild>
-            <span className="text-sm flex items-center gap-1 cursor-help">
-              <Badge variant="outline" className="text-xs">{allocs.length} Zuordnungen</Badge>
-              {hasEstLinks && <Link2 className="h-3 w-3 text-muted-foreground" />}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-xs">
-            <div className="space-y-1">
-              {allocs.map((a, idx) => {
-                const kg = getKostengruppeByCode(a.kostengruppe_code);
-                return (
-                  <div key={idx} className="text-xs flex justify-between gap-4">
-                    <span>{kg ? `${kg.code} ${kg.name}` : a.kostengruppe_code}</span>
-                    <span className="font-medium">{formatAmount(Number(a.amount))}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </TooltipContent>
-        </UiTooltip>
-      </TooltipProvider>
-    );
+    return <span className="text-sm text-muted-foreground">–</span>;
   };
 
   return (
@@ -580,14 +562,14 @@ export const Invoices: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={filterKg} onValueChange={setFilterKg}>
-                  <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Alle Kostengruppen" /></SelectTrigger>
+                <Select value={filterTrade} onValueChange={setFilterTrade}>
+                  <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Alle Gewerke" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Alle Kostengruppen</SelectItem>
-                    {usedKgCodes.map((code) => {
-                      const kg = getKostengruppeByCode(code);
-                      return <SelectItem key={code} value={code}>{kg ? `${kg.code} - ${kg.name}` : code}</SelectItem>;
-                    })}
+                    <SelectItem value="all">Alle Gewerke</SelectItem>
+                    <SelectItem value="none">Ohne Gewerk</SelectItem>
+                    {usedTrades.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -604,7 +586,7 @@ export const Invoices: React.FC = () => {
                       </button>
                     </TableHead>
                     <TableHead>Firma</TableHead>
-                    <TableHead className="hidden md:table-cell">Kostengruppe</TableHead>
+                    <TableHead className="hidden md:table-cell">Gewerk</TableHead>
                     <TableHead className="text-right">
                       <button className="ml-auto flex items-center gap-1" onClick={() => toggleSort('amount')}>
                         Betrag {sortIndicator('amount')}
@@ -629,7 +611,7 @@ export const Invoices: React.FC = () => {
                           </div>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
-                          {renderAllocationSummary(invoice)}
+                          {renderTradeSummary(invoice)}
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           <div>
@@ -767,12 +749,6 @@ export const Invoices: React.FC = () => {
                   companyName={editFormData.company_name}
                 />
               </div>
-              {!useMultiAllocation && (
-                <div className="space-y-2">
-                  <Label>Kostengruppe (DIN 276)</Label>
-                  <KostengruppenSelect value={editFormData.kostengruppe_code} onValueChange={(v) => setEditFormData({ ...editFormData, kostengruppe_code: v })} />
-                </div>
-              )}
               <div className="col-span-2 space-y-2">
                 <Label>Beschreibung</Label>
                 <Textarea value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} />
@@ -787,21 +763,16 @@ export const Invoices: React.FC = () => {
               </div>
             </div>
 
-            {/* Allocation Editor */}
+            {/* Allocation Editor — R1.6: DIN-basierte Mehrfach-Zuordnung nur
+                noch für Alt-Rechnungen sichtbar, die bereits welche haben
+                (Daten bleiben erhalten); neue Zuordnung läuft über das Gewerk. */}
+            {useMultiAllocation && (
             <div className="space-y-3 border rounded-lg p-4">
               <div className="flex items-center gap-3">
                 <Switch checked={useMultiAllocation} onCheckedChange={(checked) => {
                   setUseMultiAllocation(checked);
-                  if (checked && editAllocations.length === 0) {
-                    // Initialize with current single KG if set
-                    if (editFormData.kostengruppe_code) {
-                      setEditAllocations([{ kostengruppe_code: editFormData.kostengruppe_code, estimate_item_id: null, amount: editFormData.amount, notes: '' }]);
-                    } else {
-                      setEditAllocations([{ kostengruppe_code: '', estimate_item_id: null, amount: editFormData.amount, notes: '' }]);
-                    }
-                  }
                 }} id="multi-alloc-toggle" />
-                <Label htmlFor="multi-alloc-toggle" className="cursor-pointer text-sm">Aufteilen auf mehrere Positionen</Label>
+                <Label htmlFor="multi-alloc-toggle" className="cursor-pointer text-sm">Aufteilen auf mehrere Positionen (DIN 276, Altbestand)</Label>
               </div>
 
               {useMultiAllocation && (
@@ -876,6 +847,7 @@ export const Invoices: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
 
             {/* Deductions Editor — Skonto, Sicherheitseinbehalt etc. */}
             <DeductionsEditor

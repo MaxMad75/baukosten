@@ -7,7 +7,7 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { 
-  FileText, Calculator, BarChart3, Euro, CheckCircle2, AlertCircle,
+  FileText, Wallet, FolderOpen, Euro, CheckCircle2, AlertCircle,
   TrendingUp, TrendingDown, ArrowRight
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
@@ -172,33 +172,33 @@ export const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/estimates')}>
+          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/budget')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Calculator className="h-5 w-5 text-primary" />
-                Kostenschätzung
+                <Wallet className="h-5 w-5 text-primary" />
+                Budget
               </CardTitle>
-              <CardDescription>Architekten-Kalkulation hochladen</CardDescription>
+              <CardDescription>Gewerke, Schätzungen und Soll/Ist</CardDescription>
             </CardHeader>
             <CardContent>
               <Button className="w-full" variant="secondary">
-                Zur Kostenschätzung
+                Zum Budget
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/comparison')}>
+          <Card className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/20" onClick={() => navigate('/documents')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                Soll/Ist-Vergleich
+                <FolderOpen className="h-5 w-5 text-primary" />
+                Dokumente
               </CardTitle>
-              <CardDescription>Budget vs. tatsächliche Kosten</CardDescription>
+              <CardDescription>Belege hochladen und wiederfinden</CardDescription>
             </CardHeader>
             <CardContent>
               <Button className="w-full" variant="outline">
-                Zum Vergleich
+                Zu den Dokumenten
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Button>
             </CardContent>

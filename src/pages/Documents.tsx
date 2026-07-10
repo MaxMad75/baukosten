@@ -13,7 +13,6 @@ import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
-import { useOffers } from '@/hooks/useOffers';
 import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, AiResult } from '@/utils/analyzeFile';
 import { InvoiceFieldsSection, InvoiceForm, emptyInvoiceForm } from '@/components/documents/InvoiceFieldsSection';
 import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
@@ -65,7 +64,6 @@ export const Documents: React.FC = () => {
   const { contractors, findOrCreateByName, fetchContractors } = useContractors();
   const { trades } = useTrades();
   const { invoices, createInvoice, deleteInvoice, fetchInvoices } = useInvoices();
-  const { offers, createOffer } = useOffers();
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -209,26 +207,6 @@ export const Documents: React.FC = () => {
     });
 
     return invoice?.id || null;
-  };
-
-  /**
-   * Manually create a structured offer from a document's metadata.
-   */
-  const createOfferFromDocument = async (doc: Document) => {
-    if (offers.some(o => o.document_id === doc.id)) {
-      toast({ title: 'Hinweis', description: 'Für dieses Dokument existiert bereits ein strukturiertes Angebot.' });
-      return;
-    }
-    const companyName = getContractorName(doc.contractor_id) || doc.title;
-    const result = await createOffer({
-      company_name: companyName,
-      title: doc.title,
-      document_id: doc.id,
-      contractor_id: doc.contractor_id || undefined,
-    });
-    if (result) {
-      navigate('/offers?items=' + result.id);
-    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -758,11 +736,6 @@ export const Documents: React.FC = () => {
                                 </Badge>
                               </button>
                             )}
-                            {offers.some(o => o.document_id === doc.id) && (
-                              <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700">
-                                <FileCheck className="mr-1 h-3 w-3" />Angebot
-                              </Badge>
-                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">{doc.file_name}</div>
                           {doc.description && <div className="mt-1 text-xs text-muted-foreground line-clamp-1">{doc.description}</div>}
@@ -808,18 +781,6 @@ export const Documents: React.FC = () => {
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
-                          {doc.document_type === 'Angebot' && !offers.some(o => o.document_id === doc.id) && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="icon" onClick={() => createOfferFromDocument(doc)}>
-                                    <FileCheck className="h-4 w-4 text-yellow-600" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Angebot strukturieren</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
                           <Button variant="ghost" size="icon" onClick={() => openPreview(doc.file_path, doc.file_name)} title="Vorschau">
                             <Eye className="h-4 w-4" />
                           </Button>

@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { Button } from '@/components/ui/button';
 import {
-  Home, FileText, Calculator, BarChart3, Download, LogOut, User,
+  Home, FileText, Download, LogOut, User,
   Users, FolderOpen, Menu, X, Settings, Eye, EyeOff, Wallet
 } from 'lucide-react';
 import { useState } from 'react';
@@ -15,13 +15,12 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+// R1.6: Kostenschätzung, Angebote und Soll/Ist sind im Budget aufgegangen
+// (Schätzversionen, Auftragssummen und Soll/Ist leben an den Gewerken).
 const navItems = [
   { to: '/', icon: Home, label: 'Dashboard' },
   { to: '/budget', icon: Wallet, label: 'Budget' },
   { to: '/invoices', icon: FileText, label: 'Rechnungen' },
-  { to: '/estimates', icon: Calculator, label: 'Kostenschätzung' },
-  { to: '/offers', icon: FileText, label: 'Angebote' },
-  { to: '/comparison', icon: BarChart3, label: 'Soll/Ist' },
   { to: '/documents', icon: FolderOpen, label: 'Dokumente' },
   { to: '/contractors', icon: Users, label: 'Firmen' },
   { to: '/export', icon: Download, label: 'Export' },

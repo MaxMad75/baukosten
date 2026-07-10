@@ -57,6 +57,7 @@ const invoiceFormFromAi = (ai: AiResult): InvoiceForm => ({
   amount: ai.amount != null ? String(ai.amount) : '',
   invoice_date: ai.invoice_date || '',
   kostengruppe_code: ai.kostengruppe_code || '',
+  trade_id: '',
 });
 
 export const Documents: React.FC = () => {
@@ -153,12 +154,13 @@ export const Documents: React.FC = () => {
         company_name?: string | null; invoice_number?: string | null;
         amount?: number | null; invoice_date?: string | null; kostengruppe_code?: string | null;
       };
-      setInvoiceForm((prev) => ({
+      setInvoiceForm((prev) => withTradeSuggestion({
         company_name: prev.company_name || ai.company_name || '',
         invoice_number: prev.invoice_number || ai.invoice_number || '',
         amount: prev.amount || (ai.amount != null ? String(ai.amount) : ''),
         invoice_date: prev.invoice_date || ai.invoice_date || '',
         kostengruppe_code: prev.kostengruppe_code || ai.kostengruppe_code || '',
+        trade_id: prev.trade_id,
       }));
       toast({ title: 'KI-Ergänzung abgeschlossen', description: 'Leere Felder wurden ausgefüllt — bitte prüfen.' });
     } catch (err) {

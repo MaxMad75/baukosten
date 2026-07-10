@@ -368,7 +368,9 @@ Alle beantwortet am 08.07.2026:
 5. `supabase/functions/mcp/index.ts` wird von npm install/vite lokal verstümmelt →
    vor Commits `git checkout -- supabase/functions/mcp/index.ts`.
 6. Generierte `src/integrations/supabase/types.ts` bei neuen Tabellen/Spalten manuell nachziehen.
-7. Vor jedem Push: `tsc --noEmit`, `eslint . --quiet`, `vitest run`, `npm run build` — alles grün.
+7. Vor jedem Push exakt die CI-Befehle ausführen (Lektion 10.07.2026 — `tsc --noEmit` ohne `-p` prüft
+   hier NICHTS, drei CI-Läufe waren rot, ohne dass es lokal auffiel):
+   `npx tsc -p tsconfig.app.json --noEmit`, `npx eslint . --quiet`, `npx vitest run`, `npm run build`.
 8. Fachregeln: **kein Settlement/„wer schuldet wem"** (Zahlungsverhältnis = Besitzverhältnisse);
    invoice_payments ist die einzige Zahlungsquelle; Rechnung ist Master für Rechnungs-Dokumente.
 9. Statuspflege: Erledigtes in diesem SRS (Story-Status) und im OPTIMIERUNGSPLAN abhaken;

@@ -50,6 +50,8 @@ export interface Invoice {
   paid_by_profile_id: string | null;
   ai_extracted: boolean;
   is_gross: boolean;
+  /** Primäre Gewerk-Zuordnung (SRS 4.1); Mehrfach-Zuordnung via invoice_allocations */
+  trade_id?: string | null;
   status: InvoiceStatus;
   created_by_profile_id: string | null;
   created_at: string;
@@ -256,7 +258,65 @@ export interface InvoiceAllocation {
   invoice_id: string;
   kostengruppe_code: string;
   estimate_item_id: string | null;
+  /** Gewerk-Zuordnung (ersetzt kostengruppe_code als Ziel, SRS 4.1) */
+  trade_id: string | null;
   amount: number;
   notes: string | null;
   created_at: string;
+}
+
+/** Grobe DIN-276-Gruppe zur Gruppierung der Gewerke (SRS 4.1) */
+export type TradeSection = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800;
+
+export const TRADE_SECTION_LABELS: Record<TradeSection, string> = {
+  100: 'Grundstück',
+  200: 'Vorbereitende Maßnahmen',
+  300: 'Bauwerk – Baukonstruktion',
+  400: 'Bauwerk – technische Anlagen',
+  500: 'Außenanlagen',
+  600: 'Ausstattung',
+  700: 'Baunebenkosten',
+  800: 'Finanzierung',
+};
+
+/**
+ * Gewerk = Budgetposten, die Zeile aus dem Architekten-Excel (SRS 4.1).
+ * awarded_amount: NULL = noch nicht beauftragt (Ansicht setzt Schätzwert
+ * kursiv an), 0 = bewusst 0 (Leistung in anderem Gewerk enthalten).
+ */
+export interface Trade {
+  id: string;
+  household_id: string;
+  name: string;
+  section: TradeSection;
+  contractor_id: string | null;
+  skonto_percent: number | null;
+  awarded_amount: number | null;
+  awarded_tax_status: TaxStatus;
+  awarded_note: string | null;
+  sort_order: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Papierkorb: gesetzt = gelöscht, 30 Tage wiederherstellbar */
+  deleted_at?: string | null;
+}
+
+/** Schätzversion je Gewerk ("Kostenberechnung vom …"); is_current zählt für Soll/Ist. */
+export interface TradeEstimate {
+  id: string;
+  trade_id: string;
+  version_label: string;
+  estimate_date: string | null;
+  amount: number;
+  tax_status: TaxStatus;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface TradeWithEstimates extends Trade {
+  estimates: TradeEstimate[];
+  /** Bequemer Zugriff auf die aktuelle Schätzversion (is_current) */
+  current_estimate: TradeEstimate | null;
+  contractor?: Contractor | null;
 }

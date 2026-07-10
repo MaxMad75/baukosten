@@ -579,6 +579,7 @@ export type Database = {
           invoice_id: string
           kostengruppe_code: string
           notes: string | null
+          trade_id: string | null
         }
         Insert: {
           amount: number
@@ -588,6 +589,7 @@ export type Database = {
           invoice_id: string
           kostengruppe_code: string
           notes?: string | null
+          trade_id?: string | null
         }
         Update: {
           amount?: number
@@ -597,6 +599,7 @@ export type Database = {
           invoice_id?: string
           kostengruppe_code?: string
           notes?: string | null
+          trade_id?: string | null
         }
         Relationships: [
           {
@@ -611,6 +614,13 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_allocations_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
             referencedColumns: ["id"]
           },
         ]
@@ -789,6 +799,7 @@ export type Database = {
           payment_date: string | null
           status: string
           tax_amount: number | null
+          trade_id: string | null
           updated_at: string
         }
         Insert: {
@@ -813,6 +824,7 @@ export type Database = {
           payment_date?: string | null
           status?: string
           tax_amount?: number | null
+          trade_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -837,6 +849,7 @@ export type Database = {
           payment_date?: string | null
           status?: string
           tax_amount?: number | null
+          trade_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -873,6 +886,13 @@ export type Database = {
             columns: ["paid_by_profile_id"]
             isOneToOne: false
             referencedRelation: "profiles_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
             referencedColumns: ["id"]
           },
         ]
@@ -1029,6 +1049,113 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "profiles_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_estimates: {
+        Row: {
+          amount: number
+          created_at: string
+          estimate_date: string | null
+          id: string
+          is_current: boolean
+          tax_status: string
+          trade_id: string
+          version_label: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          estimate_date?: string | null
+          id?: string
+          is_current?: boolean
+          tax_status?: string
+          trade_id: string
+          version_label: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          estimate_date?: string | null
+          id?: string
+          is_current?: boolean
+          tax_status?: string
+          trade_id?: string
+          version_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_estimates_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trades: {
+        Row: {
+          awarded_amount: number | null
+          awarded_note: string | null
+          awarded_tax_status: string
+          contractor_id: string | null
+          created_at: string
+          deleted_at: string | null
+          household_id: string
+          id: string
+          name: string
+          notes: string | null
+          section: number
+          skonto_percent: number | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          awarded_amount?: number | null
+          awarded_note?: string | null
+          awarded_tax_status?: string
+          contractor_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          household_id: string
+          id?: string
+          name: string
+          notes?: string | null
+          section?: number
+          skonto_percent?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          awarded_amount?: number | null
+          awarded_note?: string | null
+          awarded_tax_status?: string
+          contractor_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          household_id?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          section?: number
+          skonto_percent?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trades_contractor_id_fkey"
+            columns: ["contractor_id"]
+            isOneToOne: false
+            referencedRelation: "contractors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_household_id_fkey"
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"

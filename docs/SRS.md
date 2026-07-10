@@ -46,6 +46,11 @@ Struktur pro **Gewerk-Zeile** (z. B. „Erdarbeiten", „Zimmererarbeiten", „K
 Gruppiert in Abschnitte mit Zwischensummen: „1. Bauwerk – Baukonstruktion" (≈ DIN 300),
 „2. Bauwerk – technische Anlagen" (≈ DIN 400), …
 
+**Achtung, bekannter Formelfehler im Excel (entdeckt 10.07.2026 beim R1.1-Import):** Die Zwischensumme
+„günstigste oder beauftragt" der Baukonstruktion (665.322,45 € netto) lässt die Zeile Baustelleneinrichtung
+(30.595,38 €) aus; korrekt wären 695.917,83 €. Auch „Gesamtkosten" ist entsprechend zu niedrig. Die App
+summiert korrekt — Abweichungen zum Excel an dieser Stelle sind kein App-Fehler.
+
 **Ziel der App: dieses Excel vollständig ersetzen** — gleiche Denke, aber automatisch gefüllt
 aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 
@@ -76,9 +81,9 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 
 | # | Story | Prio | Status |
 |---|---|---|---|
-| C1 | Als Bauherr lege ich **Gewerke** an (Erdarbeiten, Elektro, Küche …), wie im Architekten-Excel. | MUSS | ⬜ **Kernkonzept 4.1** |
-| C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | 🔶 (estimate_versions existieren, aber DIN-Code-basiert statt Gewerk-basiert) |
-| C3 | Als Bauherr hinterlege ich pro Gewerk die **Auftragssumme** („günstigste oder beauftragt") und die Firma. | MUSS | 🔶 (Angebote existieren, aber nicht mit Soll/Ist verzahnt) |
+| C1 | Als Bauherr lege ich **Gewerke** an (Erdarbeiten, Elektro, Küche …), wie im Architekten-Excel. | MUSS | 🔶 (Datenmodell + Seed ✅ R1.1; UI/Assistent → R1.2) |
+| C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | 🔶 (trade_estimates ✅ R1.1 inkl. beider Excel-Versionen; UI fehlt) |
+| C3 | Als Bauherr hinterlege ich pro Gewerk die **Auftragssumme** („günstigste oder beauftragt") und die Firma. | MUSS | 🔶 (awarded_amount/contractor_id am Gewerk ✅ R1.1; UI fehlt) |
 | C4 | Als Bauherr ordne ich Rechnungen einem **Gewerk** zu (nicht einem DIN-Subcode) — die App schlägt es **über die Firma** vor (deterministisch, konsistent). | MUSS | ⬜ ersetzt die unzuverlässige KI-Subcode-Zuordnung |
 | C5 | Als Bauherr sehe ich das Excel als App-Ansicht: pro Gewerk Schätzung V1/V2 → beauftragt → abgerechnet → bezahlt, mit Ampelfarben und Abschnitts-Zwischensummen, die **garantiert korrekt aufsummieren**. | MUSS | ⬜ ersetzt „Soll/Ist"-Seite |
 | C6 | Als Bauherr sehe ich die realisierte **Skonto-Ersparnis** pro Gewerk und gesamt (aus den erfassten Abzügen). | SOLL | ⬜ Daten vorhanden (invoice_deductions), nur Auswertung fehlt |
@@ -263,7 +268,10 @@ loan_payments: id, loan_id, payment_date, total_amount,
 ## 6. Priorisierter Umsetzungsplan
 
 **R1 — Budget/Gewerke (Kern-Redesign, mehrere Sessions)**
-1. R1.1 Datenmodell: trades + trade_estimates + invoices.trade_id (Migration, idempotent) — *Migration zuerst bestätigen lassen, dann Code!*
+1. R1.1 Datenmodell: trades + trade_estimates + invoices.trade_id (Migration, idempotent) — ✅ 10.07.2026
+   (Migration `20260708130000_trades_gewerke_model.sql` vom Bauherrn ausgeführt; 28 Gewerke + 2 Schätzversionen
+   + Auftragssummen/Firmen/Skonti aus dem Architekten-Excel geseedet — Seed-SQL bewusst nicht im Git, private Daten.
+   Netto/Brutto: trades/trade_estimates tragen tax_status wie architect_estimate_items, Werte netto wie im Excel.)
 2. R1.2 Einrichtungs-Assistent: Gewerke aus Bestandsdaten (belegte Kostengruppen/Firmen) vorschlagen, zusammenführen, benennen
 3. R1.3 Zuordnung: Firma→Gewerk-Regel im Upload-/Bearbeiten-Flow; KI nur für unbekannte Firmen (geschlossene Gewerkliste)
 4. R1.4 Budget-Seite (Excel-Ansicht) mit Abschnitts-Summen, Ampeln, Prognose, aufklappbaren Zeilen

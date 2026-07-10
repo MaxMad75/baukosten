@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
-import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TradeSection, TradeWithEstimates, TRADE_SECTION_LABELS } from '@/lib/types';
 
@@ -28,22 +27,18 @@ interface TradeSelectProps {
  */
 export const TradeSelect: React.FC<TradeSelectProps> = ({ value, onValueChange, placeholder = 'Gewerk wählen…', companyName }) => {
   const { trades, loading, available } = useTrades();
-  const { contractors } = useContractors();
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     setShowAll(false);
   }, [companyName]);
 
-  const matchedContractor = useMemo(
-    () => (companyName?.trim() ? matchContractorByName(contractors, companyName.trim()) : null),
-    [contractors, companyName]
-  );
-
   const candidates = useMemo(() => {
     if (!companyName?.trim()) return [];
-    return suggestTradeForCompany(trades, contractors, companyName.trim()).candidates;
-  }, [trades, contractors, companyName]);
+    return suggestTradeForCompany(trades, companyName.trim()).candidates;
+  }, [trades, companyName]);
+
+  const matchedContractorName = candidates[0]?.contractor?.company_name || null;
 
   const restricted = !showAll && candidates.length > 0;
 
@@ -90,7 +85,7 @@ export const TradeSelect: React.FC<TradeSelectProps> = ({ value, onValueChange, 
         {restricted ? (
           <>
             <SelectGroup>
-              <SelectLabel>Gewerke von {matchedContractor?.company_name || companyName}</SelectLabel>
+              <SelectLabel>Gewerke von {matchedContractorName || companyName}</SelectLabel>
               {restrictedTrades.map((trade) => (
                 <SelectItem key={trade.id} value={trade.id}>{trade.name}</SelectItem>
               ))}

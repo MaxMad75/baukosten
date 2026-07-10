@@ -186,7 +186,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                 const contractor = await findOrCreateByName(ai.company_name);
                 contractorId = contractor?.id;
                 // Firma→Gewerk-Regel (SRS 4.1): nur eindeutige Treffer zuordnen
-                const { trade } = suggestTradeForCompany(trades, contractors, ai.company_name);
+                const { trade } = suggestTradeForCompany(trades, ai.company_name);
                 const invoice = await createInvoice({
                   amount: ai.amount,
                   invoice_date: ai.invoice_date,

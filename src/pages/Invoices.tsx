@@ -135,7 +135,7 @@ export const Invoices: React.FC = () => {
     // über die Firma vorschlagen; nur eindeutige Treffer, immer übersteuerbar.
     const suggestedTrade = invoice.trade_id
       ? null
-      : suggestTradeForCompany(trades, contractors, invoice.company_name).trade;
+      : suggestTradeForCompany(trades, invoice.company_name).trade;
     setEditFormData({
       company_name: invoice.company_name,
       invoice_number: invoice.invoice_number || '',

@@ -284,7 +284,13 @@ loan_payments: id, loan_id, payment_date, total_amount,
    Firmen, nicht Gewerken → Gewerk-Feld überall optional („später nachtragen" ist der Normalfall),
    und das Dropdown zeigt nur die Gewerke der gematchten Firma (SRS 4.1 Punkt 2; „Alle Gewerke
    anzeigen…" als Ausweg). Manuelle Gewerk-Wahl ist damit nur nötig, wenn eine Firma mehrere
-   Gewerke hat — und dann nur zwischen diesen. **KI-Vorschlag für unbekannte Firmen bewusst zurückgestellt** (alle Gewerke
+   Gewerke hat — und dann nur zwischen diesen. **Bugfix 10.07. abends (User-Test):** Das Matching
+   läuft jetzt DIREKT Rechnungsfirma ↔ Firmenname am Gewerk (gestuft: Gleichheit → Wortanfang →
+   ganzes Wort; „Mayerbau Bauunternehmung GmbH" trifft „Fa. Mayerbau"), statt über die
+   contractors-Liste, wo Seed-Dubletten die Kette rissen. Firmen-Merge hängt jetzt auch trades um
+   (vorher: Gewerk verlor beim Dubletten-Löschen seine Firma). Firmen-Seite zeigt die echten
+   Gewerke aus der trades-Tabelle. Budget-Seite hat eine wählbare **Vergleichsbasis**
+   (Schätzversion), gegen die Ampeln/Δ/Prognose rechnen. **KI-Vorschlag für unbekannte Firmen bewusst zurückgestellt** (alle Gewerke
    haben Firmen aus dem Seed; bei Bedarf in R4 mit Konfidenz/Review-Queue umsetzen)
 4. R1.4 Budget-Seite (Excel-Ansicht) mit Abschnitts-Summen, Ampeln, Prognose, aufklappbaren Zeilen —
    ✅ v1 10.07.2026 (src/pages/Budget.tsx, Route /budget): Brutto/Netto-Umschalter, Beauftragt mit

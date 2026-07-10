@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useContractors } from '@/hooks/useContractors';
+import { useTrades } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
 import { Contractor } from '@/lib/types';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -36,6 +37,7 @@ const emptyForm = {
 
 export const Contractors: React.FC = () => {
   const { contractors, loading, createContractor, updateContractor, deleteContractor, mergeContractors } = useContractors();
+  const { trades } = useTrades();
   const { invoices } = useInvoices();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isMergeOpen, setIsMergeOpen] = useState(false);
@@ -123,11 +125,36 @@ export const Contractors: React.FC = () => {
     }
   };
 
+  // Echte Gewerke aus dem Budget (trades-Tabelle) je Firma — die frühere
+  // Freitext-Angabe contractors.trade dient nur noch als Fallback.
+  const tradeNamesByContractor = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const t of trades) {
+      if (!t.contractor_id) continue;
+      const list = map.get(t.contractor_id) || [];
+      list.push(t.name);
+      map.set(t.contractor_id, list);
+    }
+    return map;
+  }, [trades]);
+
+  const gewerkeLabel = (c: Contractor) =>
+    tradeNamesByContractor.get(c.id)?.join(', ') || c.trade || '';
+
+  const tradeFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const list of tradeNamesByContractor.values()) list.forEach((n) => names.add(n));
+    for (const c of contractors) if (c.trade) names.add(c.trade);
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'de'));
+  }, [tradeNamesByContractor, contractors]);
+
   const filtered = contractors.filter((c) => {
     const matchSearch = c.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (c.contact_person || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.trade || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchTrade = filterTrade === 'all' || c.trade === filterTrade;
+      gewerkeLabel(c).toLowerCase().includes(searchQuery.toLowerCase());
+    const matchTrade = filterTrade === 'all'
+      || c.trade === filterTrade
+      || (tradeNamesByContractor.get(c.id) || []).includes(filterTrade);
     return matchSearch && matchTrade;
   });
 
@@ -262,7 +289,7 @@ export const Contractors: React.FC = () => {
             <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Alle Gewerke" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Alle Gewerke</SelectItem>
-              {TRADES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              {tradeFilterOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -295,7 +322,7 @@ export const Contractors: React.FC = () => {
                       <TableCell>
                         <div>
                           <div className="font-medium">{c.company_name}</div>
-                          <div className="text-sm text-muted-foreground md:hidden">{c.trade}</div>
+                          <div className="text-sm text-muted-foreground md:hidden">{gewerkeLabel(c)}</div>
                           {c.email && (
                             <div className="flex items-center gap-1 text-xs text-muted-foreground lg:hidden">
                               <Mail className="h-3 w-3" />{c.email}
@@ -303,7 +330,7 @@ export const Contractors: React.FC = () => {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell">{c.trade || '–'}</TableCell>
+                      <TableCell className="hidden md:table-cell">{gewerkeLabel(c) || '–'}</TableCell>
                       <TableCell className="hidden lg:table-cell">
                         {c.contact_person && <div className="flex items-center gap-1"><User className="h-3 w-3" />{c.contact_person}</div>}
                         {c.email && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="h-3 w-3" />{c.email}</div>}
@@ -367,7 +394,7 @@ export const Contractors: React.FC = () => {
             <DialogTitle>Firmen zusammenführen</DialogTitle>
             <DialogDescription>
               Wählen Sie die Duplikate aus und bestimmen Sie, welche Firma erhalten bleibt.
-              Alle Dokumente, Angebote und Bautagebuch-Einträge werden auf die verbleibende Firma umgehängt.
+              Alle Dokumente, Gewerke und sonstigen Verweise werden auf die verbleibende Firma umgehängt.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -376,7 +403,7 @@ export const Contractors: React.FC = () => {
                 <label key={c.id} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
                   <Checkbox checked={mergeSelection.has(c.id)} onCheckedChange={() => toggleMergeSelection(c.id)} />
                   <span className="text-sm flex-1">{c.company_name}</span>
-                  {c.trade && <span className="text-xs text-muted-foreground">{c.trade}</span>}
+                  {gewerkeLabel(c) && <span className="text-xs text-muted-foreground">{gewerkeLabel(c)}</span>}
                 </label>
               ))}
             </div>

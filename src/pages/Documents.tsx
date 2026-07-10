@@ -125,7 +125,7 @@ export const Documents: React.FC = () => {
    */
   const withTradeSuggestion = (form: InvoiceForm): InvoiceForm => {
     if (form.trade_id || !form.company_name.trim()) return form;
-    const { trade } = suggestTradeForCompany(trades, contractors, form.company_name.trim());
+    const { trade } = suggestTradeForCompany(trades, form.company_name.trim());
     return trade ? { ...form, trade_id: trade.id } : form;
   };
 

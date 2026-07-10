@@ -3,6 +3,7 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TradeSelect } from '@/components/TradeSelect';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -79,6 +80,8 @@ const Budget: React.FC = () => {
   const { formatAmount } = usePrivacy();
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<'gross' | 'net'>('gross');
+  // Vergleichsbasis: gegen welche Schätzversion Ampeln/Δ/Prognose rechnen
+  const [baseVersion, setBaseVersion] = useState<string | null>(null);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
@@ -93,16 +96,41 @@ const Budget: React.FC = () => {
   };
   const invTaxStatus = (inv: Invoice): TaxStatus => (inv.is_gross ? 'gross' : 'net');
 
+  // Alle vorhandenen Schätzversionen (Label + Datum), neueste zuerst
+  const versionOptions = useMemo(() => {
+    const map = new Map<string, { label: string; date: string | null; isCurrent: boolean }>();
+    for (const t of trades) {
+      for (const e of t.estimates) {
+        const existing = map.get(e.version_label);
+        if (!existing) {
+          map.set(e.version_label, { label: e.version_label, date: e.estimate_date, isCurrent: e.is_current });
+        } else if (e.is_current) {
+          existing.isCurrent = true;
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [trades]);
+
+  const effectiveBase =
+    (baseVersion && versionOptions.some((v) => v.label === baseVersion) ? baseVersion : null) ??
+    versionOptions.find((v) => v.isCurrent)?.label ??
+    versionOptions[0]?.label ??
+    null;
+
   const sections = useMemo((): SectionGroup[] => {
     const rows = trades.map((trade): BudgetRow => {
       const tradeInvoices = invoices.filter(
         (inv) => inv.trade_id === trade.id && inv.status !== 'cancelled'
       );
 
-      const estimate = trade.current_estimate
-        ? conv(Number(trade.current_estimate.amount), trade.current_estimate.tax_status)
-        : 0;
-      const prev = trade.estimates.find((e) => !e.is_current);
+      // Vergleichsbasis: gewählte Version, sonst die aktuelle des Gewerks
+      const baseEstimate =
+        (effectiveBase ? trade.estimates.find((e) => e.version_label === effectiveBase) : null) ||
+        trade.current_estimate;
+      const estimate = baseEstimate ? conv(Number(baseEstimate.amount), baseEstimate.tax_status) : 0;
+      // Vorversion = neueste andere Version (estimates sind nach Datum absteigend sortiert)
+      const prev = trade.estimates.find((e) => e.version_label !== baseEstimate?.version_label);
       const prevEstimate = prev ? conv(Number(prev.amount), prev.tax_status) : null;
 
       const awarded = trade.awarded_amount != null
@@ -169,7 +197,7 @@ const Budget: React.FC = () => {
         },
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trades, invoices, getDeductionsForInvoice, getTotalPaid, viewMode]);
+  }, [trades, invoices, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase]);
 
   const grandTotals = useMemo(() => ({
     estimate: sections.reduce((s, g) => s + g.totals.estimate, 0),
@@ -221,7 +249,7 @@ const Budget: React.FC = () => {
     let unmatched = 0;
 
     for (const inv of unassigned) {
-      const { trade, candidates } = suggestTradeForCompany(trades, contractors, inv.company_name);
+      const { trade, candidates } = suggestTradeForCompany(trades, inv.company_name);
       if (trade) {
         const list = byTrade.get(trade.id) || [];
         list.push(inv.id);
@@ -245,10 +273,12 @@ const Budget: React.FC = () => {
     if (failed) {
       toast({ title: 'Fehler', description: 'Nicht alle Rechnungen konnten zugeordnet werden', variant: 'destructive' });
     } else {
-      const rest = ambiguous + unmatched;
+      const parts: string[] = [];
+      if (ambiguous > 0) parts.push(`${ambiguous} mit mehreren möglichen Gewerken der Firma — bitte im Dropdown wählen`);
+      if (unmatched > 0) parts.push(`${unmatched} ohne Firmen-Treffer`);
       toast({
-        title: `${assigned} Rechnung(en) zugeordnet`,
-        description: rest > 0 ? `${rest} ohne eindeutige Firma→Gewerk-Zuordnung — bitte manuell auswählen.` : 'Alle Rechnungen sind jetzt einem Gewerk zugeordnet.',
+        title: `${assigned} Rechnung(en) automatisch zugeordnet`,
+        description: parts.length > 0 ? parts.join(' · ') : 'Alle Rechnungen sind jetzt einem Gewerk zugeordnet.',
       });
     }
   };
@@ -295,9 +325,26 @@ const Budget: React.FC = () => {
               Gewerke wie im Architekten-Excel — alle Werte {viewMode === 'gross' ? 'brutto inkl. 19 % MwSt' : 'netto'}
             </p>
           </div>
-          <div className="flex gap-1">
-            <Button variant={viewMode === 'gross' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('gross')}>Brutto</Button>
-            <Button variant={viewMode === 'net' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('net')}>Netto</Button>
+          <div className="flex flex-wrap items-center gap-3">
+            {versionOptions.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Vergleichsbasis</span>
+                <Select value={effectiveBase || ''} onValueChange={(v) => setBaseVersion(v)}>
+                  <SelectTrigger className="h-9 w-[260px] text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {versionOptions.map((v) => (
+                      <SelectItem key={v.label} value={v.label}>
+                        {v.label}{v.isCurrent ? ' (aktuell)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="flex gap-1">
+              <Button variant={viewMode === 'gross' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('gross')}>Brutto</Button>
+              <Button variant={viewMode === 'net' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('net')}>Netto</Button>
+            </div>
           </div>
         </div>
 

@@ -2,23 +2,55 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Contractor, TaxStatus, Trade, TradeEstimate, TradeWithEstimates } from '@/lib/types';
-import { matchContractorByName } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
 
+/** "Fa. Mayerbau GmbH" → "mayerbau gmbh" (Vergleichsform) */
+const cleanCompanyName = (name: string) =>
+  name.toLowerCase().replace(/^\s*(fa\.?|firma)\s+/i, '').replace(/\s+/g, ' ').trim();
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** needle kommt als ganzes Wort / ganze Phrase im haystack vor */
+const containsWord = (haystack: string, needle: string) =>
+  new RegExp(`(^|[^a-z0-9äöüß])${escapeRegExp(needle)}($|[^a-z0-9äöüß])`).test(haystack);
+
 /**
- * Firma→Gewerk-Regel (SRS 4.1): deterministische Zuordnung einer Rechnung
- * über ihre Firma. Genau ein Gewerk der gematchten Firma → dieses Gewerk
- * (gleiche Firma ⇒ immer gleiches Gewerk ⇒ konsistent). Mehrere Gewerke →
- * candidates für ein eingeschränktes Dropdown. Unbekannte Firma → leer.
+ * Firma→Gewerk-Regel (SRS 4.1): Rechnungsfirma wird DIREKT gegen den
+ * Firmennamen der Gewerke gematcht (nicht über den Umweg der contractors-
+ * Liste — dort können Dubletten wie "Fa. Mayerbau" neben "Mayerbau GmbH"
+ * existieren und die Kette reißt, User-Bug 10.07.2026). Gestufte Regeln,
+ * die beste nicht-leere Stufe gewinnt:
+ *   1. bereinigte Gleichheit ("Fa."/"Firma"-Präfix entfernt)
+ *   2. Wortanfang: einer beginnt mit dem anderen ("Mayerbau Bauunternehmung
+ *      GmbH" ↔ "Fa. Mayerbau"; schlägt Wort-Teiltreffer wie "Auer" in
+ *      "Kurz&Bauer")
+ *   3. ganzes Wort enthalten (Kurzkerne wie "USH")
+ * Genau ein Gewerk → automatische Zuordnung; mehrere → candidates für das
+ * eingeschränkte Dropdown; keins → leer (manuell aus der Gesamtliste).
  */
-export function suggestTradeForCompany<T extends Pick<Trade, 'id' | 'contractor_id'>>(
-  trades: T[],
-  contractors: Contractor[],
-  companyName: string
-): { trade: T | null; candidates: T[] } {
-  const contractor = matchContractorByName(contractors, companyName);
-  if (!contractor) return { trade: null, candidates: [] };
-  const candidates = trades.filter((t) => t.contractor_id === contractor.id);
+export function suggestTradeForCompany<
+  T extends Pick<Trade, 'id'> & { contractor?: Pick<Contractor, 'company_name'> | null }
+>(trades: T[], companyName: string): { trade: T | null; candidates: T[] } {
+  const company = cleanCompanyName(companyName || '');
+  if (!company) return { trade: null, candidates: [] };
+
+  const tiers: [T[], T[], T[]] = [[], [], []];
+  for (const t of trades) {
+    const contractor = cleanCompanyName(t.contractor?.company_name || '');
+    if (!contractor) continue;
+    if (contractor === company) {
+      tiers[0].push(t);
+    } else if (
+      (contractor.length >= 3 && company.startsWith(contractor)) ||
+      (company.length >= 3 && contractor.startsWith(company))
+    ) {
+      tiers[1].push(t);
+    } else if (containsWord(company, contractor) || containsWord(contractor, company)) {
+      tiers[2].push(t);
+    }
+  }
+
+  const candidates = tiers.find((list) => list.length > 0) || [];
   return { trade: candidates.length === 1 ? candidates[0] : null, candidates };
 }
 

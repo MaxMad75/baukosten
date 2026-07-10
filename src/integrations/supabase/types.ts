@@ -1016,46 +1016,6 @@ export type Database = {
           },
         ]
       }
-    }
-    Views: {
-      profiles_safe: {
-        Row: {
-          created_at: string | null
-          household_id: string | null
-          iban: string | null
-          id: string | null
-          name: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          household_id?: string | null
-          iban?: never
-          id?: string | null
-          name?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          household_id?: string | null
-          iban?: never
-          id?: string | null
-          name?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "profiles_household_id_fkey"
-            columns: ["household_id"]
-            isOneToOne: false
-            referencedRelation: "households"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       trade_estimates: {
         Row: {
           amount: number
@@ -1156,6 +1116,46 @@ export type Database = {
           },
           {
             foreignKeyName: "trades_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      profiles_safe: {
+        Row: {
+          created_at: string | null
+          household_id: string | null
+          iban: string | null
+          id: string | null
+          name: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          household_id?: string | null
+          iban?: never
+          id?: string | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          household_id?: string | null
+          iban?: never
+          id?: string | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_household_id_fkey"
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"

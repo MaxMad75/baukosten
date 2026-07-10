@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout -- supabase/functions/mcp/index.ts)",
+      "Bash(git restore supabase/functions/mcp/index.ts)"
+    ]
+  }
+}

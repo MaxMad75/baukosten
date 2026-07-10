@@ -100,7 +100,7 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 
 | # | Story | Prio | Status |
 |---|---|---|---|
-| E1 | Als Bauherr sehe ich auf dem Dashboard die 4–5 wichtigsten Zahlen: Budget gesamt, beauftragt, abgerechnet, bezahlt, Prognose-Abweichung. | MUSS | 🔶 (Dashboard existiert, auf Gewerke-Kennzahlen umstellen) |
+| E1 | Als Bauherr sehe ich auf dem Dashboard die 4–5 wichtigsten Zahlen: Budget gesamt, beauftragt, abgerechnet, bezahlt, Prognose-Abweichung. | MUSS | ✅ (R2.2 10.07.2026, brutto aus dem Gewerke-Budget) |
 | E2 | Als Bauherr habe ich eine **aufgeräumte Navigation** ohne tote Punkte. | MUSS | 🔶 (R1.6: 10→7 Punkte; Firmen/Export unter Einstellungen + Gruppierung → R2.1) |
 | E3 | Als Bauherr kann ich die App am Handy auf der Baustelle nutzen (Foto → Rechnung; Karten statt Tabellen). | SOLL | ⬜ (Plan 5.4) |
 | E4 | Als Haushalt arbeiten wir zu zweit gleichzeitig ohne Datenverlust. | MUSS | ✅ (DB-Trigger, RLS) |
@@ -319,14 +319,27 @@ loan_payments: id, loan_id, payment_date, total_amount,
 
 **R2 — Navigation & Dashboard**
 7. R2.1 Sidebar neu (6 Punkte, Gruppierung), Firmen/Export unter Einstellungen
-8. R2.2 Dashboard auf Budget-Kennzahlen umstellen (E1) + „zu prüfen"-Hinweis
+8. R2.2 Dashboard auf Budget-Kennzahlen umstellen (E1) + „zu prüfen"-Hinweis — ✅ 10.07.2026:
+   Karten Budget/Beauftragt/Abgerechnet/Bezahlt (brutto, Formeln wie Budget-Seite; Abgerechnet/Bezahlt
+   über ALLE Rechnungen, damit Unzugeordnetes nicht verschwindet), Prognose-Panel (klickbar → /budget)
+   ersetzt den alten DIN-Budgetfortschritt, Hinweis-Leiste „N zu prüfen / M ohne Gewerk" mit Links,
+   „Letzte Rechnungen" zeigt Gewerk statt DIN. useEstimates/useKostengruppen aus dem Dashboard entfernt.
+   *Aus R5 vorgezogen: CI auf Node 24 + actions v5 (Deprecation-Warnung).*
 9. R2.3 Mobile: Bottom-Nav + Karten-Layouts (alt 5.4)
 
 **R3 — Kredit-Modul (4.4)**
 
 **R4 — KI-Ausbau (4.3):** Konfidenz/Review-Queue → Few-Shot-Hinweise → Modell-Eskalation → Eval
 
-**R5 — Technik-Rest:** React Query (alt 4.2), Dialog-Extraktion (alt 3.1-Rest), Node-24-Bump der CI
+**R5 — Technik-Rest:** React Query (alt 4.2), Dialog-Extraktion (alt 3.1-Rest), ~~Node-24-Bump der CI~~ (✅ mit R2.2)
+
+**Offener Prüfpunkt (User-Test 10.07. abends):** Zuordnung auf der Budget-Seite beim Bauherrn
+verifizieren, sobald Commit 35ac0ed deployed ist. Erkenntnisse aus dem Screenshot: (a) echte
+Firmennamen weichen teils zu stark ab für jedes Matching („Mayer Hochbau GmbH" ≠ „Fa. Mayerbau")
+→ Lösung ist Firmen-Merge der Seed-Dubletten, kein Code; (b) viele unzugeordnete Rechnungen sind
+Baunebenkosten (Architekt, Notar, Landratsamt, …) — **Abschnitt-700-Gewerke fehlen noch**, Bauherr
+legt sie über „Neues Gewerk" an; (c) falls auch das manuelle Dropdown-Zuordnen nach Deploy nicht
+greift → echter Bug, zuerst debuggen.
 
 ### Offene Fragen an den Bauherrn (zu Beginn der nächsten Session klären)
 

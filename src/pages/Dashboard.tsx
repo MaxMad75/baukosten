@@ -1,40 +1,89 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useInvoices } from '@/hooks/useInvoices';
-import { useEstimates } from '@/hooks/useEstimates';
-import { useKostengruppen } from '@/hooks/useKostengruppen';
-import { 
+import { useTrades } from '@/hooks/useTrades';
+import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
+import { useInvoicePayments } from '@/hooks/useInvoicePayments';
+import {
   FileText, Wallet, FolderOpen, Euro, CheckCircle2, AlertCircle,
-  TrendingUp, TrendingDown, ArrowRight
+  TrendingUp, TrendingDown, ArrowRight, Receipt
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { Invoice, TaxStatus } from '@/lib/types';
 
+const toGross = (amount: number, taxStatus: TaxStatus) => (taxStatus === 'net' ? amount * 1.19 : amount);
+const invTaxStatus = (inv: Invoice): TaxStatus => (inv.is_gross ? 'gross' : 'net');
+
+/**
+ * Dashboard (R2.2/E1): die 5 Kernzahlen aus dem Gewerke-Budget —
+ * Budget (aktuelle Schätzung), Beauftragt, Abgerechnet, Bezahlt und
+ * Prognose-Abweichung — alle brutto, gleiche Formeln wie die Budget-Seite.
+ */
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { invoices, loading: invoicesLoading } = useInvoices();
-  const { estimates, estimateItems, loading: estimatesLoading } = useEstimates();
-  const { kostengruppen } = useKostengruppen();
+  const { trades, loading: tradesLoading } = useTrades();
+  const { getDeductionsForInvoice } = useInvoiceDeductions();
+  const { getTotalPaid } = useInvoicePayments();
   const { formatAmount } = usePrivacy();
 
-  const loading = invoicesLoading || estimatesLoading;
+  const loading = invoicesLoading || tradesLoading;
 
-  const totalInvoices = invoices.length;
-  const paidInvoices = invoices.filter(i => i.is_paid);
-  const unpaidInvoices = invoices.filter(i => !i.is_paid);
-  
-  const totalActual = invoices.reduce((sum, i) => sum + Number(i.amount), 0);
-  const totalPaid = paidInvoices.reduce((sum, i) => sum + Number(i.amount), 0);
-  const totalUnpaid = unpaidInvoices.reduce((sum, i) => sum + Number(i.amount), 0);
-  
-  const totalEstimated = estimateItems.reduce((sum, i) => sum + Number(i.estimated_amount), 0);
-  const budgetDifference = totalActual - totalEstimated;
-  const budgetPercentage = totalEstimated > 0 ? ((totalActual / totalEstimated) * 100) : 0;
+  const metrics = useMemo(() => {
+    const active = invoices.filter((i) => i.status !== 'cancelled');
+
+    const payableOf = (inv: Invoice) =>
+      toGross(getPayableAmount(Number(inv.amount), getDeductionsForInvoice(inv.id)), invTaxStatus(inv));
+
+    // Abgerechnet/Bezahlt über ALLE Rechnungen (auch ohne Gewerk-Zuordnung),
+    // damit auf dem Dashboard kein Geld "verschwindet".
+    let billed = 0;
+    let paid = 0;
+    for (const inv of active) {
+      billed += payableOf(inv);
+      paid += toGross(getTotalPaid(inv.id), invTaxStatus(inv));
+    }
+
+    // Budget/Beauftragt/Prognose je Gewerk (wie Budget-Seite, brutto)
+    let budget = 0;
+    let awarded = 0;
+    let awardedCount = 0;
+    let prognose = 0;
+    for (const t of trades) {
+      const est = t.current_estimate
+        ? toGross(Number(t.current_estimate.amount), t.current_estimate.tax_status)
+        : 0;
+      const aw = t.awarded_amount != null ? toGross(Number(t.awarded_amount), t.awarded_tax_status) : null;
+      if (aw != null) awardedCount += 1;
+      const awEff = aw ?? est;
+      const billedTrade = active
+        .filter((inv) => inv.trade_id === t.id)
+        .reduce((s, inv) => s + payableOf(inv), 0);
+      budget += est;
+      awarded += awEff;
+      prognose += Math.max(est, awEff, billedTrade);
+    }
+
+    return {
+      billed,
+      paid,
+      open: Math.max(billed - paid, 0),
+      budget,
+      awarded,
+      awardedCount,
+      prognose,
+      delta: prognose - budget,
+      reviewCount: invoices.filter((i) => i.status === 'review_needed').length,
+      unassignedCount: active.filter((i) => !i.trade_id || !trades.some((t) => t.id === i.trade_id)).length,
+    };
+  }, [invoices, trades, getDeductionsForInvoice, getTotalPaid]);
 
   const formatCurrency = (amount: number) => formatAmount(amount);
+  const tradeName = (inv: Invoice) => trades.find((t) => t.id === inv.trade_id)?.name || null;
 
   if (loading) {
     return (
@@ -51,23 +100,56 @@ export const Dashboard: React.FC = () => {
       <div className="space-y-8">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Übersicht Ihrer Baukosten</p>
+          <p className="text-muted-foreground mt-1">Übersicht Ihrer Baukosten — alle Werte brutto</p>
         </div>
 
-        {/* Quick Stats */}
+        {/* Hinweise: zu prüfende / nicht zugeordnete Rechnungen */}
+        {(metrics.reviewCount > 0 || metrics.unassignedCount > 0) && (
+          <Card className="border-amber-300 bg-amber-50/50">
+            <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 py-4 text-sm">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              {metrics.reviewCount > 0 && (
+                <button className="underline-offset-2 hover:underline" onClick={() => navigate('/invoices')}>
+                  {metrics.reviewCount} Rechnung(en) zu prüfen
+                </button>
+              )}
+              {metrics.unassignedCount > 0 && (
+                <button className="underline-offset-2 hover:underline" onClick={() => navigate('/budget')}>
+                  {metrics.unassignedCount} Rechnung(en) ohne Gewerk — im Budget zuordnen
+                </button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Kernzahlen (E1) */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="relative overflow-hidden">
             <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Gesamtkosten</CardTitle>
+              <CardTitle className="text-sm font-medium">Budget (Schätzung)</CardTitle>
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Wallet className="h-4 w-4 text-primary" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(metrics.budget)}</div>
+              <p className="text-xs text-muted-foreground mt-1">aktuelle Kostenberechnung</p>
+            </CardContent>
+          </Card>
+
+          <Card className="relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[4rem]" />
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Beauftragt</CardTitle>
               <div className="p-2 rounded-lg bg-primary/10">
                 <Euro className="h-4 w-4 text-primary" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalActual)}</div>
+              <div className="text-2xl font-bold">{formatCurrency(metrics.awarded)}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                von {formatCurrency(totalEstimated)} geschätzt
+                {metrics.awardedCount} von {trades.length} Gewerken beauftragt
               </p>
             </CardContent>
           </Card>
@@ -75,15 +157,15 @@ export const Dashboard: React.FC = () => {
           <Card className="relative overflow-hidden">
             <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Rechnungen</CardTitle>
+              <CardTitle className="text-sm font-medium">Abgerechnet</CardTitle>
               <div className="p-2 rounded-lg bg-primary/10">
-                <FileText className="h-4 w-4 text-primary" />
+                <Receipt className="h-4 w-4 text-primary" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalInvoices}</div>
+              <div className="text-2xl font-bold">{formatCurrency(metrics.billed)}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                {paidInvoices.length} bezahlt, {unpaidInvoices.length} offen
+                Σ Zahlbeträge aus {invoices.length} Rechnungen
               </p>
             </CardContent>
           </Card>
@@ -97,57 +179,42 @@ export const Dashboard: React.FC = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-600">{formatCurrency(totalPaid)}</div>
-              <p className="text-xs text-muted-foreground mt-1">{paidInvoices.length} Rechnungen</p>
-            </CardContent>
-          </Card>
-
-          <Card className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/5 rounded-bl-[4rem]" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Offen</CardTitle>
-              <div className="p-2 rounded-lg bg-amber-500/10">
-                <AlertCircle className="h-4 w-4 text-amber-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-amber-600">{formatCurrency(totalUnpaid)}</div>
-              <p className="text-xs text-muted-foreground mt-1">{unpaidInvoices.length} Rechnungen</p>
+              <div className="text-2xl font-bold text-emerald-600">{formatCurrency(metrics.paid)}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                noch offen: {formatCurrency(metrics.open)}
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Budget Progress */}
-        {totalEstimated > 0 && (
-          <Card>
+        {/* Prognose (aus dem Gewerke-Budget) */}
+        {trades.length > 0 && (
+          <Card className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => navigate('/budget')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                Budgetfortschritt
-                {budgetDifference > 0 ? (
+                Prognose: {formatCurrency(metrics.prognose)}
+                {metrics.delta > 0.005 ? (
                   <TrendingUp className="h-5 w-5 text-destructive" />
                 ) : (
                   <TrendingDown className="h-5 w-5 text-emerald-500" />
                 )}
               </CardTitle>
               <CardDescription>
-                {budgetDifference > 0 
-                  ? `${formatCurrency(Math.abs(budgetDifference))} über Budget`
-                  : `${formatCurrency(Math.abs(budgetDifference))} unter Budget`
-                }
+                je Gewerk max(Schätzung, Beauftragt, Abgerechnet) —{' '}
+                {metrics.delta > 0.005
+                  ? `${formatCurrency(Math.abs(metrics.delta))} über der aktuellen Schätzung`
+                  : `${formatCurrency(Math.abs(metrics.delta))} unter der aktuellen Schätzung`}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span>Verbraucht: {formatCurrency(totalActual)}</span>
-                  <span>Budget: {formatCurrency(totalEstimated)}</span>
+                  <span>Abgerechnet: {formatCurrency(metrics.billed)}</span>
+                  <span>Prognose: {formatCurrency(metrics.prognose)}</span>
                 </div>
-                <Progress 
-                  value={Math.min(budgetPercentage, 100)} 
-                  className={budgetPercentage > 100 ? 'bg-destructive/20' : ''}
-                />
+                <Progress value={metrics.prognose > 0 ? Math.min((metrics.billed / metrics.prognose) * 100, 100) : 0} />
                 <p className="text-right text-sm text-muted-foreground">
-                  {budgetPercentage.toFixed(1)}%
+                  {metrics.prognose > 0 ? ((metrics.billed / metrics.prognose) * 100).toFixed(1) : '0.0'}% der Prognose abgerechnet
                 </p>
               </div>
             </CardContent>
@@ -214,28 +281,25 @@ export const Dashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {invoices.slice(0, 5).map((invoice) => {
-                  const kg = kostengruppen.find(k => k.code === invoice.kostengruppe_code);
-                  return (
-                    <div 
-                      key={invoice.id} 
-                      className="flex items-center justify-between rounded-xl border p-4 transition-colors hover:bg-muted/50"
-                    >
-                      <div>
-                        <p className="font-medium">{invoice.company_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {kg ? `${kg.code} - ${kg.name}` : 'Keine Kostengruppe'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold">{formatCurrency(Number(invoice.amount))}</p>
-                        <p className={`text-sm font-medium ${invoice.is_paid ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {invoice.is_paid ? 'Bezahlt' : 'Offen'}
-                        </p>
-                      </div>
+                {invoices.slice(0, 5).map((invoice) => (
+                  <div
+                    key={invoice.id}
+                    className="flex items-center justify-between rounded-xl border p-4 transition-colors hover:bg-muted/50"
+                  >
+                    <div>
+                      <p className="font-medium">{invoice.company_name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {tradeName(invoice) || 'Kein Gewerk zugeordnet'}
+                      </p>
                     </div>
-                  );
-                })}
+                    <div className="text-right">
+                      <p className="font-semibold">{formatCurrency(Number(invoice.amount))}</p>
+                      <p className={`text-sm font-medium ${invoice.is_paid ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {invoice.is_paid ? 'Bezahlt' : 'Offen'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

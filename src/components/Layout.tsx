@@ -4,9 +4,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   Home, FileText, Calculator, BarChart3, Download, LogOut, User,
-  Users, FolderOpen, Menu, X, Settings, Eye, EyeOff
+  Users, FolderOpen, Menu, X, Settings, Eye, EyeOff, Wallet
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,7 @@ interface LayoutProps {
 
 const navItems = [
   { to: '/', icon: Home, label: 'Dashboard' },
+  { to: '/budget', icon: Wallet, label: 'Budget' },
   { to: '/invoices', icon: FileText, label: 'Rechnungen' },
   { to: '/estimates', icon: Calculator, label: 'Kostenschätzung' },
   { to: '/offers', icon: FileText, label: 'Angebote' },

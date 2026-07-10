@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Invoices = lazy(() => import("./pages/Invoices"));
+const Budget = lazy(() => import("./pages/Budget"));
 const Estimates = lazy(() => import("./pages/Estimates").then((m) => ({ default: m.Estimates })));
 const Comparison = lazy(() => import("./pages/Comparison"));
 const Contractors = lazy(() => import("./pages/Contractors"));
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
+              <Route path="/budget" element={<ProtectedRoute><Budget /></ProtectedRoute>} />
               <Route path="/estimates" element={<ProtectedRoute><Estimates /></ProtectedRoute>} />
               <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
               <Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />

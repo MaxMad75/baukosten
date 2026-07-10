@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Contractor, Trade, TradeEstimate, TradeWithEstimates } from '@/lib/types';
+import { Contractor, TaxStatus, Trade, TradeEstimate, TradeWithEstimates } from '@/lib/types';
 import { matchContractorByName } from '@/hooks/useContractors';
 import { useToast } from '@/hooks/use-toast';
 
@@ -128,6 +128,50 @@ export function useTrades() {
     return true;
   };
 
+  /**
+   * Neue Schätzversion für viele Gewerke in einem Schritt (Excel-Import,
+   * SRS R1.5). Idempotent über UNIQUE(trade_id, version_label): erneuter
+   * Import mit gleichem Versions-Label überschreibt die Werte. is_current
+   * wird vorher nur für die betroffenen Gewerke zurückgesetzt.
+   */
+  const importEstimateVersion = async (
+    entries: { trade_id: string; amount: number }[],
+    meta: { version_label: string; estimate_date: string | null; is_current: boolean; tax_status: TaxStatus }
+  ): Promise<boolean> => {
+    if (entries.length === 0) return false;
+
+    if (meta.is_current) {
+      const { error } = await supabase
+        .from('trade_estimates')
+        .update({ is_current: false })
+        .in('trade_id', entries.map((e) => e.trade_id));
+      if (error) {
+        toast({ title: 'Fehler', description: 'Bisherige Schätzversionen konnten nicht zurückgesetzt werden', variant: 'destructive' });
+        return false;
+      }
+    }
+
+    const { error } = await supabase.from('trade_estimates').upsert(
+      entries.map((e) => ({
+        trade_id: e.trade_id,
+        version_label: meta.version_label,
+        estimate_date: meta.estimate_date,
+        amount: e.amount,
+        tax_status: meta.tax_status,
+        is_current: meta.is_current,
+      })),
+      { onConflict: 'trade_id,version_label' }
+    );
+
+    if (error) {
+      toast({ title: 'Fehler', description: 'Schätzversion konnte nicht importiert werden', variant: 'destructive' });
+      return false;
+    }
+    await fetchTrades();
+    toast({ title: 'Erfolg', description: `${entries.length} Schätzwerte als „${meta.version_label}" importiert` });
+    return true;
+  };
+
   /** Papierkorb-Logik wie bei Rechnungen: nur markieren, nicht löschen. */
   const softDeleteTrade = async (id: string) => {
     const { error } = await supabase
@@ -144,5 +188,5 @@ export function useTrades() {
     return true;
   };
 
-  return { trades, loading, available, fetchTrades, createTrade, updateTrade, softDeleteTrade };
+  return { trades, loading, available, fetchTrades, createTrade, updateTrade, softDeleteTrade, importEstimateVersion };
 }

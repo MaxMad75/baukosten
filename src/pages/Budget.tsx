@@ -11,7 +11,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { TradeEditDialog, TradeFormValues } from '@/components/budget/TradeEditDialog';
-import { Loader2, ChevronDown, ChevronRight, Wand2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { EstimateImportDialog } from '@/components/budget/EstimateImportDialog';
+import { Loader2, ChevronDown, ChevronRight, Wand2, Plus, Pencil, Trash2, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
@@ -70,7 +71,7 @@ const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'de
 };
 
 const Budget: React.FC = () => {
-  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade } = useTrades();
+  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, importEstimateVersion } = useTrades();
   const { invoices, loading: invLoading, fetchInvoices } = useInvoices();
   const { contractors } = useContractors();
   const { getTotalPaid } = useInvoicePayments();
@@ -83,6 +84,7 @@ const Budget: React.FC = () => {
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Trade | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   /** In die Ansichtseinheit (brutto/netto) umrechnen; tax_free bleibt unverändert. */
   const conv = (amount: number, taxStatus: TaxStatus) => {
@@ -357,12 +359,18 @@ const Budget: React.FC = () => {
 
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle>Gewerke</CardTitle>
-                  <Button size="sm" variant="outline" onClick={() => openTradeDialog(null)}>
-                    <Plus className="h-4 w-4" />
-                    <span className="ml-2">Neues Gewerk</span>
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+                      <Upload className="h-4 w-4" />
+                      <span className="ml-2">Excel-Import</span>
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => openTradeDialog(null)}>
+                      <Plus className="h-4 w-4" />
+                      <span className="ml-2">Neues Gewerk</span>
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -491,6 +499,13 @@ const Budget: React.FC = () => {
           trade={editingTrade}
           contractors={contractors}
           onSubmit={handleTradeSubmit}
+        />
+
+        <EstimateImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          trades={trades}
+          onImport={importEstimateVersion}
         />
 
         <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>

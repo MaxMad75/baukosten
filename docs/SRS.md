@@ -82,12 +82,12 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 | # | Story | Prio | Status |
 |---|---|---|---|
 | C1 | Als Bauherr lege ich **Gewerke** an (Erdarbeiten, Elektro, Küche …), wie im Architekten-Excel. | MUSS | ✅ (Seed R1.1 + Anlegen/Bearbeiten/Papierkorb-Dialog auf Budget-Seite, 10.07.2026) |
-| C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | 🔶 (trade_estimates ✅ R1.1 inkl. beider Excel-Versionen, Anzeige in Budget-Zeile ✅; Pflege-UI → R1.5 Excel-Import) |
+| C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | ✅ (Seed R1.1 + Excel-Import R1.5 als Pflege-Weg; Historie + aktuelle Version in der Budget-Zeile) |
 | C3 | Als Bauherr hinterlege ich pro Gewerk die **Auftragssumme** („günstigste oder beauftragt") und die Firma. | MUSS | ✅ (TradeEditDialog: Auftragssumme brutto/netto, Firma, Skonto, Vermerke) |
 | C4 | Als Bauherr ordne ich Rechnungen einem **Gewerk** zu (nicht einem DIN-Subcode) — die App schlägt es **über die Firma** vor (deterministisch, konsistent). | MUSS | ✅ (R1.3 10.07.2026: Upload/ZIP/Bearbeiten/Budget; KI-Fallback für unbekannte Firmen → R4) |
 | C5 | Als Bauherr sehe ich das Excel als App-Ansicht: pro Gewerk Schätzung V1/V2 → beauftragt → abgerechnet → bezahlt, mit Ampelfarben und Abschnitts-Zwischensummen, die **garantiert korrekt aufsummieren**. | MUSS | 🔶 (Budget-Seite v1 ✅ 10.07.2026; Verifikation + Rückbau alter Seiten R1.6 offen) |
 | C6 | Als Bauherr sehe ich die realisierte **Skonto-Ersparnis** pro Gewerk und gesamt (aus den erfassten Abzügen). | SOLL | ✅ (Skonto-Spalte auf Budget-Seite: realisiert aus Abzügen, sonst erwartet aus skonto_percent) |
-| C7 | Als Bauherr importiere ich die Kostenberechnung des Architekten (Excel) als neue Schätzversion. | SOLL | 🔶 (KI-Import existiert für DIN-Positionen; auf Gewerke umstellen) |
+| C7 | Als Bauherr importiere ich die Kostenberechnung des Architekten (Excel) als neue Schätzversion. | SOLL | ✅ (R1.5 10.07.2026: deterministischer Namensabgleich statt KI, Budget-Seite → „Excel-Import") |
 
 ### Epic D — Dokumente (funktioniert gut)
 
@@ -293,7 +293,13 @@ loan_payments: id, loan_id, payment_date, total_amount,
    ergänzt 10.07.2026: „Neues Gewerk"-Button + Bearbeiten/Löschen im aufgeklappten Panel
    (TradeEditDialog; Löschen = Papierkorb, zugeordnete Rechnungen erscheinen wieder unter „ohne
    Gewerk", Zuordnung bleibt für Wiederherstellung gespeichert). Verifikation durch Bauherrn ausstehend
-5. R1.5 Excel-Import der Architekten-Kostenberechnung als Schätzversion
+5. R1.5 Excel-Import der Architekten-Kostenberechnung als Schätzversion — ✅ 10.07.2026:
+   EstimateImportDialog auf der Budget-Seite. Bewusst OHNE KI: Zeilen werden per normalisiertem
+   Namensabgleich (Leerzeichen-/Interpunktions-tolerant) auf Gewerke gemappt (src/lib/estimateImport.ts,
+   unit-getestet), Wertspalten werden erkannt (Kopfzeilen-Label + Summe zur Kontrolle), Versions-Label/
+   Datum aus der Kopfzeile vorbefüllt, Vorschau alt→neu vor dem Import. Idempotent: gleiches Label
+   überschreibt (UNIQUE trade_id+version_label); „als aktuelle Schätzung setzen" resetzt is_current nur
+   für betroffene Gewerke. Gewerke ohne Excel-Zeile bleiben unverändert (Hinweis im Dialog)
 6. R1.6 Rückbau: Kostenschätzung-/Soll-Ist-/Angebote-Seiten in Budget aufgehen lassen; DIN-Subcode-Felder ausblenden (Daten behalten)
 
 **R2 — Navigation & Dashboard**

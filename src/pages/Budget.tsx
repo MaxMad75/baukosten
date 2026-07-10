@@ -6,7 +6,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ChevronDown, ChevronRight, Wand2 } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { TradeEditDialog, TradeFormValues } from '@/components/budget/TradeEditDialog';
+import { Loader2, ChevronDown, ChevronRight, Wand2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,7 +23,7 @@ import { useContractors } from '@/hooks/useContractors';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import {
-  Invoice, TaxStatus, TradeSection, TradeWithEstimates, TRADE_SECTION_LABELS,
+  Invoice, TaxStatus, Trade, TradeSection, TradeWithEstimates, TRADE_SECTION_LABELS,
 } from '@/lib/types';
 
 /**
@@ -65,7 +70,7 @@ const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'de
 };
 
 const Budget: React.FC = () => {
-  const { trades, loading: tradesLoading, available } = useTrades();
+  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade } = useTrades();
   const { invoices, loading: invLoading, fetchInvoices } = useInvoices();
   const { contractors } = useContractors();
   const { getTotalPaid } = useInvoicePayments();
@@ -75,6 +80,9 @@ const Budget: React.FC = () => {
   const [viewMode, setViewMode] = useState<'gross' | 'net'>('gross');
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
+  const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Trade | null>(null);
 
   /** In die Ansichtseinheit (brutto/netto) umrechnen; tax_free bleibt unverändert. */
   const conv = (amount: number, taxStatus: TaxStatus) => {
@@ -171,9 +179,14 @@ const Budget: React.FC = () => {
     delta: sections.reduce((s, g) => s + g.totals.delta, 0),
   }), [sections]);
 
+  // Auch Rechnungen zählen als "ohne Gewerk", deren Gewerk im Papierkorb
+  // liegt — die Zuordnung bleibt gespeichert (Wiederherstellen möglich),
+  // aber sie sollen nicht still aus den Summen verschwinden.
   const unassigned = useMemo(
-    () => invoices.filter((inv) => !inv.trade_id && inv.status !== 'cancelled'),
-    [invoices]
+    () => invoices.filter(
+      (inv) => inv.status !== 'cancelled' && (!inv.trade_id || !trades.some((t) => t.id === inv.trade_id))
+    ),
+    [invoices, trades]
   );
 
   const toggleRow = (id: string) => {
@@ -236,6 +249,26 @@ const Budget: React.FC = () => {
         description: rest > 0 ? `${rest} ohne eindeutige Firma→Gewerk-Zuordnung — bitte manuell auswählen.` : 'Alle Rechnungen sind jetzt einem Gewerk zugeordnet.',
       });
     }
+  };
+
+  const openTradeDialog = (trade: Trade | null) => {
+    setEditingTrade(trade);
+    setTradeDialogOpen(true);
+  };
+
+  const handleTradeSubmit = async (values: TradeFormValues): Promise<boolean> => {
+    if (editingTrade) {
+      return updateTrade(editingTrade.id, values);
+    }
+    // Neue Gewerke ans Ende ihres Abschnitts sortieren
+    const maxSort = Math.max(0, ...trades.filter((t) => t.section === values.section).map((t) => t.sort_order));
+    return (await createTrade({ ...values, sort_order: maxSort + 10 })) != null;
+  };
+
+  const handleDeleteTrade = async () => {
+    if (!deleteTarget) return;
+    await softDeleteTrade(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   const deltaClass = (delta: number) =>
@@ -326,7 +359,15 @@ const Budget: React.FC = () => {
             )}
 
             <Card>
-              <CardHeader><CardTitle>Gewerke</CardTitle></CardHeader>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Gewerke</CardTitle>
+                  <Button size="sm" variant="outline" onClick={() => openTradeDialog(null)}>
+                    <Plus className="h-4 w-4" />
+                    <span className="ml-2">Neues Gewerk</span>
+                  </Button>
+                </div>
+              </CardHeader>
               <CardContent>
                 {trades.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4">Noch keine Gewerke angelegt.</p>
@@ -398,7 +439,13 @@ const Budget: React.FC = () => {
                                     <CollapsibleContent asChild>
                                       <TableRow>
                                         <TableCell colSpan={10} className="bg-muted/30 p-0">
-                                          <TradeDetailPanel row={row} formatAmount={formatAmount} conv={conv} />
+                                          <TradeDetailPanel
+                                            row={row}
+                                            formatAmount={formatAmount}
+                                            conv={conv}
+                                            onEdit={() => openTradeDialog(row.trade)}
+                                            onDelete={() => setDeleteTarget(row.trade)}
+                                          />
                                         </TableCell>
                                       </TableRow>
                                     </CollapsibleContent>
@@ -440,18 +487,57 @@ const Budget: React.FC = () => {
             </Card>
           </>
         )}
+
+        <TradeEditDialog
+          open={tradeDialogOpen}
+          onOpenChange={setTradeDialogOpen}
+          trade={editingTrade}
+          contractors={contractors}
+          onSubmit={handleTradeSubmit}
+        />
+
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Gewerk löschen?</AlertDialogTitle>
+              <AlertDialogDescription>
+                „{deleteTarget?.name}" wird in den Papierkorb verschoben (Schätzversionen bleiben erhalten).
+                Bereits zugeordnete Rechnungen tauchen wieder unter „Rechnungen ohne Gewerk" auf.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteTrade} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Löschen
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );
 };
 
-function TradeDetailPanel({ row, formatAmount, conv }: {
+function TradeDetailPanel({ row, formatAmount, conv, onEdit, onDelete }: {
   row: BudgetRow;
   formatAmount: (n: number) => string;
   conv: (amount: number, taxStatus: TaxStatus) => number;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   return (
-    <div className="p-4 grid gap-4 md:grid-cols-2">
+    <div className="p-4 space-y-3">
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={onEdit}>
+          <Pencil className="h-3.5 w-3.5" />
+          <span className="ml-2">Bearbeiten</span>
+        </Button>
+        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete}>
+          <Trash2 className="h-3.5 w-3.5" />
+          <span className="ml-2">Löschen</span>
+        </Button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
       <div className="space-y-3">
         <div>
           <h4 className="font-semibold text-sm mb-1">Schätzhistorie</h4>
@@ -501,6 +587,7 @@ function TradeDetailPanel({ row, formatAmount, conv }: {
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

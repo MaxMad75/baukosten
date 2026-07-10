@@ -86,6 +86,7 @@ export function useTrades() {
     contractor_id?: string | null;
     skonto_percent?: number | null;
     awarded_amount?: number | null;
+    awarded_tax_status?: Trade['awarded_tax_status'];
     awarded_note?: string | null;
     sort_order?: number;
     notes?: string | null;

@@ -81,9 +81,9 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 
 | # | Story | Prio | Status |
 |---|---|---|---|
-| C1 | Als Bauherr lege ich **Gewerke** an (Erdarbeiten, Elektro, Küche …), wie im Architekten-Excel. | MUSS | 🔶 (Datenmodell + Seed ✅ R1.1; UI/Assistent → R1.2) |
-| C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | 🔶 (trade_estimates ✅ R1.1 inkl. beider Excel-Versionen; UI fehlt) |
-| C3 | Als Bauherr hinterlege ich pro Gewerk die **Auftragssumme** („günstigste oder beauftragt") und die Firma. | MUSS | 🔶 (awarded_amount/contractor_id am Gewerk ✅ R1.1; UI fehlt) |
+| C1 | Als Bauherr lege ich **Gewerke** an (Erdarbeiten, Elektro, Küche …), wie im Architekten-Excel. | MUSS | ✅ (Seed R1.1 + Anlegen/Bearbeiten/Papierkorb-Dialog auf Budget-Seite, 10.07.2026) |
+| C2 | Als Bauherr hinterlege ich pro Gewerk mehrere **Schätzversionen** („Kostenberechnung vom …") und sehe die aktuelle. | MUSS | 🔶 (trade_estimates ✅ R1.1 inkl. beider Excel-Versionen, Anzeige in Budget-Zeile ✅; Pflege-UI → R1.5 Excel-Import) |
+| C3 | Als Bauherr hinterlege ich pro Gewerk die **Auftragssumme** („günstigste oder beauftragt") und die Firma. | MUSS | ✅ (TradeEditDialog: Auftragssumme brutto/netto, Firma, Skonto, Vermerke) |
 | C4 | Als Bauherr ordne ich Rechnungen einem **Gewerk** zu (nicht einem DIN-Subcode) — die App schlägt es **über die Firma** vor (deterministisch, konsistent). | MUSS | ✅ (R1.3 10.07.2026: Upload/ZIP/Bearbeiten/Budget; KI-Fallback für unbekannte Firmen → R4) |
 | C5 | Als Bauherr sehe ich das Excel als App-Ansicht: pro Gewerk Schätzung V1/V2 → beauftragt → abgerechnet → bezahlt, mit Ampelfarben und Abschnitts-Zwischensummen, die **garantiert korrekt aufsummieren**. | MUSS | 🔶 (Budget-Seite v1 ✅ 10.07.2026; Verifikation + Rückbau alter Seiten R1.6 offen) |
 | C6 | Als Bauherr sehe ich die realisierte **Skonto-Ersparnis** pro Gewerk und gesamt (aus den erfassten Abzügen). | SOLL | ✅ (Skonto-Spalte auf Budget-Seite: realisiert aus Abzügen, sonst erwartet aus skonto_percent) |
@@ -285,8 +285,10 @@ loan_payments: id, loan_id, payment_date, total_amount,
 4. R1.4 Budget-Seite (Excel-Ansicht) mit Abschnitts-Summen, Ampeln, Prognose, aufklappbaren Zeilen —
    ✅ v1 10.07.2026 (src/pages/Budget.tsx, Route /budget): Brutto/Netto-Umschalter, Beauftragt mit
    kursivem Schätzwert-Ansatz, Status abgeleitet (offen→beauftragt→in Abrechnung→abgerechnet),
-   Skonto-Spalte (realisiert, sonst ~erwartet), Kennzahlen-Karten inkl. Prognose. Verifikation durch
-   Bauherrn ausstehend; Gewerk-Bearbeiten-UI (Auftragssumme/Firma/Skonto ändern) noch offen
+   Skonto-Spalte (realisiert, sonst ~erwartet), Kennzahlen-Karten inkl. Prognose. Gewerk-Verwaltung
+   ergänzt 10.07.2026: „Neues Gewerk"-Button + Bearbeiten/Löschen im aufgeklappten Panel
+   (TradeEditDialog; Löschen = Papierkorb, zugeordnete Rechnungen erscheinen wieder unter „ohne
+   Gewerk", Zuordnung bleibt für Wiederherstellung gespeichert). Verifikation durch Bauherrn ausstehend
 5. R1.5 Excel-Import der Architekten-Kostenberechnung als Schätzversion
 6. R1.6 Rückbau: Kostenschätzung-/Soll-Ist-/Angebote-Seiten in Budget aufgehen lassen; DIN-Subcode-Felder ausblenden (Daten behalten)
 

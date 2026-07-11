@@ -102,7 +102,7 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 |---|---|---|---|
 | E1 | Als Bauherr sehe ich auf dem Dashboard die 4–5 wichtigsten Zahlen: Budget gesamt, beauftragt, abgerechnet, bezahlt, Prognose-Abweichung. | MUSS | ✅ (R2.2 10.07.2026, brutto aus dem Gewerke-Budget) |
 | E2 | Als Bauherr habe ich eine **aufgeräumte Navigation** ohne tote Punkte. | MUSS | 🔶 (R1.6: 10→7 Punkte; Firmen/Export unter Einstellungen + Gruppierung → R2.1) |
-| E3 | Als Bauherr kann ich die App am Handy auf der Baustelle nutzen (Foto → Rechnung; Karten statt Tabellen). | SOLL | ⬜ (Plan 5.4) |
+| E3 | Als Bauherr kann ich die App am Handy auf der Baustelle nutzen (Foto → Rechnung; Karten statt Tabellen). | SOLL | ✅ (R2.3 11.07.2026; Geräte-Test ausstehend) |
 | E4 | Als Haushalt arbeiten wir zu zweit gleichzeitig ohne Datenverlust. | MUSS | ✅ (DB-Trigger, RLS) |
 
 ### Epic F — Betrieb & Sicherheit
@@ -328,7 +328,10 @@ loan_payments: id, loan_id, payment_date, total_amount,
    ersetzt den alten DIN-Budgetfortschritt, Hinweis-Leiste „N zu prüfen / M ohne Gewerk" mit Links,
    „Letzte Rechnungen" zeigt Gewerk statt DIN. useEstimates/useKostengruppen aus dem Dashboard entfernt.
    *Aus R5 vorgezogen: CI auf Node 24 + actions v5 (Deprecation-Warnung).*
-9. R2.3 Mobile: Bottom-Nav + Karten-Layouts (alt 5.4)
+9. R2.3 Mobile: Bottom-Nav + Karten-Layouts (alt 5.4) — ✅ 11.07.2026: Bottom-Navigation mit den
+   4 Alltagspunkten (fixiert, safe-area-fähig; Verwaltung weiter im Burger-Menü), Budget-Seite und
+   Rechnungsliste rendern am Handy kompakte Karten statt Tabellen (Budget-Karte tippen → Gewerk
+   bearbeiten). Foto-Upload lief bereits mobil über Dokumente. Geräte-Test durch Bauherrn ausstehend
 
 **R3 — Kredit-Modul (4.4)**
 

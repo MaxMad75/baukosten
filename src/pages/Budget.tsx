@@ -424,7 +424,71 @@ const Budget: React.FC = () => {
                 {trades.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4">Noch keine Gewerke angelegt.</p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <>
+                  {/* Mobile (R2.3): kompakte Karten je Gewerk statt breiter Tabelle */}
+                  <div className="space-y-5 md:hidden">
+                    {sections.map((group) => (
+                      <div key={group.section} className="space-y-2">
+                        <div className="text-sm font-semibold text-muted-foreground">
+                          {group.section} · {TRADE_SECTION_LABELS[group.section]}
+                        </div>
+                        {group.rows.map((row) => {
+                          const badge = STATUS_BADGE[row.status];
+                          return (
+                            <button
+                              key={row.trade.id}
+                              className="w-full rounded-lg border p-3 space-y-1.5 text-left"
+                              onClick={() => openTradeDialog(row.trade)}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <div className="text-sm font-medium">{row.trade.name}</div>
+                                  {row.trade.contractor && (
+                                    <div className="text-xs text-muted-foreground">{row.trade.contractor.company_name}</div>
+                                  )}
+                                </div>
+                                <Badge variant={badge.variant} className={badge.className}>{row.status}</Badge>
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-sm">
+                                <span className="text-muted-foreground">Schätzung</span>
+                                <span className="text-right">{formatAmount(row.estimate)}</span>
+                                <span className="text-muted-foreground">Beauftragt</span>
+                                <span className={`text-right ${row.isAwardedFallback ? 'italic text-muted-foreground' : deltaClass(row.awardedEffective - row.estimate)}`}>
+                                  {formatAmount(row.awardedEffective)}
+                                </span>
+                                {row.billed > 0 && (
+                                  <>
+                                    <span className="text-muted-foreground">Abgerechnet</span>
+                                    <span className="text-right">{formatAmount(row.billed)}</span>
+                                  </>
+                                )}
+                                {row.paid > 0 && (
+                                  <>
+                                    <span className="text-muted-foreground">Bezahlt</span>
+                                    <span className="text-right">{formatAmount(row.paid)}</span>
+                                  </>
+                                )}
+                                <span className="text-muted-foreground">Δ Prognose</span>
+                                <span className={`text-right ${deltaClass(row.delta)}`}>{formatDelta(row.delta, row.estimate)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                        <div className="flex justify-between px-1 text-sm font-medium">
+                          <span>Zwischensumme beauftragt</span>
+                          <span className={deltaClass(group.totals.awardedEffective - group.totals.estimate)}>
+                            {formatAmount(group.totals.awardedEffective)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t px-1 pt-3 font-bold">
+                      <span>Prognose gesamt</span>
+                      <span className={deltaClass(grandTotals.delta)}>{formatAmount(grandTotals.prognose)}</span>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto hidden md:block">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -534,6 +598,7 @@ const Budget: React.FC = () => {
                       </TableBody>
                     </Table>
                   </div>
+                  </>
                 )}
               </CardContent>
             </Card>

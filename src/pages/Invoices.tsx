@@ -577,6 +577,51 @@ export const Invoices: React.FC = () => {
               {visibleInvoices.length === 0 ? (
                 <p className="py-8 text-center text-muted-foreground">Keine Rechnungen entsprechen der Suche/den Filtern.</p>
               ) : (
+              <>
+              {/* Mobile (R2.3): Karten statt Tabelle */}
+              <div className="space-y-2 md:hidden">
+                {visibleInvoices.map((invoice) => {
+                  const status = (invoice.status as InvoiceStatus) || 'draft';
+                  const statusCfg = STATUS_CONFIG[status];
+                  const payable = getPayableAmount(Number(invoice.amount), getDeductionsForInvoice(invoice.id));
+                  const totalPaid = getTotalPaid(invoice.id);
+                  return (
+                    <div key={invoice.id} className="rounded-lg border p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">{invoice.company_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(invoice.invoice_date), 'dd.MM.yyyy', { locale: de })}
+                            {invoice.invoice_number ? ` · Nr. ${invoice.invoice_number}` : ''}
+                          </p>
+                          <div className="text-xs text-muted-foreground mt-0.5">{renderTradeSummary(invoice)}</div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">{formatAmount(Number(invoice.amount))}</p>
+                          {payable !== Number(invoice.amount) && (
+                            <p className="text-xs text-muted-foreground">Zahlbetrag {formatAmount(payable)}</p>
+                          )}
+                          {totalPaid > 0 && totalPaid < payable && (
+                            <p className="text-xs text-muted-foreground">{formatAmount(totalPaid)} bezahlt</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant={statusCfg.variant} className={statusCfg.className}>{statusCfg.label}</Badge>
+                        <div className="flex gap-1">
+                          {status !== 'paid' && status !== 'cancelled' && (
+                            <Button size="sm" variant="outline" onClick={() => openPayDialog(invoice.id)}>Zahlung</Button>
+                          )}
+                          <Button size="icon" variant="ghost" onClick={() => openEditDialog(invoice)}><Edit className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => setDeleteId(invoice.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -677,6 +722,8 @@ export const Invoices: React.FC = () => {
                   })}
                 </TableBody>
               </Table>
+              </div>
+              </>
               )}
             </CardContent>
           </Card>

@@ -164,15 +164,39 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto relative">
-          <div 
+          <div
             className="absolute inset-0 opacity-[0.03] pointer-events-none"
             style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 40px, hsl(var(--primary) / 0.15) 40px, hsl(var(--primary) / 0.15) 41px), repeating-linear-gradient(90deg, transparent, transparent 40px, hsl(var(--primary) / 0.15) 40px, hsl(var(--primary) / 0.15) 41px)' }}
           />
-          <div className="relative p-4 lg:p-8 max-w-7xl mx-auto">
+          {/* pb-20: Platz für die mobile Bottom-Navigation */}
+          <div className="relative p-4 lg:p-8 max-w-7xl mx-auto pb-20 md:pb-8">
             {children}
           </div>
         </main>
       </div>
+
+      {/* Bottom-Navigation (R2.3): die 4 Alltagspunkte am Handy */}
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-card/95 backdrop-blur-xl md:hidden">
+        <div className="grid grid-cols-4">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.to;
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={cn(
+                  'flex flex-col items-center gap-1 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-xs font-medium transition-colors',
+                  isActive ? 'text-primary' : 'text-muted-foreground'
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };

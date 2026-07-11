@@ -19,8 +19,9 @@ import { de } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceTradeId } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
+import { useDocuments } from '@/hooks/useDocuments';
 import { useLoans } from '@/hooks/useLoans';
 import { normalizeTradeName } from '@/lib/estimateImport';
 import { useContractors } from '@/hooks/useContractors';
@@ -76,6 +77,7 @@ const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'de
 const Budget: React.FC = () => {
   const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, importEstimateVersion } = useTrades();
   const { invoices, loading: invLoading, fetchInvoices } = useInvoices();
+  const { documents } = useDocuments();
   // Kredit-Zinsen (SRS 4.4) zählen als Kosten im Abschnitt-800-Gewerk "Finanzierung"
   const { totalInterest } = useLoans();
   const { contractors } = useContractors();
@@ -122,10 +124,31 @@ const Budget: React.FC = () => {
     versionOptions[0]?.label ??
     null;
 
+  // Firmen-ID je Rechnung aus dem verknüpften Dokument (stärkstes Signal)
+  const contractorByInvoice = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const doc of documents) {
+      if (doc.invoice_id && doc.contractor_id && !map.has(doc.invoice_id)) {
+        map.set(doc.invoice_id, doc.contractor_id);
+      }
+    }
+    return map;
+  }, [documents]);
+
+  // Effektive Zuordnung: explizites trade_id ODER implizit über die Firma
+  // (eindeutige Treffer) — das Budget füllt sich ohne Klick (User-Feedback 11.07.)
+  const resolvedTradeByInvoice = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const inv of invoices) {
+      map.set(inv.id, resolveInvoiceTradeId(trades, inv, contractorByInvoice.get(inv.id)));
+    }
+    return map;
+  }, [invoices, trades, contractorByInvoice]);
+
   const sections = useMemo((): SectionGroup[] => {
     const rows = trades.map((trade): BudgetRow => {
       const tradeInvoices = invoices.filter(
-        (inv) => inv.trade_id === trade.id && inv.status !== 'cancelled'
+        (inv) => resolvedTradeByInvoice.get(inv.id) === trade.id && inv.status !== 'cancelled'
       );
 
       // Vergleichsbasis: gewählte Version, sonst die aktuelle des Gewerks
@@ -208,7 +231,7 @@ const Budget: React.FC = () => {
         },
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trades, invoices, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest]);
+  }, [trades, invoices, resolvedTradeByInvoice, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest]);
 
   const grandTotals = useMemo(() => ({
     estimate: sections.reduce((s, g) => s + g.totals.estimate, 0),
@@ -220,15 +243,26 @@ const Budget: React.FC = () => {
     delta: sections.reduce((s, g) => s + g.totals.delta, 0),
   }), [sections]);
 
-  // Auch Rechnungen zählen als "ohne Gewerk", deren Gewerk im Papierkorb
-  // liegt — die Zuordnung bleibt gespeichert (Wiederherstellen möglich),
-  // aber sie sollen nicht still aus den Summen verschwinden.
+  // "Ohne Gewerk" = weder explizit zugeordnet noch implizit über die Firma
+  // auflösbar (unbekannte Firma oder Firma mit mehreren Gewerken).
   const unassigned = useMemo(
     () => invoices.filter(
-      (inv) => inv.status !== 'cancelled' && (!inv.trade_id || !trades.some((t) => t.id === inv.trade_id))
+      (inv) => inv.status !== 'cancelled' && resolvedTradeByInvoice.get(inv.id) == null
     ),
-    [invoices, trades]
+    [invoices, resolvedTradeByInvoice]
   );
+
+  // Für die Sammel-Zuordnung: nach Firma gruppieren
+  const unassignedGroups = useMemo(() => {
+    const map = new Map<string, Invoice[]>();
+    for (const inv of unassigned) {
+      const key = inv.company_name.trim();
+      const list = map.get(key) || [];
+      list.push(inv);
+      map.set(key, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'de'));
+  }, [unassigned]);
 
   const toggleRow = (id: string) => {
     setOpenRows((prev) => {
@@ -238,38 +272,31 @@ const Budget: React.FC = () => {
     });
   };
 
-  const assignInvoice = async (invoiceId: string, tradeId: string) => {
-    const { error } = await supabase.from('invoices').update({ trade_id: tradeId }).eq('id', invoiceId);
+  const assignInvoices = async (invoiceIds: string[], tradeId: string) => {
+    const { error } = await supabase.from('invoices').update({ trade_id: tradeId }).in('id', invoiceIds);
     if (error) {
-      toast({ title: 'Fehler', description: 'Rechnung konnte nicht zugeordnet werden', variant: 'destructive' });
+      toast({ title: 'Fehler', description: 'Rechnung(en) konnten nicht zugeordnet werden', variant: 'destructive' });
       return;
     }
     await fetchInvoices();
   };
 
   /**
-   * Firma→Gewerk-Regel (SRS 4.1): Rechnungsfirma gegen die Firmen der Gewerke
-   * matchen; nur eindeutige Treffer werden zugeordnet, der Rest bleibt zur
-   * manuellen Auswahl stehen. Bulk-Update direkt über den Client, um nicht
-   * pro Rechnung einen Toast auszulösen.
+   * Implizite Firma→Gewerk-Zuordnungen festschreiben (SRS 4.1): eindeutig
+   * auflösbare Rechnungen zählen im Budget bereits automatisch mit — der
+   * Button schreibt trade_id, damit die Zuordnung auch in der Rechnungsliste
+   * sichtbar und gegen spätere Firmen-Umbenennungen stabil ist.
    */
   const autoAssign = async () => {
     setAssigning(true);
     const byTrade = new Map<string, string[]>();
-    let ambiguous = 0;
-    let unmatched = 0;
-
-    for (const inv of unassigned) {
-      const { trade, candidates } = suggestTradeForCompany(trades, inv.company_name);
-      if (trade) {
-        const list = byTrade.get(trade.id) || [];
-        list.push(inv.id);
-        byTrade.set(trade.id, list);
-      } else if (candidates.length > 1) {
-        ambiguous += 1;
-      } else {
-        unmatched += 1;
-      }
+    for (const inv of invoices) {
+      if (inv.trade_id || inv.status === 'cancelled') continue;
+      const resolved = resolvedTradeByInvoice.get(inv.id);
+      if (!resolved) continue;
+      const list = byTrade.get(resolved) || [];
+      list.push(inv.id);
+      byTrade.set(resolved, list);
     }
 
     let assigned = 0;
@@ -284,12 +311,11 @@ const Budget: React.FC = () => {
     if (failed) {
       toast({ title: 'Fehler', description: 'Nicht alle Rechnungen konnten zugeordnet werden', variant: 'destructive' });
     } else {
-      const parts: string[] = [];
-      if (ambiguous > 0) parts.push(`${ambiguous} mit mehreren möglichen Gewerken der Firma — bitte im Dropdown wählen`);
-      if (unmatched > 0) parts.push(`${unmatched} ohne Firmen-Treffer`);
       toast({
-        title: `${assigned} Rechnung(en) automatisch zugeordnet`,
-        description: parts.length > 0 ? parts.join(' · ') : 'Alle Rechnungen sind jetzt einem Gewerk zugeordnet.',
+        title: `${assigned} Zuordnung(en) festgeschrieben`,
+        description: unassigned.length > 0
+          ? `${unassigned.length} Rechnung(en) brauchen eine manuelle Wahl (Firma unbekannt oder mit mehreren Gewerken).`
+          : 'Alle Rechnungen sind einem Gewerk zugeordnet.',
       });
     }
   };
@@ -391,26 +417,58 @@ const Budget: React.FC = () => {
                     <CardTitle className="text-sm">Rechnungen ohne Gewerk ({unassigned.length})</CardTitle>
                     <Button size="sm" onClick={autoAssign} disabled={assigning}>
                       {assigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                      <span className="ml-2">Über Firma zuordnen</span>
+                      <span className="ml-2">Eindeutige festschreiben</span>
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Rechnungen eindeutiger Firmen zählen bereits automatisch im Budget mit. Hier stehen
+                    nur die Fälle, die eine Wahl brauchen — Firma unbekannt oder mit mehreren Gewerken.
+                  </p>
                 </CardHeader>
-                <CardContent className="space-y-1">
-                  {unassigned.map((inv) => (
-                    <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2 text-sm py-1">
-                      <span>
-                        {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}
-                        <span className="ml-2 text-muted-foreground">{formatAmount(Number(inv.amount))}</span>
-                      </span>
-                      <div className="w-[260px]">
-                        <TradeSelect
-                          value={inv.trade_id || null}
-                          onValueChange={(tradeId) => { if (tradeId) assignInvoice(inv.id, tradeId); }}
-                          companyName={inv.company_name}
-                        />
+                <CardContent className="space-y-4">
+                  {unassignedGroups.map(([company, groupInvoices]) => {
+                    const groupSum = groupInvoices.reduce((s, inv) => s + Number(inv.amount), 0);
+                    const contractorId = contractorByInvoice.get(groupInvoices[0].id) || null;
+                    return (
+                      <div key={company} className="space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium">
+                            {company}
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {groupInvoices.length} Rechnung{groupInvoices.length === 1 ? '' : 'en'} · {formatAmount(groupSum)}
+                            </span>
+                          </span>
+                          <div className="w-[260px]">
+                            <TradeSelect
+                              value={null}
+                              onValueChange={(tradeId) => {
+                                if (tradeId) assignInvoices(groupInvoices.map((i) => i.id), tradeId);
+                              }}
+                              companyName={company}
+                              contractorId={contractorId}
+                              placeholder={groupInvoices.length === 1 ? 'Gewerk wählen…' : 'Alle zuordnen…'}
+                            />
+                          </div>
+                        </div>
+                        {groupInvoices.length > 1 && groupInvoices.map((inv) => (
+                          <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2 pl-3 text-sm text-muted-foreground">
+                            <span>
+                              {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} · {formatAmount(Number(inv.amount))}
+                            </span>
+                            <div className="w-[260px]">
+                              <TradeSelect
+                                value={null}
+                                onValueChange={(tradeId) => { if (tradeId) assignInvoices([inv.id], tradeId); }}
+                                companyName={inv.company_name}
+                                contractorId={contractorByInvoice.get(inv.id) || null}
+                                placeholder="Einzeln zuordnen…"
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </CardContent>
               </Card>
             )}

@@ -346,13 +346,16 @@ CSV-Import des Tilgungsplans + wiederkehrende Raten-Vorlage bewusst offen (bei B
 
 **R5 — Technik-Rest:** React Query (alt 4.2), Dialog-Extraktion (alt 3.1-Rest), ~~Node-24-Bump der CI~~ (✅ mit R2.2)
 
-**Offener Prüfpunkt (User-Test 10.07. abends):** Zuordnung auf der Budget-Seite beim Bauherrn
-verifizieren, sobald Commit 35ac0ed deployed ist. Erkenntnisse aus dem Screenshot: (a) echte
-Firmennamen weichen teils zu stark ab für jedes Matching („Mayer Hochbau GmbH" ≠ „Fa. Mayerbau")
-→ Lösung ist Firmen-Merge der Seed-Dubletten, kein Code; (b) viele unzugeordnete Rechnungen sind
-Baunebenkosten (Architekt, Notar, Landratsamt, …) — **Abschnitt-700-Gewerke fehlen noch**, Bauherr
-legt sie über „Neues Gewerk" an; (c) falls auch das manuelle Dropdown-Zuordnen nach Deploy nicht
-greift → echter Bug, zuerst debuggen.
+**Zuordnungs-Flow neu gedacht (11.07.2026, nach User-Feedback „Rechnungen kommen nicht ins
+Budget"):** Budget und Dashboard ordnen Rechnungen jetzt **implizit** zu — `resolveInvoiceTradeId`
+(unit-getestet): explizit gespeichertes trade_id gewinnt; sonst zählt die Rechnung automatisch beim
+Gewerk ihrer Firma mit (eindeutige Treffer; Firmen-ID vom verknüpften Dokument ist das stärkste
+Signal, Namens-Matching der Fallback). **Kein Klick mehr nötig**, sobald die Firma am Gewerk hängt.
+Die Karte „Rechnungen ohne Gewerk" enthält nur noch echte Entscheidungsfälle (Firma unbekannt/
+mehrdeutig), gruppiert nach Firma mit Sammel-Zuordnung („Alle zuordnen"); der Button „Eindeutige
+festschreiben" materialisiert implizite Zuordnungen als trade_id (sichtbar in der Rechnungsliste,
+stabil gegen Umbenennungen). Verbleibende Prüfpunkte für den Bauherrn: Abschnitt-700-Gewerke für
+Baunebenkosten anlegen (Architekt, Notar, Behörden …), Geräte-Test mobil, Kredit-Modul testen.
 
 ### Offene Fragen an den Bauherrn (zu Beginn der nächsten Session klären)
 

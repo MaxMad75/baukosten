@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { suggestTradeForCompany } from '@/hooks/useTrades';
+import { suggestTradeForCompany, resolveInvoiceTradeId } from '@/hooks/useTrades';
 
-const trade = (id: string, contractorName: string | null) => ({
+const trade = (id: string, contractorName: string | null, contractorId?: string) => ({
   id,
+  contractor_id: contractorId ?? (contractorName ? `c-${id}` : null),
   contractor: contractorName ? { company_name: contractorName } : null,
 });
 
@@ -59,5 +60,34 @@ describe('suggestTradeForCompany (Firma→Gewerk-Regel, SRS 4.1)', () => {
   it('überspringt Gewerke ohne Firma und leere Eingaben', () => {
     expect(suggestTradeForCompany(trades, '').candidates).toEqual([]);
     expect(suggestTradeForCompany(trades, '   ').candidates).toEqual([]);
+  });
+
+  it('nutzt die Firmen-ID (Dokument-Link) als stärkstes Signal, unabhängig vom Namen', () => {
+    // Name würde nichts treffen — die ID entscheidet
+    const { trade: hit } = suggestTradeForCompany(trades, 'Völlig anderer Name', 'c-t-estrich');
+    expect(hit?.id).toBe('t-estrich');
+  });
+
+  it('fällt bei unbekannter Firmen-ID auf das Namens-Matching zurück', () => {
+    const { trade: hit } = suggestTradeForCompany(trades, 'USH Estriche GmbH', 'c-existiert-nicht');
+    expect(hit?.id).toBe('t-estrich');
+  });
+});
+
+describe('resolveInvoiceTradeId (implizite Zuordnung, User-Feedback 11.07.)', () => {
+  it('lässt ein explizit gespeichertes Gewerk immer gewinnen', () => {
+    expect(resolveInvoiceTradeId(trades, { trade_id: 't-erd', company_name: 'USH Estriche GmbH' })).toBe('t-erd');
+  });
+
+  it('ordnet implizit über die Firma zu, wenn kein Gewerk gespeichert ist', () => {
+    expect(resolveInvoiceTradeId(trades, { trade_id: null, company_name: 'USH Estriche GmbH' })).toBe('t-estrich');
+  });
+
+  it('liefert null bei mehrdeutiger Firma (manuelle Wahl nötig)', () => {
+    expect(resolveInvoiceTradeId(trades, { trade_id: null, company_name: 'Neumeyer Haustechnik' })).toBeNull();
+  });
+
+  it('ignoriert ein gespeichertes Gewerk, das nicht (mehr) existiert, und löst neu auf', () => {
+    expect(resolveInvoiceTradeId(trades, { trade_id: 't-geloescht', company_name: 'USH Estriche GmbH' })).toBe('t-estrich');
   });
 });

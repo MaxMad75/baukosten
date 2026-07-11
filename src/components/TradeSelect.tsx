@@ -18,6 +18,8 @@ interface TradeSelectProps {
    * Firma. „Alle Gewerke anzeigen" hebt die Einschränkung auf.
    */
   companyName?: string;
+  /** Firmen-ID (z. B. vom verknüpften Dokument) — stärker als der Name */
+  contractorId?: string | null;
 }
 
 /**
@@ -25,18 +27,18 @@ interface TradeSelectProps {
  * gruppiert; mit companyName eingeschränkt auf die Gewerke der gematchten
  * Firma. Blendet sich aus, solange die Gewerke-Tabellen fehlen (defensiv).
  */
-export const TradeSelect: React.FC<TradeSelectProps> = ({ value, onValueChange, placeholder = 'Gewerk wählen…', companyName }) => {
+export const TradeSelect: React.FC<TradeSelectProps> = ({ value, onValueChange, placeholder = 'Gewerk wählen…', companyName, contractorId }) => {
   const { trades, loading, available } = useTrades();
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     setShowAll(false);
-  }, [companyName]);
+  }, [companyName, contractorId]);
 
   const candidates = useMemo(() => {
-    if (!companyName?.trim()) return [];
-    return suggestTradeForCompany(trades, companyName.trim()).candidates;
-  }, [trades, companyName]);
+    if (!companyName?.trim() && !contractorId) return [];
+    return suggestTradeForCompany(trades, companyName?.trim() || '', contractorId).candidates;
+  }, [trades, companyName, contractorId]);
 
   const matchedContractorName = candidates[0]?.contractor?.company_name || null;
 

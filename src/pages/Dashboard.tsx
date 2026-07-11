@@ -4,7 +4,8 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useInvoices } from '@/hooks/useInvoices';
-import { useTrades } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceTradeId } from '@/hooks/useTrades';
+import { useDocuments } from '@/hooks/useDocuments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useLoans } from '@/hooks/useLoans';
@@ -29,6 +30,7 @@ export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { invoices, loading: invoicesLoading } = useInvoices();
   const { trades, loading: tradesLoading } = useTrades();
+  const { documents } = useDocuments();
   const { getDeductionsForInvoice } = useInvoiceDeductions();
   const { getTotalPaid } = useInvoicePayments();
   const { totalInterest } = useLoans();
@@ -38,6 +40,19 @@ export const Dashboard: React.FC = () => {
 
   const metrics = useMemo(() => {
     const active = invoices.filter((i) => i.status !== 'cancelled');
+
+    // Effektive Gewerk-Zuordnung wie auf der Budget-Seite: explizit ODER
+    // implizit über die Firma (Dokument-Firmen-ID als stärkstes Signal)
+    const contractorByInvoice = new Map<string, string>();
+    for (const doc of documents) {
+      if (doc.invoice_id && doc.contractor_id && !contractorByInvoice.has(doc.invoice_id)) {
+        contractorByInvoice.set(doc.invoice_id, doc.contractor_id);
+      }
+    }
+    const resolvedTradeByInvoice = new Map<string, string | null>();
+    for (const inv of active) {
+      resolvedTradeByInvoice.set(inv.id, resolveInvoiceTradeId(trades, inv, contractorByInvoice.get(inv.id)));
+    }
 
     const payableOf = (inv: Invoice) =>
       toGross(getPayableAmount(Number(inv.amount), getDeductionsForInvoice(inv.id)), invTaxStatus(inv));
@@ -67,7 +82,7 @@ export const Dashboard: React.FC = () => {
       if (aw != null) awardedCount += 1;
       const awEff = aw ?? est;
       let billedTrade = active
-        .filter((inv) => inv.trade_id === t.id)
+        .filter((inv) => resolvedTradeByInvoice.get(inv.id) === t.id)
         .reduce((s, inv) => s + payableOf(inv), 0);
       if (totalInterest > 0 && t.section === 800 && normalizeTradeName(t.name).includes('finanzierung')) {
         billedTrade += totalInterest;
@@ -87,9 +102,9 @@ export const Dashboard: React.FC = () => {
       prognose,
       delta: prognose - budget,
       reviewCount: invoices.filter((i) => i.status === 'review_needed').length,
-      unassignedCount: active.filter((i) => !i.trade_id || !trades.some((t) => t.id === i.trade_id)).length,
+      unassignedCount: active.filter((i) => resolvedTradeByInvoice.get(i.id) == null).length,
     };
-  }, [invoices, trades, getDeductionsForInvoice, getTotalPaid, totalInterest]);
+  }, [invoices, trades, documents, getDeductionsForInvoice, getTotalPaid, totalInterest]);
 
   const formatCurrency = (amount: number) => formatAmount(amount);
   const tradeName = (inv: Invoice) => trades.find((t) => t.id === inv.trade_id)?.name || null;

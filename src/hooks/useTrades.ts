@@ -29,8 +29,15 @@ const containsWord = (haystack: string, needle: string) =>
  * eingeschränkte Dropdown; keins → leer (manuell aus der Gesamtliste).
  */
 export function suggestTradeForCompany<
-  T extends Pick<Trade, 'id'> & { contractor?: Pick<Contractor, 'company_name'> | null }
->(trades: T[], companyName: string): { trade: T | null; candidates: T[] } {
+  T extends Pick<Trade, 'id'> & { contractor_id?: string | null; contractor?: Pick<Contractor, 'company_name'> | null }
+>(trades: T[], companyName: string, contractorId?: string | null): { trade: T | null; candidates: T[] } {
+  // Stärkstes Signal zuerst: die Firmen-ID (z. B. vom verknüpften Dokument) —
+  // exakt, unabhängig von Schreibweisen des Firmennamens.
+  if (contractorId) {
+    const byId = trades.filter((t) => t.contractor_id === contractorId);
+    if (byId.length > 0) return { trade: byId.length === 1 ? byId[0] : null, candidates: byId };
+  }
+
   const company = cleanCompanyName(companyName || '');
   if (!company) return { trade: null, candidates: [] };
 
@@ -52,6 +59,24 @@ export function suggestTradeForCompany<
 
   const candidates = tiers.find((list) => list.length > 0) || [];
   return { trade: candidates.length === 1 ? candidates[0] : null, candidates };
+}
+
+/**
+ * Effektive Gewerk-Zuordnung einer Rechnung (SRS 4.1, User-Feedback 11.07.):
+ * ein explizit gespeichertes trade_id gewinnt; sonst wird IMPLIZIT über die
+ * Firma zugeordnet (nur eindeutige Treffer). Budget und Dashboard füllen
+ * sich damit, sobald die Firma am Gewerk hängt — ohne dass jede Rechnung
+ * einzeln angeklickt werden muss.
+ */
+export function resolveInvoiceTradeId<
+  T extends Pick<Trade, 'id'> & { contractor_id?: string | null; contractor?: Pick<Contractor, 'company_name'> | null }
+>(
+  trades: T[],
+  invoice: { trade_id?: string | null; company_name: string },
+  contractorId?: string | null
+): string | null {
+  if (invoice.trade_id && trades.some((t) => t.id === invoice.trade_id)) return invoice.trade_id;
+  return suggestTradeForCompany(trades, invoice.company_name, contractorId).trade?.id ?? null;
 }
 
 /**

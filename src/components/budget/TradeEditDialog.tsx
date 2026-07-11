@@ -31,6 +31,8 @@ interface Props {
   trade: Trade | null;
   contractors: Contractor[];
   onSubmit: (values: TradeFormValues) => Promise<boolean>;
+  /** Vorbefüllung beim Anlegen (z. B. „Gewerk für Firma anlegen" aus der Budget-Seite) */
+  defaults?: Partial<TradeFormValues> | null;
 }
 
 /**
@@ -39,7 +41,7 @@ interface Props {
  * Skonto und Notizen. Leere Auftragssumme = noch nicht beauftragt (die
  * Budget-Ansicht setzt dann den Schätzwert kursiv an).
  */
-export const TradeEditDialog: React.FC<Props> = ({ open, onOpenChange, trade, contractors, onSubmit }) => {
+export const TradeEditDialog: React.FC<Props> = ({ open, onOpenChange, trade, contractors, onSubmit, defaults }) => {
   const [name, setName] = useState('');
   const [section, setSection] = useState<TradeSection>(300);
   const [contractorId, setContractorId] = useState<string>(NONE_VALUE);
@@ -52,15 +54,15 @@ export const TradeEditDialog: React.FC<Props> = ({ open, onOpenChange, trade, co
 
   useEffect(() => {
     if (!open) return;
-    setName(trade?.name || '');
-    setSection(trade?.section ?? 300);
-    setContractorId(trade?.contractor_id || NONE_VALUE);
+    setName(trade?.name || defaults?.name || '');
+    setSection(trade?.section ?? defaults?.section ?? 300);
+    setContractorId(trade?.contractor_id || defaults?.contractor_id || NONE_VALUE);
     setAwardedAmount(trade?.awarded_amount != null ? String(trade.awarded_amount) : '');
     setAwardedGross(trade?.awarded_tax_status === 'gross');
     setAwardedNote(trade?.awarded_note || '');
     setSkontoPercent(trade?.skonto_percent != null ? String(trade.skonto_percent) : '');
     setNotes(trade?.notes || '');
-  }, [open, trade]);
+  }, [open, trade, defaults]);
 
   const handleSubmit = async () => {
     const awarded = awardedAmount.trim() === '' ? null : parseFloat(awardedAmount);

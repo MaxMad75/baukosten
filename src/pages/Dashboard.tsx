@@ -4,7 +4,7 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useInvoices } from '@/hooks/useInvoices';
-import { useTrades, resolveInvoiceTradeId } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
@@ -41,17 +41,17 @@ export const Dashboard: React.FC = () => {
   const metrics = useMemo(() => {
     const active = invoices.filter((i) => i.status !== 'cancelled');
 
-    // Effektive Gewerk-Zuordnung wie auf der Budget-Seite: explizit ODER
-    // implizit über die Firma (Dokument-Firmen-ID als stärkstes Signal)
+    // Block-Zuordnung wie auf der Budget-Seite: Ist-Werte zählen auf
+    // FIRMEN-Ebene (User-Feedback 11.07.), Dokument-Firmen-ID als stärkstes Signal
     const contractorByInvoice = new Map<string, string>();
     for (const doc of documents) {
       if (doc.invoice_id && doc.contractor_id && !contractorByInvoice.has(doc.invoice_id)) {
         contractorByInvoice.set(doc.invoice_id, doc.contractor_id);
       }
     }
-    const resolvedTradeByInvoice = new Map<string, string | null>();
+    const blockKeyByInvoice = new Map<string, string | null>();
     for (const inv of active) {
-      resolvedTradeByInvoice.set(inv.id, resolveInvoiceTradeId(trades, inv, contractorByInvoice.get(inv.id)));
+      blockKeyByInvoice.set(inv.id, resolveInvoiceBlockKey(trades, inv, contractorByInvoice.get(inv.id)));
     }
 
     const payableOf = (inv: Invoice) =>
@@ -69,27 +69,40 @@ export const Dashboard: React.FC = () => {
     billed += totalInterest;
     paid += totalInterest;
 
-    // Budget/Beauftragt/Prognose je Gewerk (wie Budget-Seite, brutto)
+    // Ist je Firmen-Block
+    const billedByBlock = new Map<string, number>();
+    for (const inv of active) {
+      const key = blockKeyByInvoice.get(inv.id);
+      if (key) billedByBlock.set(key, (billedByBlock.get(key) || 0) + payableOf(inv));
+    }
+    const finTrade = trades.find((t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung'));
+    if (finTrade && totalInterest > 0) {
+      const key = tradeBlockKey(finTrade);
+      billedByBlock.set(key, (billedByBlock.get(key) || 0) + totalInterest);
+    }
+
+    // Soll je Firmen-Block; Prognose = Σ max(Schätzung, Beauftragt, Abgerechnet) je Block
     let budget = 0;
     let awarded = 0;
     let awardedCount = 0;
-    let prognose = 0;
+    const sollByBlock = new Map<string, { est: number; awEff: number }>();
     for (const t of trades) {
       const est = t.current_estimate
         ? toGross(Number(t.current_estimate.amount), t.current_estimate.tax_status)
         : 0;
       const aw = t.awarded_amount != null ? toGross(Number(t.awarded_amount), t.awarded_tax_status) : null;
       if (aw != null) awardedCount += 1;
-      const awEff = aw ?? est;
-      let billedTrade = active
-        .filter((inv) => resolvedTradeByInvoice.get(inv.id) === t.id)
-        .reduce((s, inv) => s + payableOf(inv), 0);
-      if (totalInterest > 0 && t.section === 800 && normalizeTradeName(t.name).includes('finanzierung')) {
-        billedTrade += totalInterest;
-      }
       budget += est;
-      awarded += awEff;
-      prognose += Math.max(est, awEff, billedTrade);
+      awarded += aw ?? est;
+      const key = tradeBlockKey(t);
+      const soll = sollByBlock.get(key) || { est: 0, awEff: 0 };
+      soll.est += est;
+      soll.awEff += aw ?? est;
+      sollByBlock.set(key, soll);
+    }
+    let prognose = 0;
+    for (const [key, soll] of sollByBlock) {
+      prognose += Math.max(soll.est, soll.awEff, billedByBlock.get(key) || 0);
     }
 
     return {
@@ -102,7 +115,7 @@ export const Dashboard: React.FC = () => {
       prognose,
       delta: prognose - budget,
       reviewCount: invoices.filter((i) => i.status === 'review_needed').length,
-      unassignedCount: active.filter((i) => resolvedTradeByInvoice.get(i.id) == null).length,
+      unassignedCount: active.filter((i) => blockKeyByInvoice.get(i.id) == null).length,
     };
   }, [invoices, trades, documents, getDeductionsForInvoice, getTotalPaid, totalInterest]);
 
@@ -139,7 +152,7 @@ export const Dashboard: React.FC = () => {
               )}
               {metrics.unassignedCount > 0 && (
                 <button className="underline-offset-2 hover:underline" onClick={() => navigate('/budget')}>
-                  {metrics.unassignedCount} Rechnung(en) ohne Gewerk — im Budget zuordnen
+                  {metrics.unassignedCount} Rechnung(en) ohne Budget-Zuordnung — Gewerk für die Firma anlegen
                 </button>
               )}
             </CardContent>

@@ -80,6 +80,44 @@ export function resolveInvoiceTradeId<
 }
 
 /**
+ * Firmen-Block (User-Feedback 11.07.): Der Bauherr will primär wissen,
+ * WELCHER FIRMA er wieviel bezahlt hat — die Gewerke sind nur die
+ * Soll-Aufschlüsselung des Firmen-Budgets. Gewerke derselben Firma bilden
+ * deshalb einen Block; Ist-Werte (Rechnungen) werden auf Block-Ebene
+ * gezählt und müssen NICHT auf Einzel-Gewerke verteilt werden.
+ */
+export const tradeBlockKey = (t: Pick<Trade, 'id'> & { contractor_id?: string | null }): string =>
+  t.contractor_id ? `c:${t.contractor_id}` : `t:${t.id}`;
+
+/**
+ * Block-Zuordnung einer Rechnung: explizites trade_id → Block dieses
+ * Gewerks; sonst Firmen-ID des verknüpften Dokuments; sonst Namens-Match —
+ * der auch bei Firmen mit MEHREREN Gewerken greift, weil alle Kandidaten
+ * derselben Firma im selben Block landen. null = manuelle Wahl nötig.
+ */
+export function resolveInvoiceBlockKey<
+  T extends Pick<Trade, 'id'> & { contractor_id?: string | null; contractor?: Pick<Contractor, 'company_name'> | null }
+>(
+  trades: T[],
+  invoice: { trade_id?: string | null; company_name: string },
+  contractorId?: string | null
+): string | null {
+  if (invoice.trade_id) {
+    const t = trades.find((x) => x.id === invoice.trade_id);
+    if (t) return tradeBlockKey(t);
+  }
+  if (contractorId && trades.some((t) => t.contractor_id === contractorId)) {
+    return `c:${contractorId}`;
+  }
+  const { candidates } = suggestTradeForCompany(trades, invoice.company_name);
+  if (candidates.length > 0) {
+    const keys = new Set(candidates.map(tradeBlockKey));
+    if (keys.size === 1) return keys.values().next().value!;
+  }
+  return null;
+}
+
+/**
  * Gewerke (SRS 4.1): zentrale Budgetposten, wie die Zeilen im
  * Architekten-Excel. Defensiv gegenüber einer noch nicht ausgeführten
  * Migration: fehlen die Tabellen, meldet der Hook available=false und

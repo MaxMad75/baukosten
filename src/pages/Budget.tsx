@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TradeSelect } from '@/components/TradeSelect';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -19,12 +18,12 @@ import { de } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTrades, resolveInvoiceTradeId } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceTradeId, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useLoans } from '@/hooks/useLoans';
 import { normalizeTradeName } from '@/lib/estimateImport';
-import { useContractors } from '@/hooks/useContractors';
+import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import {
@@ -32,13 +31,14 @@ import {
 } from '@/lib/types';
 
 /**
- * Budget-Seite (SRS 4.1/R1.4): die Gewerke-Tabelle als App-Ersatz für das
- * Architekten-Excel. Pro Gewerk: Schätzung (aktuell + Vorversion), Beauftragt
- * ("günstigste oder beauftragt"; ohne Auftrag wird der Schätzwert kursiv
- * angesetzt, wie im Excel), Abgerechnet (Σ Zahlbeträge der zugeordneten
- * Rechnungen), Bezahlt (Σ Zahlungen), Δ/Ampel gegen die aktuelle Schätzung,
- * realisiertes Skonto und ein abgeleiteter Status. Summen entstehen per
- * Konstruktion: Gewerk → Abschnitt → Gesamt.
+ * Budget-Seite (SRS 4.1, User-Feedback 11.07.): Die Leitfrage ist
+ * "welcher FIRMA habe ich wieviel bezahlt" — Ist-Werte (Abgerechnet/
+ * Bezahlt) werden deshalb auf FIRMEN-Ebene gezählt; die Gewerke einer
+ * Firma sind nur die Soll-Aufschlüsselung (Schätzung/Beauftragt) ihres
+ * Budgets. Rechnungen müssen NICHT auf Einzel-Gewerke verteilt werden.
+ * Firmen mit genau einem Gewerk erscheinen als normale Zeile; Firmen mit
+ * mehreren Gewerken als Block (Firmen-Zeile mit Ist, Gewerk-Unterzeilen
+ * mit Soll). Summen entstehen per Konstruktion: Block → Abschnitt → Gesamt.
  */
 
 type TradeStatus = 'offen' | 'beauftragt' | 'in Abrechnung' | 'abgerechnet';
@@ -51,6 +51,20 @@ interface BudgetRow {
   /** Beauftragt, ohne Auftrag der angesetzte Schätzwert (Excel: kursiv grün) */
   awardedEffective: number;
   isAwardedFallback: boolean;
+  skontoExpected: number | null;
+  /** Explizit DIESEM Gewerk zugewiesene Rechnungen ("davon"-Aufschlüsselung) */
+  explicitInvoices: Invoice[];
+  explicitBilled: number;
+}
+
+interface FirmBlock {
+  key: string;
+  /** Firmenname; null bei Gewerken ohne Firma (Block = das Gewerk selbst) */
+  contractorName: string | null;
+  rows: BudgetRow[];
+  estimate: number;
+  prevEstimate: number;
+  awardedEffective: number;
   billed: number;
   paid: number;
   skontoRealized: number;
@@ -63,8 +77,8 @@ interface BudgetRow {
 
 interface SectionGroup {
   section: TradeSection;
-  rows: BudgetRow[];
-  totals: Pick<BudgetRow, 'estimate' | 'prevEstimate' | 'awardedEffective' | 'billed' | 'paid' | 'skontoRealized' | 'prognose' | 'delta'>;
+  blocks: FirmBlock[];
+  totals: Pick<FirmBlock, 'estimate' | 'prevEstimate' | 'awardedEffective' | 'billed' | 'paid' | 'skontoRealized' | 'prognose' | 'delta'>;
 }
 
 const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'default'; className?: string }> = {
@@ -92,6 +106,7 @@ const Budget: React.FC = () => {
   const [assigning, setAssigning] = useState(false);
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  const [tradeDefaults, setTradeDefaults] = useState<Partial<TradeFormValues> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Trade | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
@@ -135,41 +150,88 @@ const Budget: React.FC = () => {
     return map;
   }, [documents]);
 
-  // Effektive Zuordnung: explizites trade_id ODER implizit über die Firma
-  // (eindeutige Treffer) — das Budget füllt sich ohne Klick (User-Feedback 11.07.)
-  const resolvedTradeByInvoice = useMemo(() => {
+  // Block-Zuordnung je Rechnung: Firma (bzw. Einzel-Gewerk) — implizit, ohne Klick
+  const blockKeyByInvoice = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const inv of invoices) {
-      map.set(inv.id, resolveInvoiceTradeId(trades, inv, contractorByInvoice.get(inv.id)));
+      map.set(inv.id, resolveInvoiceBlockKey(trades, inv, contractorByInvoice.get(inv.id)));
     }
     return map;
   }, [invoices, trades, contractorByInvoice]);
 
   const sections = useMemo((): SectionGroup[] => {
-    const rows = trades.map((trade): BudgetRow => {
-      const tradeInvoices = invoices.filter(
-        (inv) => resolvedTradeByInvoice.get(inv.id) === trade.id && inv.status !== 'cancelled'
-      );
+    const activeInvoices = invoices.filter((inv) => inv.status !== 'cancelled');
+    const payableOf = (inv: Invoice) =>
+      conv(getPayableAmount(Number(inv.amount), getDeductionsForInvoice(inv.id)), invTaxStatus(inv));
 
-      // Vergleichsbasis: gewählte Version, sonst die aktuelle des Gewerks
+    // Soll je Gewerk
+    const rowOf = (trade: TradeWithEstimates): BudgetRow => {
       const baseEstimate =
         (effectiveBase ? trade.estimates.find((e) => e.version_label === effectiveBase) : null) ||
         trade.current_estimate;
       const estimate = baseEstimate ? conv(Number(baseEstimate.amount), baseEstimate.tax_status) : 0;
-      // Vorversion = neueste andere Version (estimates sind nach Datum absteigend sortiert)
       const prev = trade.estimates.find((e) => e.version_label !== baseEstimate?.version_label);
       const prevEstimate = prev ? conv(Number(prev.amount), prev.tax_status) : null;
-
       const awarded = trade.awarded_amount != null
         ? conv(Number(trade.awarded_amount), trade.awarded_tax_status)
         : null;
-      const isAwardedFallback = awarded == null;
-      const awardedEffective = awarded ?? estimate;
+      const explicitInvoices = activeInvoices.filter((inv) => inv.trade_id === trade.id);
+      return {
+        trade,
+        estimate,
+        prevEstimate,
+        awarded,
+        awardedEffective: awarded ?? estimate,
+        isAwardedFallback: awarded == null,
+        skontoExpected: trade.skonto_percent != null && awarded != null && Number(trade.skonto_percent) > 0
+          ? (awarded * Number(trade.skonto_percent)) / 100
+          : null,
+        explicitInvoices,
+        explicitBilled: explicitInvoices.reduce((s, inv) => s + payableOf(inv), 0),
+      };
+    };
+
+    // Gewerke nach (Abschnitt, Firmen-Block) gruppieren. Hat eine Firma
+    // Gewerke in mehreren Abschnitten, zählen ihre Rechnungen im Abschnitt
+    // mit den meisten Gewerken (keine Doppelzählung).
+    const sectionsOfBlock = new Map<string, Map<TradeSection, number>>();
+    for (const t of trades) {
+      const key = tradeBlockKey(t);
+      const counts = sectionsOfBlock.get(key) || new Map<TradeSection, number>();
+      counts.set(t.section, (counts.get(t.section) || 0) + 1);
+      sectionsOfBlock.set(key, counts);
+    }
+    const primarySectionOf = (key: string): TradeSection => {
+      const counts = sectionsOfBlock.get(key)!;
+      return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+    };
+
+    const blockTrades = new Map<string, TradeWithEstimates[]>(); // "section:key" → trades
+    for (const t of trades) {
+      const mapKey = `${t.section}:${tradeBlockKey(t)}`;
+      const list = blockTrades.get(mapKey) || [];
+      list.push(t);
+      blockTrades.set(mapKey, list);
+    }
+
+    const bySection = new Map<TradeSection, FirmBlock[]>();
+    for (const [mapKey, list] of blockTrades) {
+      const section = Number(mapKey.split(':')[0]) as TradeSection;
+      const key = mapKey.slice(mapKey.indexOf(':') + 1);
+      const rows = list
+        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'de'))
+        .map(rowOf);
+
+      // Ist-Werte der Firma — nur im Primär-Abschnitt des Blocks
+      const isPrimary = primarySectionOf(key) === section;
+      const blockInvoices = isPrimary
+        ? activeInvoices.filter((inv) => blockKeyByInvoice.get(inv.id) === key)
+        : [];
 
       let billed = 0;
       let paid = 0;
       let skontoRealized = 0;
-      for (const inv of tradeInvoices) {
+      for (const inv of blockInvoices) {
         const deductions = getDeductionsForInvoice(inv.id);
         billed += conv(getPayableAmount(Number(inv.amount), deductions), invTaxStatus(inv));
         paid += conv(getTotalPaid(inv.id), invTaxStatus(inv));
@@ -179,59 +241,66 @@ const Budget: React.FC = () => {
       }
 
       // Kredit-Zinsen landen als gezahlte Kosten im Gewerk "Finanzierung"
-      // (Zinsen sind steuerfrei → keine Brutto/Netto-Umrechnung)
-      if (totalInterest > 0 && trade.section === 800 && normalizeTradeName(trade.name).includes('finanzierung')) {
+      // (steuerfrei → keine Brutto/Netto-Umrechnung)
+      if (totalInterest > 0 && list.some((t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung'))) {
         billed += totalInterest;
         paid += totalInterest;
       }
 
-      const skontoExpected = trade.skonto_percent != null && awarded != null && Number(trade.skonto_percent) > 0
-        ? (awarded * Number(trade.skonto_percent)) / 100
-        : null;
-
-      // Prognose je Gewerk = max(Schätzung, Beauftragt, Abgerechnet) — SRS 4.1
+      const estimate = rows.reduce((s, r) => s + r.estimate, 0);
+      const awardedEffective = rows.reduce((s, r) => s + r.awardedEffective, 0);
+      const skontoExpectedSum = rows.reduce((s, r) => s + (r.skontoExpected ?? 0), 0);
       const prognose = Math.max(estimate, awardedEffective, billed);
-      const delta = prognose - estimate;
 
       let status: TradeStatus;
-      if (tradeInvoices.length === 0) {
-        status = trade.awarded_amount != null && Number(trade.awarded_amount) > 0 ? 'beauftragt' : 'offen';
+      if (blockInvoices.length === 0 && billed === 0) {
+        status = rows.some((r) => r.awarded != null && r.awarded > 0) ? 'beauftragt' : 'offen';
       } else {
-        status = tradeInvoices.every((inv) => inv.status === 'paid') ? 'abgerechnet' : 'in Abrechnung';
+        status = blockInvoices.length > 0 && blockInvoices.every((inv) => inv.status === 'paid') ? 'abgerechnet' : 'in Abrechnung';
       }
 
-      return {
-        trade, estimate, prevEstimate, awarded, awardedEffective, isAwardedFallback,
-        billed, paid, skontoRealized, skontoExpected, prognose, delta,
-        invoices: tradeInvoices, status,
+      const block: FirmBlock = {
+        key: mapKey,
+        contractorName: rows[0].trade.contractor?.company_name || null,
+        rows,
+        estimate,
+        prevEstimate: rows.reduce((s, r) => s + (r.prevEstimate ?? 0), 0),
+        awardedEffective,
+        billed,
+        paid,
+        skontoRealized,
+        skontoExpected: skontoExpectedSum > 0 ? skontoExpectedSum : null,
+        prognose,
+        delta: prognose - estimate,
+        invoices: blockInvoices,
+        status,
       };
-    });
-
-    const bySection = new Map<TradeSection, BudgetRow[]>();
-    for (const row of rows) {
-      const list = bySection.get(row.trade.section) || [];
-      list.push(row);
-      bySection.set(row.trade.section, list);
+      const blocks = bySection.get(section) || [];
+      blocks.push(block);
+      bySection.set(section, blocks);
     }
 
     return Array.from(bySection.entries())
       .sort(([a], [b]) => a - b)
-      .map(([section, sectionRows]) => ({
-        section,
-        rows: sectionRows,
-        totals: {
-          estimate: sectionRows.reduce((s, r) => s + r.estimate, 0),
-          prevEstimate: sectionRows.reduce((s, r) => s + (r.prevEstimate ?? 0), 0),
-          awardedEffective: sectionRows.reduce((s, r) => s + r.awardedEffective, 0),
-          billed: sectionRows.reduce((s, r) => s + r.billed, 0),
-          paid: sectionRows.reduce((s, r) => s + r.paid, 0),
-          skontoRealized: sectionRows.reduce((s, r) => s + r.skontoRealized, 0),
-          prognose: sectionRows.reduce((s, r) => s + r.prognose, 0),
-          delta: sectionRows.reduce((s, r) => s + r.delta, 0),
-        },
-      }));
+      .map(([section, blocks]) => {
+        blocks.sort((a, b) => Math.min(...a.rows.map((r) => r.trade.sort_order)) - Math.min(...b.rows.map((r) => r.trade.sort_order)));
+        return {
+          section,
+          blocks,
+          totals: {
+            estimate: blocks.reduce((s, b) => s + b.estimate, 0),
+            prevEstimate: blocks.reduce((s, b) => s + b.prevEstimate, 0),
+            awardedEffective: blocks.reduce((s, b) => s + b.awardedEffective, 0),
+            billed: blocks.reduce((s, b) => s + b.billed, 0),
+            paid: blocks.reduce((s, b) => s + b.paid, 0),
+            skontoRealized: blocks.reduce((s, b) => s + b.skontoRealized, 0),
+            prognose: blocks.reduce((s, b) => s + b.prognose, 0),
+            delta: blocks.reduce((s, b) => s + b.delta, 0),
+          },
+        };
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trades, invoices, resolvedTradeByInvoice, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest]);
+  }, [trades, invoices, blockKeyByInvoice, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest]);
 
   const grandTotals = useMemo(() => ({
     estimate: sections.reduce((s, g) => s + g.totals.estimate, 0),
@@ -243,16 +312,14 @@ const Budget: React.FC = () => {
     delta: sections.reduce((s, g) => s + g.totals.delta, 0),
   }), [sections]);
 
-  // "Ohne Gewerk" = weder explizit zugeordnet noch implizit über die Firma
-  // auflösbar (unbekannte Firma oder Firma mit mehreren Gewerken).
+  // Ohne Budget-Zuordnung = Firma der Rechnung hat (noch) kein Gewerk im Budget
   const unassigned = useMemo(
     () => invoices.filter(
-      (inv) => inv.status !== 'cancelled' && resolvedTradeByInvoice.get(inv.id) == null
+      (inv) => inv.status !== 'cancelled' && blockKeyByInvoice.get(inv.id) == null
     ),
-    [invoices, resolvedTradeByInvoice]
+    [invoices, blockKeyByInvoice]
   );
 
-  // Für die Sammel-Zuordnung: nach Firma gruppieren
   const unassignedGroups = useMemo(() => {
     const map = new Map<string, Invoice[]>();
     for (const inv of unassigned) {
@@ -272,27 +339,16 @@ const Budget: React.FC = () => {
     });
   };
 
-  const assignInvoices = async (invoiceIds: string[], tradeId: string) => {
-    const { error } = await supabase.from('invoices').update({ trade_id: tradeId }).in('id', invoiceIds);
-    if (error) {
-      toast({ title: 'Fehler', description: 'Rechnung(en) konnten nicht zugeordnet werden', variant: 'destructive' });
-      return;
-    }
-    await fetchInvoices();
-  };
-
   /**
-   * Implizite Firma→Gewerk-Zuordnungen festschreiben (SRS 4.1): eindeutig
-   * auflösbare Rechnungen zählen im Budget bereits automatisch mit — der
-   * Button schreibt trade_id, damit die Zuordnung auch in der Rechnungsliste
-   * sichtbar und gegen spätere Firmen-Umbenennungen stabil ist.
+   * Implizite eindeutige Zuordnungen festschreiben (trade_id), damit sie
+   * auch in der Rechnungsliste sichtbar und stabil gegen Umbenennungen sind.
    */
   const autoAssign = async () => {
     setAssigning(true);
     const byTrade = new Map<string, string[]>();
     for (const inv of invoices) {
       if (inv.trade_id || inv.status === 'cancelled') continue;
-      const resolved = resolvedTradeByInvoice.get(inv.id);
+      const resolved = resolveInvoiceTradeId(trades, inv, contractorByInvoice.get(inv.id));
       if (!resolved) continue;
       const list = byTrade.get(resolved) || [];
       list.push(inv.id);
@@ -311,18 +367,24 @@ const Budget: React.FC = () => {
     if (failed) {
       toast({ title: 'Fehler', description: 'Nicht alle Rechnungen konnten zugeordnet werden', variant: 'destructive' });
     } else {
-      toast({
-        title: `${assigned} Zuordnung(en) festgeschrieben`,
-        description: unassigned.length > 0
-          ? `${unassigned.length} Rechnung(en) brauchen eine manuelle Wahl (Firma unbekannt oder mit mehreren Gewerken).`
-          : 'Alle Rechnungen sind einem Gewerk zugeordnet.',
-      });
+      toast({ title: `${assigned} Zuordnung(en) festgeschrieben` });
     }
   };
 
-  const openTradeDialog = (trade: Trade | null) => {
+  const openTradeDialog = (trade: Trade | null, defaults: Partial<TradeFormValues> | null = null) => {
     setEditingTrade(trade);
+    setTradeDefaults(defaults);
     setTradeDialogOpen(true);
+  };
+
+  /** "Gewerk für Firma anlegen" — Dialog vorbefüllt mit Firma und Namen */
+  const openCreateForCompany = (companyName: string) => {
+    const contractor = matchContractorByName(contractors, companyName);
+    openTradeDialog(null, {
+      name: contractor?.trade || companyName,
+      contractor_id: contractor?.id || null,
+      section: 700,
+    });
   };
 
   const handleTradeSubmit = async (values: TradeFormValues): Promise<boolean> => {
@@ -352,6 +414,19 @@ const Budget: React.FC = () => {
     return <Layout><div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div></Layout>;
   }
 
+  // Gemeinsame Soll-Zellen einer Gewerk-Zeile (Einzel-Block oder Unterzeile)
+  const renderSollCells = (row: BudgetRow) => (
+    <>
+      <TableCell className="text-right">{formatAmount(row.estimate)}</TableCell>
+      <TableCell className="text-right text-muted-foreground">
+        {row.prevEstimate != null ? formatAmount(row.prevEstimate) : '–'}
+      </TableCell>
+      <TableCell className={`text-right ${row.isAwardedFallback ? 'italic text-muted-foreground' : deltaClass(row.awardedEffective - row.estimate)}`}>
+        {formatAmount(row.awardedEffective)}
+      </TableCell>
+    </>
+  );
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -359,7 +434,7 @@ const Budget: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold">Budget</h1>
             <p className="text-muted-foreground">
-              Gewerke wie im Architekten-Excel — alle Werte {viewMode === 'gross' ? 'brutto inkl. 19 % MwSt' : 'netto'}
+              Kosten je Firma, Gewerke als Budget-Aufschlüsselung — alle Werte {viewMode === 'gross' ? 'brutto inkl. 19 % MwSt' : 'netto'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -410,62 +485,38 @@ const Budget: React.FC = () => {
               </Card>
             </div>
 
-            {unassigned.length > 0 && trades.length > 0 && (
+            {unassigned.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="text-sm">Rechnungen ohne Gewerk ({unassigned.length})</CardTitle>
-                    <Button size="sm" onClick={autoAssign} disabled={assigning}>
-                      {assigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                      <span className="ml-2">Eindeutige festschreiben</span>
-                    </Button>
+                    <CardTitle className="text-sm">Rechnungen ohne Budget-Zuordnung ({unassigned.length})</CardTitle>
+                    {trades.length > 0 && (
+                      <Button size="sm" variant="outline" onClick={autoAssign} disabled={assigning}>
+                        {assigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                        <span className="ml-2">Eindeutige festschreiben</span>
+                      </Button>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Rechnungen eindeutiger Firmen zählen bereits automatisch im Budget mit. Hier stehen
-                    nur die Fälle, die eine Wahl brauchen — Firma unbekannt oder mit mehreren Gewerken.
+                    Diese Firmen haben noch kein Gewerk im Budget. „Gewerk anlegen" erstellt den
+                    Budgetposten für die Firma — danach zählen ihre Rechnungen automatisch mit.
                   </p>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3">
                   {unassignedGroups.map(([company, groupInvoices]) => {
                     const groupSum = groupInvoices.reduce((s, inv) => s + Number(inv.amount), 0);
-                    const contractorId = contractorByInvoice.get(groupInvoices[0].id) || null;
                     return (
-                      <div key={company} className="space-y-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-sm font-medium">
-                            {company}
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {groupInvoices.length} Rechnung{groupInvoices.length === 1 ? '' : 'en'} · {formatAmount(groupSum)}
-                            </span>
+                      <div key={company} className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-medium">
+                          {company}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {groupInvoices.length} Rechnung{groupInvoices.length === 1 ? '' : 'en'} · {formatAmount(groupSum)}
                           </span>
-                          <div className="w-[260px]">
-                            <TradeSelect
-                              value={null}
-                              onValueChange={(tradeId) => {
-                                if (tradeId) assignInvoices(groupInvoices.map((i) => i.id), tradeId);
-                              }}
-                              companyName={company}
-                              contractorId={contractorId}
-                              placeholder={groupInvoices.length === 1 ? 'Gewerk wählen…' : 'Alle zuordnen…'}
-                            />
-                          </div>
-                        </div>
-                        {groupInvoices.length > 1 && groupInvoices.map((inv) => (
-                          <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2 pl-3 text-sm text-muted-foreground">
-                            <span>
-                              {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} · {formatAmount(Number(inv.amount))}
-                            </span>
-                            <div className="w-[260px]">
-                              <TradeSelect
-                                value={null}
-                                onValueChange={(tradeId) => { if (tradeId) assignInvoices([inv.id], tradeId); }}
-                                companyName={inv.company_name}
-                                contractorId={contractorByInvoice.get(inv.id) || null}
-                                placeholder="Einzeln zuordnen…"
-                              />
-                            </div>
-                          </div>
-                        ))}
+                        </span>
+                        <Button size="sm" variant="outline" onClick={() => openCreateForCompany(company)}>
+                          <Plus className="h-4 w-4" />
+                          <span className="ml-2">Gewerk anlegen</span>
+                        </Button>
                       </div>
                     );
                   })}
@@ -476,7 +527,7 @@ const Budget: React.FC = () => {
             <Card>
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>Gewerke</CardTitle>
+                  <CardTitle>Budget nach Firmen und Gewerken</CardTitle>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
                       <Upload className="h-4 w-4" />
@@ -494,51 +545,56 @@ const Budget: React.FC = () => {
                   <p className="text-sm text-muted-foreground py-4">Noch keine Gewerke angelegt.</p>
                 ) : (
                   <>
-                  {/* Mobile (R2.3): kompakte Karten je Gewerk statt breiter Tabelle */}
+                  {/* Mobile (R2.3): kompakte Karten je Firmen-Block */}
                   <div className="space-y-5 md:hidden">
                     {sections.map((group) => (
                       <div key={group.section} className="space-y-2">
                         <div className="text-sm font-semibold text-muted-foreground">
                           {group.section} · {TRADE_SECTION_LABELS[group.section]}
                         </div>
-                        {group.rows.map((row) => {
-                          const badge = STATUS_BADGE[row.status];
+                        {group.blocks.map((block) => {
+                          const badge = STATUS_BADGE[block.status];
+                          const single = block.rows.length === 1;
                           return (
                             <button
-                              key={row.trade.id}
+                              key={block.key}
                               className="w-full rounded-lg border p-3 space-y-1.5 text-left"
-                              onClick={() => openTradeDialog(row.trade)}
+                              onClick={() => { if (single) openTradeDialog(block.rows[0].trade); }}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div>
-                                  <div className="text-sm font-medium">{row.trade.name}</div>
-                                  {row.trade.contractor && (
-                                    <div className="text-xs text-muted-foreground">{row.trade.contractor.company_name}</div>
-                                  )}
+                                  <div className="text-sm font-medium">
+                                    {single ? block.rows[0].trade.name : block.contractorName}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {single
+                                      ? block.contractorName || ''
+                                      : block.rows.map((r) => r.trade.name).join(' · ')}
+                                  </div>
                                 </div>
-                                <Badge variant={badge.variant} className={badge.className}>{row.status}</Badge>
+                                <Badge variant={badge.variant} className={badge.className}>{block.status}</Badge>
                               </div>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-sm">
                                 <span className="text-muted-foreground">Schätzung</span>
-                                <span className="text-right">{formatAmount(row.estimate)}</span>
+                                <span className="text-right">{formatAmount(block.estimate)}</span>
                                 <span className="text-muted-foreground">Beauftragt</span>
-                                <span className={`text-right ${row.isAwardedFallback ? 'italic text-muted-foreground' : deltaClass(row.awardedEffective - row.estimate)}`}>
-                                  {formatAmount(row.awardedEffective)}
+                                <span className={`text-right ${deltaClass(block.awardedEffective - block.estimate)}`}>
+                                  {formatAmount(block.awardedEffective)}
                                 </span>
-                                {row.billed > 0 && (
+                                {block.billed > 0 && (
                                   <>
                                     <span className="text-muted-foreground">Abgerechnet</span>
-                                    <span className="text-right">{formatAmount(row.billed)}</span>
+                                    <span className="text-right">{formatAmount(block.billed)}</span>
                                   </>
                                 )}
-                                {row.paid > 0 && (
+                                {block.paid > 0 && (
                                   <>
                                     <span className="text-muted-foreground">Bezahlt</span>
-                                    <span className="text-right">{formatAmount(row.paid)}</span>
+                                    <span className="text-right">{formatAmount(block.paid)}</span>
                                   </>
                                 )}
                                 <span className="text-muted-foreground">Δ Prognose</span>
-                                <span className={`text-right ${deltaClass(row.delta)}`}>{formatDelta(row.delta, row.estimate)}</span>
+                                <span className={`text-right ${deltaClass(block.delta)}`}>{formatDelta(block.delta, block.estimate)}</span>
                               </div>
                             </button>
                           );
@@ -562,7 +618,7 @@ const Budget: React.FC = () => {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-8"></TableHead>
-                          <TableHead>Gewerk</TableHead>
+                          <TableHead>Firma / Gewerk</TableHead>
                           <TableHead className="text-right">Schätzung</TableHead>
                           <TableHead className="text-right">Vorversion</TableHead>
                           <TableHead className="text-right">Beauftragt</TableHead>
@@ -581,68 +637,96 @@ const Budget: React.FC = () => {
                                 {group.section} · {TRADE_SECTION_LABELS[group.section]}
                               </TableCell>
                             </TableRow>
-                            {group.rows.map((row) => {
-                              const badge = STATUS_BADGE[row.status];
+                            {group.blocks.map((block) => {
+                              const badge = STATUS_BADGE[block.status];
+                              const single = block.rows.length === 1;
                               return (
-                                <Collapsible key={row.trade.id} open={openRows.has(row.trade.id)} onOpenChange={() => toggleRow(row.trade.id)} asChild>
-                                  <>
-                                    <CollapsibleTrigger asChild>
-                                      <TableRow className="cursor-pointer hover:bg-muted/50">
-                                        <TableCell className="w-8">
-                                          {openRows.has(row.trade.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                        </TableCell>
-                                        <TableCell>
-                                          <div className="font-medium">{row.trade.name}</div>
-                                          {row.trade.contractor && (
-                                            <div className="text-xs text-muted-foreground">{row.trade.contractor.company_name}</div>
+                                <React.Fragment key={block.key}>
+                                  <Collapsible open={openRows.has(block.key)} onOpenChange={() => toggleRow(block.key)} asChild>
+                                    <>
+                                      <CollapsibleTrigger asChild>
+                                        <TableRow className="cursor-pointer hover:bg-muted/50">
+                                          <TableCell className="w-8">
+                                            {openRows.has(block.key) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                          </TableCell>
+                                          <TableCell>
+                                            <div className="font-medium">
+                                              {single ? block.rows[0].trade.name : block.contractorName}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                              {single
+                                                ? block.contractorName || ''
+                                                : `${block.rows.length} Gewerke`}
+                                            </div>
+                                          </TableCell>
+                                          {single ? renderSollCells(block.rows[0]) : (
+                                            <>
+                                              <TableCell className="text-right">{formatAmount(block.estimate)}</TableCell>
+                                              <TableCell className="text-right text-muted-foreground">{formatAmount(block.prevEstimate)}</TableCell>
+                                              <TableCell className={`text-right ${deltaClass(block.awardedEffective - block.estimate)}`}>
+                                                {formatAmount(block.awardedEffective)}
+                                              </TableCell>
+                                            </>
                                           )}
-                                        </TableCell>
-                                        <TableCell className="text-right">{formatAmount(row.estimate)}</TableCell>
-                                        <TableCell className="text-right text-muted-foreground">
-                                          {row.prevEstimate != null ? formatAmount(row.prevEstimate) : '–'}
-                                        </TableCell>
-                                        <TableCell className={`text-right ${row.isAwardedFallback ? 'italic text-muted-foreground' : deltaClass(row.awardedEffective - row.estimate)}`}>
-                                          {formatAmount(row.awardedEffective)}
-                                        </TableCell>
-                                        <TableCell className="text-right">{row.billed > 0 ? formatAmount(row.billed) : '–'}</TableCell>
-                                        <TableCell className="text-right">{row.paid > 0 ? formatAmount(row.paid) : '–'}</TableCell>
-                                        <TableCell className={`text-right font-medium ${deltaClass(row.delta)}`}>
-                                          {row.estimate > 0 || row.delta !== 0 ? formatDelta(row.delta, row.estimate) : '–'}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                          {row.skontoRealized > 0
-                                            ? formatAmount(row.skontoRealized)
-                                            : row.skontoExpected != null
-                                              ? <span className="text-muted-foreground">~{formatAmount(row.skontoExpected)}</span>
-                                              : '–'}
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge variant={badge.variant} className={badge.className}>{row.status}</Badge>
-                                        </TableCell>
-                                      </TableRow>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent asChild>
-                                      <TableRow>
-                                        <TableCell colSpan={10} className="bg-muted/30 p-0">
-                                          <TradeDetailPanel
-                                            row={row}
-                                            formatAmount={formatAmount}
-                                            conv={conv}
-                                            onEdit={() => openTradeDialog(row.trade)}
-                                            onDelete={() => setDeleteTarget(row.trade)}
-                                          />
-                                        </TableCell>
-                                      </TableRow>
-                                    </CollapsibleContent>
-                                  </>
-                                </Collapsible>
+                                          <TableCell className="text-right">{block.billed > 0 ? formatAmount(block.billed) : '–'}</TableCell>
+                                          <TableCell className="text-right">{block.paid > 0 ? formatAmount(block.paid) : '–'}</TableCell>
+                                          <TableCell className={`text-right font-medium ${deltaClass(block.delta)}`}>
+                                            {block.estimate > 0 || block.delta !== 0 ? formatDelta(block.delta, block.estimate) : '–'}
+                                          </TableCell>
+                                          <TableCell className="text-right">
+                                            {block.skontoRealized > 0
+                                              ? formatAmount(block.skontoRealized)
+                                              : block.skontoExpected != null
+                                                ? <span className="text-muted-foreground">~{formatAmount(block.skontoExpected)}</span>
+                                                : '–'}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge variant={badge.variant} className={badge.className}>{block.status}</Badge>
+                                          </TableCell>
+                                        </TableRow>
+                                      </CollapsibleTrigger>
+                                      <CollapsibleContent asChild>
+                                        <TableRow>
+                                          <TableCell colSpan={10} className="bg-muted/30 p-0">
+                                            <BlockDetailPanel
+                                              block={block}
+                                              formatAmount={formatAmount}
+                                              conv={conv}
+                                              onEdit={single ? () => openTradeDialog(block.rows[0].trade) : undefined}
+                                              onDelete={single ? () => setDeleteTarget(block.rows[0].trade) : undefined}
+                                            />
+                                          </TableCell>
+                                        </TableRow>
+                                      </CollapsibleContent>
+                                    </>
+                                  </Collapsible>
+                                  {!single && block.rows.map((row) => (
+                                    <TableRow key={row.trade.id} className="hover:bg-muted/30">
+                                      <TableCell></TableCell>
+                                      <TableCell className="pl-8">
+                                        <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground" onClick={() => openTradeDialog(row.trade)}>
+                                          {row.trade.name}
+                                          <Pencil className="h-3 w-3" />
+                                        </button>
+                                      </TableCell>
+                                      {renderSollCells(row)}
+                                      <TableCell className="text-right text-xs text-muted-foreground">
+                                        {row.explicitBilled > 0 ? `davon ${formatAmount(row.explicitBilled)}` : '–'}
+                                      </TableCell>
+                                      <TableCell className="text-right text-muted-foreground">–</TableCell>
+                                      <TableCell className="text-right text-muted-foreground">–</TableCell>
+                                      <TableCell className="text-right text-muted-foreground">–</TableCell>
+                                      <TableCell></TableCell>
+                                    </TableRow>
+                                  ))}
+                                </React.Fragment>
                               );
                             })}
                             <TableRow className="bg-muted/20 hover:bg-muted/20 font-medium">
                               <TableCell></TableCell>
                               <TableCell>Zwischensumme</TableCell>
                               <TableCell className="text-right">{formatAmount(group.totals.estimate)}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{formatAmount(group.totals.prevEstimate ?? 0)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{formatAmount(group.totals.prevEstimate)}</TableCell>
                               <TableCell className={`text-right ${deltaClass(group.totals.awardedEffective - group.totals.estimate)}`}>{formatAmount(group.totals.awardedEffective)}</TableCell>
                               <TableCell className="text-right">{group.totals.billed > 0 ? formatAmount(group.totals.billed) : '–'}</TableCell>
                               <TableCell className="text-right">{group.totals.paid > 0 ? formatAmount(group.totals.paid) : '–'}</TableCell>
@@ -676,10 +760,11 @@ const Budget: React.FC = () => {
 
         <TradeEditDialog
           open={tradeDialogOpen}
-          onOpenChange={setTradeDialogOpen}
+          onOpenChange={(open) => { setTradeDialogOpen(open); if (!open) setTradeDefaults(null); }}
           trade={editingTrade}
           contractors={contractors}
           onSubmit={handleTradeSubmit}
+          defaults={tradeDefaults}
         />
 
         <EstimateImportDialog
@@ -695,7 +780,8 @@ const Budget: React.FC = () => {
               <AlertDialogTitle>Gewerk löschen?</AlertDialogTitle>
               <AlertDialogDescription>
                 „{deleteTarget?.name}" wird in den Papierkorb verschoben (Schätzversionen bleiben erhalten).
-                Bereits zugeordnete Rechnungen tauchen wieder unter „Rechnungen ohne Gewerk" auf.
+                Rechnungen der Firma zählen weiter über die verbleibenden Gewerke bzw. erscheinen
+                unter „ohne Budget-Zuordnung".
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -711,76 +797,95 @@ const Budget: React.FC = () => {
   );
 };
 
-function TradeDetailPanel({ row, formatAmount, conv, onEdit, onDelete }: {
-  row: BudgetRow;
+function BlockDetailPanel({ block, formatAmount, conv, onEdit, onDelete }: {
+  block: FirmBlock;
   formatAmount: (n: number) => string;
   conv: (amount: number, taxStatus: TaxStatus) => number;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
+  const single = block.rows.length === 1;
+  const row = block.rows[0];
   return (
     <div className="p-4 space-y-3">
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" />
-          <span className="ml-2">Bearbeiten</span>
-        </Button>
-        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete}>
-          <Trash2 className="h-3.5 w-3.5" />
-          <span className="ml-2">Löschen</span>
-        </Button>
-      </div>
+      {single && (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="ml-2">Bearbeiten</span>
+          </Button>
+          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="ml-2">Löschen</span>
+          </Button>
+        </div>
+      )}
       <div className="grid gap-4 md:grid-cols-2">
-      <div className="space-y-3">
+        <div className="space-y-3">
+          {single ? (
+            <>
+              <div>
+                <h4 className="font-semibold text-sm mb-1">Schätzhistorie</h4>
+                {row.trade.estimates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Keine Schätzversionen vorhanden</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {row.trade.estimates.map((e) => (
+                      <div key={e.id} className="flex justify-between text-sm">
+                        <span>
+                          {e.version_label}
+                          {e.is_current && <Badge variant="outline" className="ml-2 text-xs">aktuell</Badge>}
+                        </span>
+                        <span>{formatAmount(conv(Number(e.amount), e.tax_status))}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {(row.trade.awarded_note || row.trade.notes) && (
+                <div className="text-sm text-muted-foreground space-y-0.5">
+                  {row.trade.awarded_note && <div>Beauftragt: {row.trade.awarded_note}</div>}
+                  {row.trade.notes && <div>{row.trade.notes}</div>}
+                </div>
+              )}
+            </>
+          ) : (
+            <div>
+              <h4 className="font-semibold text-sm mb-1">Budget-Aufschlüsselung ({block.rows.length} Gewerke)</h4>
+              <div className="space-y-0.5">
+                {block.rows.map((r) => (
+                  <div key={r.trade.id} className="flex justify-between text-sm">
+                    <span>{r.trade.name}</span>
+                    <span className={r.isAwardedFallback ? 'italic text-muted-foreground' : ''}>
+                      {formatAmount(r.awardedEffective)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <div>
-          <h4 className="font-semibold text-sm mb-1">Schätzhistorie</h4>
-          {row.trade.estimates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Keine Schätzversionen vorhanden</p>
+          <h4 className="font-semibold text-sm mb-1">
+            Rechnungen {block.contractorName ? `von ${block.contractorName}` : ''} ({block.invoices.length})
+          </h4>
+          {block.invoices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Noch keine Rechnungen</p>
           ) : (
             <div className="space-y-0.5">
-              {row.trade.estimates.map((e) => (
-                <div key={e.id} className="flex justify-between text-sm">
-                  <span>
-                    {e.version_label}
-                    {e.is_current && <Badge variant="outline" className="ml-2 text-xs">aktuell</Badge>}
+              {block.invoices.map((inv) => (
+                <div key={inv.id} className="flex justify-between text-sm">
+                  <span>{format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}</span>
+                  <span className="flex items-center gap-1">
+                    {formatAmount(Number(inv.amount))}
+                    {inv.status === 'paid' && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
+                    {inv.status === 'partially_paid' && <Badge variant="secondary" className="text-xs">teilw. bezahlt</Badge>}
                   </span>
-                  <span>{formatAmount(conv(Number(e.amount), e.tax_status))}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
-        {(row.trade.awarded_note || row.trade.notes) && (
-          <div className="text-sm text-muted-foreground space-y-0.5">
-            {row.trade.awarded_note && <div>Beauftragt: {row.trade.awarded_note}</div>}
-            {row.trade.notes && <div>{row.trade.notes}</div>}
-          </div>
-        )}
-        {row.trade.skonto_percent != null && Number(row.trade.skonto_percent) > 0 && (
-          <div className="text-sm text-muted-foreground">
-            Vereinbartes Skonto: {Number(row.trade.skonto_percent).toLocaleString('de-DE')} %
-          </div>
-        )}
-      </div>
-      <div>
-        <h4 className="font-semibold text-sm mb-1">Rechnungen ({row.invoices.length})</h4>
-        {row.invoices.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Noch keine Rechnungen zugeordnet</p>
-        ) : (
-          <div className="space-y-0.5">
-            {row.invoices.map((inv) => (
-              <div key={inv.id} className="flex justify-between text-sm">
-                <span>{format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}</span>
-                <span className="flex items-center gap-1">
-                  {formatAmount(Number(inv.amount))}
-                  {inv.status === 'paid' && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
-                  {inv.status === 'partially_paid' && <Badge variant="secondary" className="text-xs">teilw. bezahlt</Badge>}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
       </div>
     </div>
   );

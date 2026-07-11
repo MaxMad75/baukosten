@@ -170,6 +170,22 @@ invoices.trade_id (nullable FK)  ← ersetzt kostengruppe_code/invoice_allocatio
 - Mehrfach-Zuordnung (eine Rechnung, mehrere Gewerke) bleibt als Ausnahme möglich
   (invoice_allocations bekommt trade_id statt kostengruppe_code) — Standard ist 1 Rechnung : 1 Gewerk.
 
+#### WICHTIG — Firmen-Block-Modell (User-Feedback 11.07.2026, ersetzt die reine Gewerk-Zuordnung)
+
+Die Leitfrage des Bauherrn ist **„welcher FIRMA habe ich wieviel bezahlt"**; die Gewerke sind nur
+die Soll-Aufschlüsselung des Firmen-Budgets. Konsequenzen (umgesetzt in Budget + Dashboard):
+
+- **Ist-Werte (Abgerechnet/Bezahlt) zählen auf FIRMEN-Ebene** (`resolveInvoiceBlockKey`):
+  Rechnungen einer Firma mit mehreren Gewerken müssen NICHT auf Einzel-Gewerke verteilt werden.
+- Budget-Tabelle: Firmen mit einem Gewerk = normale Zeile; mit mehreren = Block (Firmen-Zeile
+  trägt Ist + Soll-Summe; Gewerk-Unterzeilen tragen Soll, optional „davon"-Ist bei explizitem trade_id).
+- Rechnung→Block: explizites trade_id > Dokument-contractor_id > Namens-Match (alle Kandidaten
+  derselben Firma ⇒ Block). „Ohne Budget-Zuordnung" heißt nur noch: Firma hat kein Gewerk im
+  Budget → Aktion „Gewerk anlegen" (Dialog vorbefüllt mit Firma).
+- Das Freitext-Feld contractors.trade ist aus dem Firmen-Formular entfernt (zweite,
+  wirkungslose „Gewerk"-Welt — Quelle des Architekt-Missverständnisses); Gewerke werden
+  ausschließlich im Budget gepflegt.
+
 #### Zuordnungs-Logik (löst das Konsistenzproblem)
 
 1. **Deterministisch zuerst**: Firma der Rechnung → Gewerk mit dieser contractor_id

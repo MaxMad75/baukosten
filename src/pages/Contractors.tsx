@@ -25,12 +25,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
-const TRADES = [
-  'Architekt', 'Bauunternehmen', 'Dachdecker', 'Elektriker', 'Estrichleger',
-  'Fliesenleger', 'Gerüstbau', 'Heizung/Sanitär', 'Maler', 'Maurer',
-  'Schreiner/Tischler', 'Tiefbau', 'Trockenbau', 'Zimmerer', 'Sonstige',
-];
-
 const emptyForm = {
   company_name: '', trade: '', contact_person: '', phone: '', email: '', website: '', notes: '', rating: 0,
 };
@@ -189,15 +183,10 @@ export const Contractors: React.FC = () => {
         <Label>Firmenname *</Label>
         <Input value={formData.company_name} onChange={(e) => setFormData({ ...formData, company_name: e.target.value })} placeholder="z.B. Elektro Müller GmbH" />
       </div>
-      <div className="space-y-2">
-        <Label>Gewerk</Label>
-        <Select value={formData.trade} onValueChange={(v) => setFormData({ ...formData, trade: v })}>
-          <SelectTrigger><SelectValue placeholder="Gewerk wählen" /></SelectTrigger>
-          <SelectContent>
-            {TRADES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* R1.6/User-Feedback 11.07.: Gewerke werden NUR noch im Budget gepflegt
+          (Gewerk mit dieser Firma verknüpfen) — das alte Freitext-Feld hier
+          erzeugte eine zweite, wirkungslose "Gewerk"-Welt. Alt-Werte bleiben
+          gespeichert und dienen als Anzeige-Fallback. */}
       <div className="space-y-2">
         <Label>Ansprechpartner</Label>
         <Input value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} placeholder="Vor- und Nachname" />

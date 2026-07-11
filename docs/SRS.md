@@ -318,7 +318,10 @@ loan_payments: id, loan_id, payment_date, total_amount,
 **R1 damit komplett (10.07.2026) — Bauherren-Verifikation der Gesamtstrecke ausstehend.**
 
 **R2 — Navigation & Dashboard**
-7. R2.1 Sidebar neu (6 Punkte, Gruppierung), Firmen/Export unter Einstellungen
+7. R2.1 Sidebar neu (6 Punkte, Gruppierung), Firmen/Export unter Einstellungen — 🔶 11.07.2026:
+   Sidebar gruppiert (oben Alltag: Dashboard/Budget/Rechnungen/Dokumente, unten „Verwaltung":
+   Firmen/Export/Einstellungen). Volle Integration von Firmen/Export als Einstellungen-Tabs
+   bewusst offen gelassen (geringer Nutzen vs. Umbau; bei Bedarf später)
 8. R2.2 Dashboard auf Budget-Kennzahlen umstellen (E1) + „zu prüfen"-Hinweis — ✅ 10.07.2026:
    Karten Budget/Beauftragt/Abgerechnet/Bezahlt (brutto, Formeln wie Budget-Seite; Abgerechnet/Bezahlt
    über ALLE Rechnungen, damit Unzugeordnetes nicht verschwindet), Prognose-Panel (klickbar → /budget)

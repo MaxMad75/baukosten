@@ -15,13 +15,16 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-// R1.6: Kostenschätzung, Angebote und Soll/Ist sind im Budget aufgegangen
-// (Schätzversionen, Auftragssummen und Soll/Ist leben an den Gewerken).
+// R1.6/R2.1: Kostenschätzung, Angebote und Soll/Ist sind im Budget
+// aufgegangen; die Sidebar gruppiert Alltag (oben) und Verwaltung (unten).
 const navItems = [
   { to: '/', icon: Home, label: 'Dashboard' },
   { to: '/budget', icon: Wallet, label: 'Budget' },
   { to: '/invoices', icon: FileText, label: 'Rechnungen' },
   { to: '/documents', icon: FolderOpen, label: 'Dokumente' },
+];
+
+const adminNavItems = [
   { to: '/contractors', icon: Users, label: 'Firmen' },
   { to: '/export', icon: Download, label: 'Export' },
   { to: '/settings', icon: Settings, label: 'Einstellungen' },
@@ -106,6 +109,28 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </Link>
               );
             })}
+            <div className="mt-4 mb-1 border-t pt-4 px-3 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/50">
+              Verwaltung
+            </div>
+            {adminNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.to;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                    isActive
+                      ? 'bg-sidebar-accent text-sidebar-primary shadow-sm'
+                      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         </aside>
 
@@ -113,7 +138,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         {mobileMenuOpen && (
           <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-md md:hidden">
             <nav className="flex flex-col gap-1 p-4">
-              {navItems.map((item) => {
+              {[...navItems, ...adminNavItems].map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.to;
                 return (

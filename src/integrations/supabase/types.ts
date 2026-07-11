@@ -1299,6 +1299,7 @@ export type Database = {
       }
     }
     Functions: {
+      _backup_household: { Args: { p_household_id: string }; Returns: string }
       create_household_backup: { Args: never; Returns: string }
       get_my_iban: { Args: never; Returns: string }
       get_user_household_id: { Args: never; Returns: string }
@@ -1306,6 +1307,7 @@ export type Database = {
         Args: { check_household_id: string }
         Returns: boolean
       }
+      run_all_household_backups: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never

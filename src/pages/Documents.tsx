@@ -564,6 +564,7 @@ export const Documents: React.FC = () => {
           showAiButton={!!(editingDoc?.file_path || uploadedFile?.path)}
           aiLoading={invoiceAiLoading}
           onAiPass={runInvoiceAiPass}
+          contractors={contractors}
         />
       )}
       {formData.document_type === 'Rechnung' && editingDoc?.invoice_id && (

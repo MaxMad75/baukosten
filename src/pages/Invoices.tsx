@@ -20,6 +20,7 @@ import { aggregatePaymentsByProfile } from '@/hooks/useInvoicePayments';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { TradeSelect } from '@/components/TradeSelect';
 import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
+import { useLoans } from '@/hooks/useLoans';
 import { InvoiceSplitEditor, SplitEntry, SplitMode } from '@/components/InvoiceSplitEditor';
 import { useToast } from '@/hooks/use-toast';
 import { Invoice, InvoiceStatus } from '@/lib/types';
@@ -81,6 +82,8 @@ export const Invoices: React.FC = () => {
   const { allDeductions, getDeductionsForInvoice, saveDeductions } = useInvoiceDeductions();
   const { contractors, findOrCreateByName } = useContractors();
   const { trades } = useTrades();
+  // Tilgung je Kreditnehmer (SRS 4.4) für die "nach Tilgung"-Ansicht
+  const { principalByProfile } = useLoans();
   const { toast } = useToast();
 
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
@@ -520,6 +523,7 @@ export const Invoices: React.FC = () => {
             invoices={invoices}
             payments={allPayments}
             formatAmount={formatAmount}
+            principalByProfile={principalByProfile}
           />
         )}
 

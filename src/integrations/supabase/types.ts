@@ -897,6 +897,140 @@ export type Database = {
           },
         ]
       }
+      loan_payments: {
+        Row: {
+          created_at: string
+          id: string
+          interest_amount: number
+          loan_id: string
+          notes: string | null
+          payment_date: string
+          principal_amount: number
+          total_amount: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          interest_amount?: number
+          loan_id: string
+          notes?: string | null
+          payment_date: string
+          principal_amount?: number
+          total_amount: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          interest_amount?: number
+          loan_id?: string
+          notes?: string | null
+          payment_date?: string
+          principal_amount?: number
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loan_payments_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "loans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loan_shares: {
+        Row: {
+          created_at: string
+          id: string
+          loan_id: string
+          profile_id: string
+          share_percent: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          loan_id: string
+          profile_id: string
+          share_percent: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          loan_id?: string
+          profile_id?: string
+          share_percent?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loan_shares_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "loans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loan_shares_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loan_shares_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loans: {
+        Row: {
+          bank: string | null
+          created_at: string
+          household_id: string
+          id: string
+          interest_rate_percent: number | null
+          name: string
+          notes: string | null
+          principal: number | null
+          start_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          bank?: string | null
+          created_at?: string
+          household_id: string
+          id?: string
+          interest_rate_percent?: number | null
+          name: string
+          notes?: string | null
+          principal?: number | null
+          start_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          bank?: string | null
+          created_at?: string
+          household_id?: string
+          id?: string
+          interest_rate_percent?: number | null
+          name?: string
+          notes?: string | null
+          principal?: number | null
+          start_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loans_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offer_items: {
         Row: {
           amount: number

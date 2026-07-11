@@ -21,6 +21,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useToast } from '@/hooks/use-toast';
 import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
+import { useLoans } from '@/hooks/useLoans';
+import { normalizeTradeName } from '@/lib/estimateImport';
 import { useContractors } from '@/hooks/useContractors';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
@@ -74,6 +76,8 @@ const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'de
 const Budget: React.FC = () => {
   const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, importEstimateVersion } = useTrades();
   const { invoices, loading: invLoading, fetchInvoices } = useInvoices();
+  // Kredit-Zinsen (SRS 4.4) zählen als Kosten im Abschnitt-800-Gewerk "Finanzierung"
+  const { totalInterest } = useLoans();
   const { contractors } = useContractors();
   const { getTotalPaid } = useInvoicePayments();
   const { getDeductionsForInvoice } = useInvoiceDeductions();
@@ -151,6 +155,13 @@ const Budget: React.FC = () => {
           .reduce((s, d) => s + conv(Number(d.amount), invTaxStatus(inv)), 0);
       }
 
+      // Kredit-Zinsen landen als gezahlte Kosten im Gewerk "Finanzierung"
+      // (Zinsen sind steuerfrei → keine Brutto/Netto-Umrechnung)
+      if (totalInterest > 0 && trade.section === 800 && normalizeTradeName(trade.name).includes('finanzierung')) {
+        billed += totalInterest;
+        paid += totalInterest;
+      }
+
       const skontoExpected = trade.skonto_percent != null && awarded != null && Number(trade.skonto_percent) > 0
         ? (awarded * Number(trade.skonto_percent)) / 100
         : null;
@@ -197,7 +208,7 @@ const Budget: React.FC = () => {
         },
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trades, invoices, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase]);
+  }, [trades, invoices, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest]);
 
   const grandTotals = useMemo(() => ({
     estimate: sections.reduce((s, g) => s + g.totals.estimate, 0),

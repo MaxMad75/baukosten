@@ -7,6 +7,8 @@ import { useInvoices } from '@/hooks/useInvoices';
 import { useTrades } from '@/hooks/useTrades';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
+import { useLoans } from '@/hooks/useLoans';
+import { normalizeTradeName } from '@/lib/estimateImport';
 import {
   FileText, Wallet, FolderOpen, Euro, CheckCircle2, AlertCircle,
   TrendingUp, TrendingDown, ArrowRight, Receipt
@@ -29,6 +31,7 @@ export const Dashboard: React.FC = () => {
   const { trades, loading: tradesLoading } = useTrades();
   const { getDeductionsForInvoice } = useInvoiceDeductions();
   const { getTotalPaid } = useInvoicePayments();
+  const { totalInterest } = useLoans();
   const { formatAmount } = usePrivacy();
 
   const loading = invoicesLoading || tradesLoading;
@@ -47,6 +50,9 @@ export const Dashboard: React.FC = () => {
       billed += payableOf(inv);
       paid += toGross(getTotalPaid(inv.id), invTaxStatus(inv));
     }
+    // Kredit-Zinsen (SRS 4.4) sind gezahlte Baukosten (steuerfrei, keine Umrechnung)
+    billed += totalInterest;
+    paid += totalInterest;
 
     // Budget/Beauftragt/Prognose je Gewerk (wie Budget-Seite, brutto)
     let budget = 0;
@@ -60,9 +66,12 @@ export const Dashboard: React.FC = () => {
       const aw = t.awarded_amount != null ? toGross(Number(t.awarded_amount), t.awarded_tax_status) : null;
       if (aw != null) awardedCount += 1;
       const awEff = aw ?? est;
-      const billedTrade = active
+      let billedTrade = active
         .filter((inv) => inv.trade_id === t.id)
         .reduce((s, inv) => s + payableOf(inv), 0);
+      if (totalInterest > 0 && t.section === 800 && normalizeTradeName(t.name).includes('finanzierung')) {
+        billedTrade += totalInterest;
+      }
       budget += est;
       awarded += awEff;
       prognose += Math.max(est, awEff, billedTrade);
@@ -80,7 +89,7 @@ export const Dashboard: React.FC = () => {
       reviewCount: invoices.filter((i) => i.status === 'review_needed').length,
       unassignedCount: active.filter((i) => !i.trade_id || !trades.some((t) => t.id === i.trade_id)).length,
     };
-  }, [invoices, trades, getDeductionsForInvoice, getTotalPaid]);
+  }, [invoices, trades, getDeductionsForInvoice, getTotalPaid, totalInterest]);
 
   const formatCurrency = (amount: number) => formatAmount(amount);
   const tradeName = (inv: Invoice) => trades.find((t) => t.id === inv.trade_id)?.name || null;

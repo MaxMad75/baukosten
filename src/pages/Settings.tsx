@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Users, Mail, Trash2, UserPlus, Home, Loader2 } from 'lucide-react';
 import { AddMemberForm } from '@/components/AddMemberForm';
+import { LoansCard } from '@/components/settings/LoansCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface HouseholdInvitation {
@@ -225,6 +226,9 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Kredit-Modul (R3, SRS 4.4) */}
+        <LoansCard />
 
         {/* Add Manual Member */}
         <AddMemberForm onMemberAdded={refreshProfile} />

@@ -75,7 +75,7 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 | B1 | Als Bauherr markiere ich eine Rechnung als bezahlt und teile die Zahlung auf Personen auf (inkl. „Kredit" als virtuelles Mitglied). | MUSS | ✅ |
 | B2 | Als Bauherr sehe ich pro Person: Summe, Anteil in % und aufklappbar jede Rechnung mit Teilbetrag. | MUSS | ✅ (PaymentsByPersonCard) |
 | B3 | Als Bauherr sehe ich die Zahlungsverteilung als Diagramm. | SOLL | ✅ |
-| B4 | Als Kreditnehmer will ich die **Kreditrate in Zins (= Baukosten) und Tilgung (= Vermögensverschiebung Kredit→Person) aufteilen** und die Tilgung den Kreditnehmern zuordnen. | SOLL | ⬜ **Kredit-Modul, Konzept in 4.4** |
+| B4 | Als Kreditnehmer will ich die **Kreditrate in Zins (= Baukosten) und Tilgung (= Vermögensverschiebung Kredit→Person) aufteilen** und die Tilgung den Kreditnehmern zuordnen. | SOLL | ✅ (R3 11.07.2026: Kredit-Karte unter Einstellungen; Verifikation ausstehend) |
 
 ### Epic C — Budget & Soll/Ist (größte Schwachstelle → Redesign)
 
@@ -333,7 +333,14 @@ loan_payments: id, loan_id, payment_date, total_amount,
    Rechnungsliste rendern am Handy kompakte Karten statt Tabellen (Budget-Karte tippen → Gewerk
    bearbeiten). Foto-Upload lief bereits mobil über Dokumente. Geräte-Test durch Bauherrn ausstehend
 
-**R3 — Kredit-Modul (4.4)**
+**R3 — Kredit-Modul (4.4)** — ✅ 11.07.2026: Migration `20260711100000_loans_credit_model.sql`
+(loans/loan_shares/loan_payments, vom Bauherrn ausgeführt), useLoans-Hook (defensiv), Kredit-Karte
+unter Einstellungen (Darlehen + Anteile mit 100%-Prüfung + Raten „Rate gesamt / davon Zins →
+Tilgung = Rest"; erstes Darlehen legt das Abschnitt-800-Gewerk „Finanzierung" automatisch an).
+Zinsen fließen als gezahlte Kosten (steuerfrei, keine MwSt-Umrechnung) in Budget-Zeile
+„Finanzierung" und Dashboard; PaymentsByPersonCard hat den Umschalter „Gezahlt / Nach Tilgung"
+(Umverteilung Kredit→Kreditnehmer gemäß Anteilen, unit-getestet, Gesamtsumme bleibt konstant).
+CSV-Import des Tilgungsplans + wiederkehrende Raten-Vorlage bewusst offen (bei Bedarf).
 
 **R4 — KI-Ausbau (4.3):** Konfidenz/Review-Queue → Few-Shot-Hinweise → Modell-Eskalation → Eval
 

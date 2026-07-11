@@ -320,3 +320,46 @@ export interface TradeWithEstimates extends Trade {
   current_estimate: TradeEstimate | null;
   contractor?: Contractor | null;
 }
+
+/**
+ * Kredit-Modul (SRS 4.4): Zinsen = echte Baukosten (Gewerk "Finanzierung",
+ * Abschnitt 800); Tilgung = Vermögensverschiebung Kredit→Kreditnehmer gemäß
+ * loan_shares — kein Kostenposten, kein Settlement.
+ */
+export interface Loan {
+  id: string;
+  household_id: string;
+  name: string;
+  bank: string | null;
+  principal: number | null;
+  interest_rate_percent: number | null;
+  start_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoanShare {
+  id: string;
+  loan_id: string;
+  profile_id: string;
+  share_percent: number;
+  created_at: string;
+}
+
+/** Rate: total = interest (Zins, Kosten) + principal (Tilgung) */
+export interface LoanPayment {
+  id: string;
+  loan_id: string;
+  payment_date: string;
+  total_amount: number;
+  interest_amount: number;
+  principal_amount: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface LoanWithDetails extends Loan {
+  shares: LoanShare[];
+  payments: LoanPayment[];
+}

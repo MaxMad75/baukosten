@@ -120,13 +120,20 @@ export const Documents: React.FC = () => {
     doc.invoice_id ? invoices.find((i) => i.id === doc.invoice_id) || null : null;
 
   /**
-   * Firma→Gewerk-Regel (SRS 4.1): schlägt beim Prefill das Gewerk über die
-   * Firma vor; nur eindeutige Treffer, der Nutzer kann immer übersteuern.
+   * Prefill-Normalisierung: (1) KI-erkannten Firmennamen auf den Eintrag der
+   * Firmenliste kanonisieren, damit die Firma-Combobox einen bekannten
+   * Eintrag zeigt statt einer Schreibvariante; (2) Firma→Gewerk-Regel
+   * (SRS 4.1) füllt trade_id still bei eindeutigen Treffern — das Gewerk-Feld
+   * ist aus dem Dialog entfernt, die Budget-Zuordnung läuft über die Firma.
    */
   const withTradeSuggestion = (form: InvoiceForm): InvoiceForm => {
-    if (form.trade_id || !form.company_name.trim()) return form;
-    const { trade } = suggestTradeForCompany(trades, form.company_name.trim());
-    return trade ? { ...form, trade_id: trade.id } : form;
+    let company = form.company_name.trim();
+    const match = company ? matchContractorByName(contractors, company) : null;
+    if (match) company = match.company_name;
+    const next = { ...form, company_name: company };
+    if (next.trade_id || !company) return next;
+    const { trade } = suggestTradeForCompany(trades, company);
+    return trade ? { ...next, trade_id: trade.id } : next;
   };
 
   /**

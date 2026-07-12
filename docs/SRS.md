@@ -1,6 +1,9 @@
 # SRS & App-Konzept — Hausbau-Tracker (baukosten)
 
-Stand: 08.07.2026 · Ersteller: Claude (mit Bauherr Basti) · **Einstiegsdokument für neue Arbeits-Sessions.**
+Stand: 11.07.2026 · Ersteller: Claude (mit Bauherr Basti) · **Einstiegsdokument für neue Arbeits-Sessions.**
+**Projektstand: R1–R3 komplett, App ist für den Alltags-Workflow feature-complete** (Rechnung hochladen →
+Firma wählen/bestätigen → Budget & Besitzverhältnisse rechnen automatisch). R4 (KI-Ausbau) und
+R5-Reste sind bewusstes Backlog.
 Ergänzend: `docs/OPTIMIERUNGSPLAN.md` (technisches Backlog, Historie), `docs/SECURITY_REVIEW.md` (RLS-Audit).
 **Vor jeder Arbeit zuerst Abschnitt 8 (Arbeitsvereinbarungen) lesen.**
 
@@ -185,6 +188,12 @@ die Soll-Aufschlüsselung des Firmen-Budgets. Konsequenzen (umgesetzt in Budget 
 - Das Freitext-Feld contractors.trade ist aus dem Firmen-Formular entfernt (zweite,
   wirkungslose „Gewerk"-Welt — Quelle des Architekt-Missverständnisses); Gewerke werden
   ausschließlich im Budget gepflegt.
+- **Upload-Dialog final (11.07. abends, nach Bug-Report):** Firma ist eine **Combobox aus der
+  Firmenliste** (mit Freitext für neue Firmen; von Lovable gebaut, Commit e8b7fb3); der
+  KI-erkannte Name wird auf den Listen-Eintrag kanonisiert. Das Gewerk-Feld ist aus dem
+  Upload-Dialog **entfernt** (zeigte die DIN-gruppierte Gesamtliste ≈ „Baukostengruppen") —
+  die Budget-Zuordnung läuft über die Firma; trade_id wird bei eindeutiger Firma still gesetzt,
+  Verfeinerung pro Rechnung weiterhin im Rechnungs-Bearbeiten-Dialog.
 
 #### Zuordnungs-Logik (löst das Konsistenzproblem)
 

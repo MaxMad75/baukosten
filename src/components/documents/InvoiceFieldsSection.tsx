@@ -4,7 +4,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { TradeSelect } from '@/components/TradeSelect';
 import { Contractor, Invoice } from '@/lib/types';
 import { Check, ChevronsUpDown, Loader2, Plus, Receipt, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
@@ -159,14 +158,10 @@ export const InvoiceFieldsSection: React.FC<Props> = ({ form, onChange, duplicat
         <Label className="text-xs">Rechnungsdatum *</Label>
         <Input type="date" value={form.invoice_date} onChange={(e) => onChange({ ...form, invoice_date: e.target.value })} />
       </div>
-      <div className="col-span-2 space-y-1">
-        <Label className="text-xs">Gewerk (optional — Vorschlag über die Firma, kann später nachgetragen werden)</Label>
-        <TradeSelect
-          value={form.trade_id || null}
-          onValueChange={(v) => onChange({ ...form, trade_id: v || '' })}
-          companyName={form.company_name}
-        />
-      </div>
+      <p className="col-span-2 text-xs text-muted-foreground">
+        Die Budget-Zuordnung läuft automatisch über die Firma — kein Gewerk nötig.
+        Verfeinern (Gewerk je Rechnung) geht jederzeit in der Rechnungsverwaltung.
+      </p>
     </div>
     {duplicate && (
       <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">

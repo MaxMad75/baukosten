@@ -89,7 +89,7 @@ const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'de
 };
 
 const Budget: React.FC = () => {
-  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, importEstimateVersion } = useTrades();
+  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, setTradeEstimate, importEstimateVersion } = useTrades();
   const { invoices, loading: invLoading, fetchInvoices } = useInvoices();
   const { documents } = useDocuments();
   // Kredit-Zinsen (SRS 4.4) zählen als Kosten im Abschnitt-800-Gewerk "Finanzierung"
@@ -105,7 +105,7 @@ const Budget: React.FC = () => {
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
-  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  const [editingTrade, setEditingTrade] = useState<TradeWithEstimates | null>(null);
   const [tradeDefaults, setTradeDefaults] = useState<Partial<TradeFormValues> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Trade | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -320,6 +320,24 @@ const Budget: React.FC = () => {
     [invoices, blockKeyByInvoice]
   );
 
+  // Damit „kein Geld verschwindet": unzugeordnete Kosten fließen in die
+  // Kennzahlen-Karten ein (identische Definition wie auf dem Dashboard).
+  const unassignedTotals = useMemo(() => {
+    let billed = 0;
+    let paid = 0;
+    for (const inv of unassigned) {
+      billed += conv(getPayableAmount(Number(inv.amount), getDeductionsForInvoice(inv.id)), invTaxStatus(inv));
+      paid += conv(getTotalPaid(inv.id), invTaxStatus(inv));
+    }
+    return { billed, paid };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unassigned, getDeductionsForInvoice, getTotalPaid, viewMode]);
+
+  const billedTotal = grandTotals.billed + unassignedTotals.billed;
+  const paidTotal = grandTotals.paid + unassignedTotals.paid;
+  const prognoseTotal = grandTotals.prognose + unassignedTotals.billed;
+  const deltaTotal = prognoseTotal - grandTotals.estimate;
+
   const unassignedGroups = useMemo(() => {
     const map = new Map<string, Invoice[]>();
     for (const inv of unassigned) {
@@ -371,7 +389,7 @@ const Budget: React.FC = () => {
     }
   };
 
-  const openTradeDialog = (trade: Trade | null, defaults: Partial<TradeFormValues> | null = null) => {
+  const openTradeDialog = (trade: TradeWithEstimates | null, defaults: Partial<TradeFormValues> | null = null) => {
     setEditingTrade(trade);
     setTradeDefaults(defaults);
     setTradeDialogOpen(true);
@@ -388,12 +406,24 @@ const Budget: React.FC = () => {
   };
 
   const handleTradeSubmit = async (values: TradeFormValues): Promise<boolean> => {
+    const { estimate_amount, ...tradeValues } = values;
+    let tradeId: string | null = null;
     if (editingTrade) {
-      return updateTrade(editingTrade.id, values);
+      const ok = await updateTrade(editingTrade.id, tradeValues);
+      if (!ok) return false;
+      tradeId = editingTrade.id;
+    } else {
+      // Neue Gewerke ans Ende ihres Abschnitts sortieren
+      const maxSort = Math.max(0, ...trades.filter((t) => t.section === values.section).map((t) => t.sort_order));
+      const created = await createTrade({ ...tradeValues, sort_order: maxSort + 10 });
+      if (!created) return false;
+      tradeId = created.id;
     }
-    // Neue Gewerke ans Ende ihres Abschnitts sortieren
-    const maxSort = Math.max(0, ...trades.filter((t) => t.section === values.section).map((t) => t.sort_order));
-    return (await createTrade({ ...values, sort_order: maxSort + 10 })) != null;
+    // Kostenberechnung des Postens (nur wenn im Dialog geändert)
+    if (estimate_amount != null) {
+      await setTradeEstimate(tradeId, estimate_amount, values.awarded_tax_status);
+    }
+    return true;
   };
 
   const handleDeleteTrade = async () => {
@@ -474,13 +504,29 @@ const Budget: React.FC = () => {
             <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
               <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Budget (Schätzung)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatAmount(grandTotals.estimate)}</div></CardContent></Card>
               <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Beauftragt</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatAmount(grandTotals.awardedEffective)}</div></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Abgerechnet</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatAmount(grandTotals.billed)}</div></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Bezahlt</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatAmount(grandTotals.paid)}</div></CardContent></Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Abgerechnet</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatAmount(billedTotal)}</div>
+                  {unassignedTotals.billed > 0 && (
+                    <div className="text-xs text-muted-foreground">davon {formatAmount(unassignedTotals.billed)} ohne Budget-Zuordnung</div>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Bezahlt</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatAmount(paidTotal)}</div>
+                  {unassignedTotals.paid > 0 && (
+                    <div className="text-xs text-muted-foreground">davon {formatAmount(unassignedTotals.paid)} ohne Budget-Zuordnung</div>
+                  )}
+                </CardContent>
+              </Card>
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Prognose</CardTitle></CardHeader>
                 <CardContent>
-                  <div className={`text-2xl font-bold ${deltaClass(grandTotals.delta)}`}>{formatAmount(grandTotals.prognose)}</div>
-                  <div className={`text-xs ${deltaClass(grandTotals.delta)}`}>{formatDelta(grandTotals.delta, grandTotals.estimate)} zur Schätzung</div>
+                  <div className={`text-2xl font-bold ${deltaClass(deltaTotal)}`}>{formatAmount(prognoseTotal)}</div>
+                  <div className={`text-xs ${deltaClass(deltaTotal)}`}>{formatDelta(deltaTotal, grandTotals.estimate)} zur Schätzung</div>
                 </CardContent>
               </Card>
             </div>

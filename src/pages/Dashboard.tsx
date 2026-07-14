@@ -104,6 +104,10 @@ export const Dashboard: React.FC = () => {
     for (const [key, soll] of sollByBlock) {
       prognose += Math.max(soll.est, soll.awEff, billedByBlock.get(key) || 0);
     }
+    // Unzugeordnete Kosten gehören ebenfalls zur realistischen Endsumme
+    for (const inv of active) {
+      if (!blockKeyByInvoice.get(inv.id)) prognose += payableOf(inv);
+    }
 
     return {
       billed,

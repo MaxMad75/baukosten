@@ -19,11 +19,12 @@ import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { aggregatePaymentsByProfile } from '@/hooks/useInvoicePayments';
 import { KostengruppenSelect } from '@/components/KostengruppenSelect';
 import { TradeSelect } from '@/components/TradeSelect';
-import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
+import { useTrades, suggestTradeForCompany, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
+import { useDocuments } from '@/hooks/useDocuments';
 import { useLoans } from '@/hooks/useLoans';
 import { InvoiceSplitEditor, SplitEntry, SplitMode } from '@/components/InvoiceSplitEditor';
 import { useToast } from '@/hooks/use-toast';
-import { Invoice, InvoiceStatus } from '@/lib/types';
+import { Invoice, InvoiceStatus, TradeWithEstimates } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
@@ -82,6 +83,7 @@ export const Invoices: React.FC = () => {
   const { allDeductions, getDeductionsForInvoice, saveDeductions } = useInvoiceDeductions();
   const { contractors, findOrCreateByName } = useContractors();
   const { trades } = useTrades();
+  const { documents } = useDocuments();
   // Tilgung je Kreditnehmer (SRS 4.4) für die "nach Tilgung"-Ansicht
   const { principalByProfile } = useLoans();
   const { toast } = useToast();
@@ -360,10 +362,43 @@ export const Invoices: React.FC = () => {
     return activeEstimateItems.filter(ei => ei.kostengruppe_code === kgCode);
   };
 
-  // Gewerke, die tatsächlich an Rechnungen hängen (für den Filter)
+  // Effektive Budget-Zuordnung wie auf der Budget-Seite (Firmen-Block):
+  // explizites trade_id > Dokument-Firmen-ID > Namens-Match.
+  const blockKeyByInvoice = useMemo(() => {
+    const contractorByInvoice = new Map<string, string>();
+    for (const doc of documents) {
+      if (doc.invoice_id && doc.contractor_id && !contractorByInvoice.has(doc.invoice_id)) {
+        contractorByInvoice.set(doc.invoice_id, doc.contractor_id);
+      }
+    }
+    const map = new Map<string, string | null>();
+    for (const inv of invoices) {
+      map.set(inv.id, resolveInvoiceBlockKey(trades, inv, contractorByInvoice.get(inv.id)));
+    }
+    return map;
+  }, [invoices, trades, documents]);
+
+  /** Anzeige-Label des Blocks: Gewerkname (1 Gewerk) bzw. Firma (mehrere) */
+  const blockLabel = useMemo(() => {
+    const byKey = new Map<string, TradeWithEstimates[]>();
+    for (const t of trades) {
+      const key = tradeBlockKey(t);
+      const list = byKey.get(key) || [];
+      list.push(t);
+      byKey.set(key, list);
+    }
+    return (key: string): string | null => {
+      const list = byKey.get(key);
+      if (!list || list.length === 0) return null;
+      if (list.length === 1) return list[0].name;
+      return list[0].contractor?.company_name || `${list.length} Gewerke`;
+    };
+  }, [trades]);
+
+  // Gewerke/Blöcke, die tatsächlich an Rechnungen hängen (für den Filter)
   const usedTrades = useMemo(
-    () => trades.filter((t) => invoices.some((inv) => inv.trade_id === t.id)),
-    [trades, invoices]
+    () => trades.filter((t) => invoices.some((inv) => blockKeyByInvoice.get(inv.id) === tradeBlockKey(t))),
+    [trades, invoices, blockKeyByInvoice]
   );
 
   // Filtered + sorted list
@@ -371,8 +406,12 @@ export const Invoices: React.FC = () => {
     const q = searchQuery.trim().toLowerCase();
     const list = invoices.filter((inv) => {
       if (filterStatus !== 'all' && ((inv.status as InvoiceStatus) || 'draft') !== filterStatus) return false;
-      if (filterTrade === 'none' && inv.trade_id) return false;
-      if (filterTrade !== 'all' && filterTrade !== 'none' && inv.trade_id !== filterTrade) return false;
+      const invBlock = blockKeyByInvoice.get(inv.id);
+      if (filterTrade === 'none' && invBlock) return false;
+      if (filterTrade !== 'all' && filterTrade !== 'none') {
+        const filterTradeObj = trades.find((t) => t.id === filterTrade);
+        if (!filterTradeObj || invBlock !== tradeBlockKey(filterTradeObj)) return false;
+      }
       if (q) {
         const haystack = `${inv.company_name} ${inv.invoice_number || ''} ${inv.description || ''}`.toLowerCase();
         if (!haystack.includes(q)) return false;
@@ -385,7 +424,7 @@ export const Invoices: React.FC = () => {
         ? (Number(a.amount) - Number(b.amount)) * dir
         : (new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()) * dir
     );
-  }, [invoices, searchQuery, filterStatus, filterTrade, sortBy, sortDir]);
+  }, [invoices, searchQuery, filterStatus, filterTrade, sortBy, sortDir, blockKeyByInvoice, trades]);
 
   const toggleSort = (key: 'date' | 'amount') => {
     if (sortBy === key) {
@@ -432,6 +471,18 @@ export const Invoices: React.FC = () => {
   const renderTradeSummary = (invoice: Invoice) => {
     const trade = invoice.trade_id ? trades.find((t) => t.id === invoice.trade_id) : null;
     if (trade) return <span className="text-sm">{trade.name}</span>;
+
+    // Implizite Zuordnung über die Firma (Firmen-Block) sichtbar machen —
+    // vorher stand hier "–", obwohl das Budget die Rechnung längst zählte.
+    const blockKey = blockKeyByInvoice.get(invoice.id);
+    const label = blockKey ? blockLabel(blockKey) : null;
+    if (label) {
+      return (
+        <span className="text-sm">
+          {label} <span className="text-xs text-muted-foreground">(über Firma)</span>
+        </span>
+      );
+    }
 
     const allocs = getAllocationsForInvoice(invoice.id);
     if (allocs.length > 1) {
@@ -570,7 +621,7 @@ export const Invoices: React.FC = () => {
                   <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Alle Gewerke" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Alle Gewerke</SelectItem>
-                    <SelectItem value="none">Ohne Gewerk</SelectItem>
+                    <SelectItem value="none">Ohne Budget-Zuordnung</SelectItem>
                     {usedTrades.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}

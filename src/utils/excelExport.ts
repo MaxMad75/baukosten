@@ -125,7 +125,8 @@ function createInvoicesSheet(data: ExportData): SheetRow[] {
 }
 
 function createComparisonSheet(data: ExportData): SheetRow[] {
-  const header = ['Kostengruppe', 'Bezeichnung', 'Soll (geschätzt)', 'Ist (tatsächlich)', 'Differenz', 'Abweichung %'];
+  // Zeilen kommen seit 12.07.2026 aus den Firmen-Blöcken der Budget-Seite
+  const header = ['Abschnitt', 'Firma / Posten', 'Soll (Kostenberechnung, brutto)', 'Ist (Zahlbeträge, brutto)', 'Differenz', 'Abweichung %'];
 
   const rows = data.comparisons.map(c => [
     c.kostengruppe_code, c.kostengruppe_name, c.estimated, c.actual, c.difference,

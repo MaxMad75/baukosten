@@ -79,7 +79,7 @@ export async function restoreBackupZip(
     return { success: false, message: 'Ungültige Backup-Struktur.' };
   }
 
-  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, invoiceAllocations: 0, estimates: 0, estimateItems: 0, estimateBlocks: 0, journalEntries: 0, documents: 0, attachments: 0 };
+  const counts = { contractors: 0, invoices: 0, invoiceSplits: 0, invoicePayments: 0, invoiceAllocations: 0, estimates: 0, estimateItems: 0, estimateBlocks: 0, journalEntries: 0, documents: 0, attachments: 0, trades: 0, tradeEstimates: 0, loans: 0, loanShares: 0, loanPayments: 0 };
 
   // ID mapping: old ID -> new ID (for referential integrity)
   const contractorIdMap = new Map<string, string>();
@@ -87,6 +87,8 @@ export async function restoreBackupZip(
   const blockIdMap = new Map<string, string>();
   const invoiceIdMap = new Map<string, string>();
   const profileIdMap = new Map<string, string>();
+  const tradeIdMap = new Map<string, string>();
+  const loanIdMap = new Map<string, string>();
 
   // Map profiles by name (we don't create profiles, we map existing ones)
   progress('Profile zuordnen…');
@@ -125,6 +127,93 @@ export async function restoreBackupZip(
       contractorIdMap.set(c.id, data.id);
       counts.contractors++;
     }
+  }
+
+  // 4b. Restore trades + Schätzversionen (Gewerke-Budget, seit 1.2.0)
+  progress('Gewerke wiederherstellen…');
+  for (const t of backup.data.trades || []) {
+    const { data, error } = await supabase
+      .from('trades')
+      .insert({
+        household_id: householdId,
+        name: t.name,
+        section: t.section,
+        contractor_id: contractorIdMap.get(t.contractor_id || '') || null,
+        skonto_percent: t.skonto_percent,
+        awarded_amount: t.awarded_amount,
+        awarded_tax_status: t.awarded_tax_status,
+        awarded_note: t.awarded_note,
+        sort_order: t.sort_order,
+        notes: t.notes,
+        deleted_at: t.deleted_at,
+      })
+      .select('id')
+      .single();
+    if (!error && data) {
+      tradeIdMap.set(t.id, data.id);
+      counts.trades++;
+    }
+  }
+  for (const e of backup.data.tradeEstimates || []) {
+    const newTradeId = tradeIdMap.get(e.trade_id);
+    if (!newTradeId) continue;
+    const { error } = await supabase
+      .from('trade_estimates')
+      .insert({
+        trade_id: newTradeId,
+        version_label: e.version_label,
+        estimate_date: e.estimate_date,
+        amount: e.amount,
+        tax_status: e.tax_status,
+        is_current: e.is_current,
+      });
+    if (!error) counts.tradeEstimates++;
+  }
+
+  // 4c. Restore Kredit-Modul (seit 1.2.0)
+  progress('Darlehen wiederherstellen…');
+  for (const l of backup.data.loans || []) {
+    const { data, error } = await supabase
+      .from('loans')
+      .insert({
+        household_id: householdId,
+        name: l.name,
+        bank: l.bank,
+        principal: l.principal,
+        interest_rate_percent: l.interest_rate_percent,
+        start_date: l.start_date,
+        notes: l.notes,
+      })
+      .select('id')
+      .single();
+    if (!error && data) {
+      loanIdMap.set(l.id, data.id);
+      counts.loans++;
+    }
+  }
+  for (const s of backup.data.loanShares || []) {
+    const newLoanId = loanIdMap.get(s.loan_id);
+    const newProfileId = profileIdMap.get(s.profile_id);
+    if (!newLoanId || !newProfileId) continue;
+    const { error } = await supabase
+      .from('loan_shares')
+      .insert({ loan_id: newLoanId, profile_id: newProfileId, share_percent: s.share_percent });
+    if (!error) counts.loanShares++;
+  }
+  for (const p of backup.data.loanPayments || []) {
+    const newLoanId = loanIdMap.get(p.loan_id);
+    if (!newLoanId) continue;
+    const { error } = await supabase
+      .from('loan_payments')
+      .insert({
+        loan_id: newLoanId,
+        payment_date: p.payment_date,
+        total_amount: p.total_amount,
+        interest_amount: p.interest_amount,
+        principal_amount: p.principal_amount,
+        notes: p.notes,
+      });
+    if (!error) counts.loanPayments++;
   }
 
   // 5. Upload attachments and restore estimates
@@ -233,6 +322,7 @@ export async function restoreBackupZip(
         paid_by_profile_id: profileIdMap.get(inv.paid_by_profile_id || '') || null,
         ai_extracted: inv.ai_extracted,
         is_gross: inv.is_gross,
+        trade_id: tradeIdMap.get(inv.trade_id || '') || null,
         created_by_profile_id: profileIdMap.get(inv.created_by_profile_id || '') || null,
       })
       .select('id')

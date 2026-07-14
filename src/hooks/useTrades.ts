@@ -224,6 +224,44 @@ export function useTrades() {
   };
 
   /**
+   * Aktuelle Schätzung EINES Gewerks direkt setzen (User-Bug 12.07.:
+   * manuell angelegte Gewerke — Grundstück, Architekt, Notar … — hatten
+   * keinen Weg zu einer Kostenberechnung und standen immer „über Budget").
+   * Schreibt in die aktuelle Schätzversion des Gewerks, sonst in die
+   * aktuelle Version des Haushalts, sonst in „Kostenberechnung (manuell)".
+   */
+  const setTradeEstimate = async (tradeId: string, amount: number, taxStatus: TaxStatus): Promise<boolean> => {
+    const trade = trades.find((t) => t.id === tradeId);
+    const householdCurrent = trades.flatMap((t) => t.estimates).find((e) => e.is_current);
+    const label = trade?.current_estimate?.version_label
+      ?? householdCurrent?.version_label
+      ?? 'Kostenberechnung (manuell)';
+    const estimateDate = trade?.current_estimate?.estimate_date
+      ?? householdCurrent?.estimate_date
+      ?? new Date().toISOString().slice(0, 10);
+
+    const { error: resetError } = await supabase
+      .from('trade_estimates')
+      .update({ is_current: false })
+      .eq('trade_id', tradeId);
+    if (resetError) {
+      toast({ title: 'Fehler', description: 'Schätzung konnte nicht gespeichert werden', variant: 'destructive' });
+      return false;
+    }
+
+    const { error } = await supabase.from('trade_estimates').upsert(
+      { trade_id: tradeId, version_label: label, estimate_date: estimateDate, amount, tax_status: taxStatus, is_current: true },
+      { onConflict: 'trade_id,version_label' }
+    );
+    if (error) {
+      toast({ title: 'Fehler', description: 'Schätzung konnte nicht gespeichert werden', variant: 'destructive' });
+      return false;
+    }
+    await fetchTrades();
+    return true;
+  };
+
+  /**
    * Neue Schätzversion für viele Gewerke in einem Schritt (Excel-Import,
    * SRS R1.5). Idempotent über UNIQUE(trade_id, version_label): erneuter
    * Import mit gleichem Versions-Label überschreibt die Werte. is_current
@@ -283,5 +321,5 @@ export function useTrades() {
     return true;
   };
 
-  return { trades, loading, available, fetchTrades, createTrade, updateTrade, softDeleteTrade, importEstimateVersion };
+  return { trades, loading, available, fetchTrades, createTrade, updateTrade, softDeleteTrade, setTradeEstimate, importEstimateVersion };
 }

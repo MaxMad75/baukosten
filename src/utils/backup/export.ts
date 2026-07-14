@@ -126,6 +126,42 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
     .select('*')
     .eq('household_id', householdId);
 
+  // 7b. Gewerke-Budget (trades + Schätzversionen, seit 1.2.0)
+  const { data: trades } = await supabase
+    .from('trades')
+    .select('*')
+    .eq('household_id', householdId);
+  let tradeEstimates: Tables<'trade_estimates'>[] = [];
+  const tradeIds = (trades || []).map((t) => t.id);
+  if (tradeIds.length > 0) {
+    const { data } = await supabase
+      .from('trade_estimates')
+      .select('*')
+      .in('trade_id', tradeIds);
+    tradeEstimates = data || [];
+  }
+
+  // 7c. Kredit-Modul (loans + Anteile + Raten, seit 1.2.0)
+  const { data: loans } = await supabase
+    .from('loans')
+    .select('*')
+    .eq('household_id', householdId);
+  let loanShares: Tables<'loan_shares'>[] = [];
+  let loanPayments: Tables<'loan_payments'>[] = [];
+  const loanIds = (loans || []).map((l) => l.id);
+  if (loanIds.length > 0) {
+    const { data: sharesData } = await supabase
+      .from('loan_shares')
+      .select('*')
+      .in('loan_id', loanIds);
+    loanShares = sharesData || [];
+    const { data: paymentsData } = await supabase
+      .from('loan_payments')
+      .select('*')
+      .in('loan_id', loanIds);
+    loanPayments = paymentsData || [];
+  }
+
   // 8. Collect attachment references and download files
   progress('Anhänge herunterladen…');
   const attachments: BackupAttachmentRef[] = [];
@@ -217,6 +253,11 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       journalEntries: (journalEntries || []).map((j) => stripHouseholdId(j)),
       documents: (documents || []).map((d) => stripHouseholdId(d)),
       estimateBlocks: estimateBlocks.map((b) => ({ ...b })),
+      trades: (trades || []).map((t) => stripHouseholdId(t)),
+      tradeEstimates: tradeEstimates.map((e) => ({ ...e })),
+      loans: (loans || []).map((l) => stripHouseholdId(l)),
+      loanShares: loanShares.map((s) => ({ ...s })),
+      loanPayments: loanPayments.map((p) => ({ ...p })),
     },
     attachments,
   };
@@ -244,6 +285,11 @@ export async function createBackupZip(ctx: ExportContext): Promise<Blob> {
       documents: backupData.data.documents.length,
       attachments: attachments.length,
       estimateBlocks: backupData.data.estimateBlocks.length,
+      trades: backupData.data.trades?.length ?? 0,
+      tradeEstimates: backupData.data.tradeEstimates?.length ?? 0,
+      loans: backupData.data.loans?.length ?? 0,
+      loanShares: backupData.data.loanShares?.length ?? 0,
+      loanPayments: backupData.data.loanPayments?.length ?? 0,
     },
   };
 

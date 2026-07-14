@@ -3,7 +3,11 @@
  * Schema version follows semver — bump major on breaking changes.
  */
 
-export const BACKUP_SCHEMA_VERSION = '1.1.0';
+import type { Tables } from '@/integrations/supabase/types';
+
+// 1.2.0: + trades/tradeEstimates (Gewerke-Budget R1) und loans/loanShares/
+// loanPayments (Kredit-Modul R3) — fehlten seit dem Redesign im Backup!
+export const BACKUP_SCHEMA_VERSION = '1.2.0';
 
 export interface BackupManifest {
   schemaVersion: string;
@@ -24,6 +28,11 @@ export interface BackupManifest {
     documents: number;
     attachments: number;
     estimateBlocks: number;
+    trades?: number;
+    tradeEstimates?: number;
+    loans?: number;
+    loanShares?: number;
+    loanPayments?: number;
   };
   checksums?: {
     backupJson: string;
@@ -66,6 +75,7 @@ export interface BackupInvoice {
   paid_by_profile_id: string | null;
   ai_extracted: boolean;
   is_gross: boolean;
+  trade_id?: string | null;
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;
@@ -202,6 +212,13 @@ export interface BackupData {
     journalEntries: BackupJournalEntry[];
     documents: BackupDocument[];
     estimateBlocks: BackupEstimateBlock[];
+    /** Gewerke-Budget (seit 1.2.0) */
+    trades?: Omit<Tables<'trades'>, 'household_id'>[];
+    tradeEstimates?: Tables<'trade_estimates'>[];
+    /** Kredit-Modul (seit 1.2.0) */
+    loans?: Omit<Tables<'loans'>, 'household_id'>[];
+    loanShares?: Tables<'loan_shares'>[];
+    loanPayments?: Tables<'loan_payments'>[];
   };
   attachments: BackupAttachmentRef[];
 }

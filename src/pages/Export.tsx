@@ -7,7 +7,11 @@ import { useEstimates } from '@/hooks/useEstimates';
 import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
-import { useInvoiceDeductions } from '@/hooks/useInvoiceDeductions';
+import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
+import { useTrades, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
+import { useDocuments } from '@/hooks/useDocuments';
+import { useLoans } from '@/hooks/useLoans';
+import { normalizeTradeName } from '@/lib/estimateImport';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel } from '@/utils/excelExport';
 import { createBackupZip, downloadBlob, restoreBackupZip } from '@/utils/backup';
@@ -29,6 +33,9 @@ export const Export: React.FC = () => {
   const { data: profiles, isLoading: profLoading } = useHouseholdProfiles();
   const { allPayments } = useInvoicePayments();
   const { allDeductions } = useInvoiceDeductions();
+  const { trades } = useTrades();
+  const { documents } = useDocuments();
+  const { totalInterest } = useLoans();
   const { household, profile } = useAuth();
   const { toast } = useToast();
 
@@ -46,17 +53,71 @@ export const Export: React.FC = () => {
 
   const loading = invLoading || estLoading || kgLoading || profLoading;
 
+  /**
+   * Soll/Ist im Export folgt der Budget-Seite (Firmen-Blöcke, brutto) —
+   * nicht mehr den DIN-Altdaten, die der App-Ansicht widersprachen.
+   */
   const handleExcelExport = () => {
-    const allCodes = new Set<string>();
-    estimateItems.forEach(i => allCodes.add(i.kostengruppe_code));
-    invoices.forEach(i => i.kostengruppe_code && allCodes.add(i.kostengruppe_code));
+    const toGross = (amount: number, taxStatus: string) => (taxStatus === 'net' ? amount * 1.19 : amount);
+    const payableGross = (inv: (typeof invoices)[number]) => {
+      const payable = getPayableAmount(Number(inv.amount), allDeductions.filter((d) => d.invoice_id === inv.id));
+      return inv.is_gross ? payable : payable * 1.19;
+    };
 
-    const comparisons: CostComparison[] = Array.from(allCodes).map(code => {
-      const kg = getKostengruppeByCode(code);
-      const estimated = estimateItems.filter(i => i.kostengruppe_code === code).reduce((s, i) => s + Number(i.estimated_amount), 0);
-      const actual = invoices.filter(i => i.kostengruppe_code === code).reduce((s, i) => s + Number(i.amount), 0);
-      return { kostengruppe_code: code, kostengruppe_name: kg?.name || code, estimated, actual, difference: actual - estimated, percentage: estimated > 0 ? ((actual - estimated) / estimated) * 100 : 0 };
-    });
+    const contractorByInvoice = new Map<string, string>();
+    for (const doc of documents) {
+      if (doc.invoice_id && doc.contractor_id && !contractorByInvoice.has(doc.invoice_id)) {
+        contractorByInvoice.set(doc.invoice_id, doc.contractor_id);
+      }
+    }
+
+    const groups = new Map<string, typeof trades>();
+    for (const t of trades) {
+      const key = tradeBlockKey(t);
+      const list = groups.get(key) || [];
+      list.push(t);
+      groups.set(key, list);
+    }
+
+    const blockRows = new Map<string, CostComparison & { section: number }>();
+    for (const [key, list] of groups) {
+      blockRows.set(key, {
+        kostengruppe_code: String(list[0].section),
+        kostengruppe_name: list.length === 1 ? list[0].name : (list[0].contractor?.company_name || `${list.length} Gewerke`),
+        estimated: list.reduce((s, t) => s + (t.current_estimate ? toGross(Number(t.current_estimate.amount), t.current_estimate.tax_status) : 0), 0),
+        actual: 0,
+        difference: 0,
+        percentage: 0,
+        section: list[0].section,
+      });
+    }
+
+    let unassignedActual = 0;
+    for (const inv of invoices.filter((i) => i.status !== 'cancelled')) {
+      const key = resolveInvoiceBlockKey(trades, inv, contractorByInvoice.get(inv.id));
+      const row = key ? blockRows.get(key) : null;
+      if (row) row.actual += payableGross(inv);
+      else unassignedActual += payableGross(inv);
+    }
+    if (totalInterest > 0) {
+      const fin = trades.find((t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung'));
+      const row = fin ? blockRows.get(tradeBlockKey(fin)) : null;
+      if (row) row.actual += totalInterest;
+    }
+
+    const comparisons: CostComparison[] = Array.from(blockRows.values())
+      .sort((a, b) => a.section - b.section || a.kostengruppe_name.localeCompare(b.kostengruppe_name, 'de'))
+      .map(({ section: _section, ...row }) => ({
+        ...row,
+        difference: row.actual - row.estimated,
+        percentage: row.estimated > 0 ? ((row.actual - row.estimated) / row.estimated) * 100 : 0,
+      }));
+    if (unassignedActual > 0) {
+      comparisons.push({
+        kostengruppe_code: '—', kostengruppe_name: 'Ohne Budget-Zuordnung',
+        estimated: 0, actual: unassignedActual, difference: unassignedActual, percentage: 0,
+      });
+    }
 
     exportToExcel({ invoices, estimateItems, kostengruppen, profiles: profiles || [], comparisons, payments: allPayments, deductions: allDeductions }, 'hausbau-kosten');
     toast({ title: 'Export erfolgreich', description: 'Die Excel-Datei wurde heruntergeladen.' });

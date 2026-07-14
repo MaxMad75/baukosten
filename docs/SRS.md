@@ -4,6 +4,25 @@ Stand: 11.07.2026 · Ersteller: Claude (mit Bauherr Basti) · **Einstiegsdokumen
 **Projektstand: R1–R3 komplett, App ist für den Alltags-Workflow feature-complete** (Rechnung hochladen →
 Firma wählen/bestätigen → Budget & Besitzverhältnisse rechnen automatisch). R4 (KI-Ausbau) und
 R5-Reste sind bewusstes Backlog.
+
+**Review-/Fix-Runde 12.07.2026 (Code- und Schema-Review aus Endnutzersicht):**
+1. **Backups repariert (kritisch):** DB-Auto-Backup (`_backup_household` v2, Migration
+   20260712190000 — MANUELL AUSFÜHREN) und ZIP-Voll-Backup (Schema 1.2.0, Export+Import inkl.
+   ID-Mapping) sichern jetzt auch trades/trade_estimates/loans/loan_shares/loan_payments —
+   fehlten seit dem Redesign komplett.
+2. **Posten ohne Excel-Schätzung** (Grundstück, Architekt, Notar …): Gewerk-Dialog hat jetzt das Feld
+   „Kostenberechnung / Schätzung" (setTradeEstimate: schreibt in die aktuelle Version, Dirty-Check
+   verhindert stilles Überschreiben von Excel-Werten) — vorher standen solche Posten zwangsläufig
+   immer „über Budget".
+3. **Rechnungsliste** zeigt die effektive Budget-Zuordnung („Mayer Hochbau (über Firma)") statt „–";
+   Gewerk-Filter filtert über den Firmen-Block.
+4. **Kennzahlen vereinheitlicht:** Budget-Karten und Dashboard rechnen identisch (Abgerechnet/Bezahlt
+   über alle Rechnungen mit „davon ohne Budget-Zuordnung"-Ausweis; Prognose inkl. unzugeordneter Kosten).
+5. **Excel-Export:** Soll/Ist-Sheet kommt aus den Firmen-Blöcken (brutto, inkl. Zinsen und Zeile „Ohne
+   Budget-Zuordnung") statt aus den DIN-Altdaten, die der App widersprachen.
+Verbleibende bekannte Punkte (Backlog): Gewerke-Papierkorb ohne Restore-UI; „Finanzierung"-Gewerk und
+„Kredit"-Profil werden am Namen erkannt (nicht umbenennen!); invoices.contractor_id als robustere
+Alternative zum Text+Dokument-Link; R4/R5.
 Ergänzend: `docs/OPTIMIERUNGSPLAN.md` (technisches Backlog, Historie), `docs/SECURITY_REVIEW.md` (RLS-Audit).
 **Vor jeder Arbeit zuerst Abschnitt 8 (Arbeitsvereinbarungen) lesen.**
 

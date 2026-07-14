@@ -8,10 +8,9 @@ import { useKostengruppen } from '@/hooks/useKostengruppen';
 import { useHouseholdProfiles } from '@/hooks/useProfiles';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
-import { useTrades, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceBlockKey, tradeBlockKey, isFinancingTrade } from '@/hooks/useTrades';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useLoans } from '@/hooks/useLoans';
-import { normalizeTradeName } from '@/lib/estimateImport';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel } from '@/utils/excelExport';
 import { createBackupZip, downloadBlob, restoreBackupZip } from '@/utils/backup';
@@ -100,7 +99,7 @@ export const Export: React.FC = () => {
       else unassignedActual += payableGross(inv);
     }
     if (totalInterest > 0) {
-      const fin = trades.find((t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung'));
+      const fin = trades.find(isFinancingTrade);
       const row = fin ? blockRows.get(tradeBlockKey(fin)) : null;
       if (row) row.actual += totalInterest;
     }

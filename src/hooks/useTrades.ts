@@ -80,6 +80,18 @@ export function resolveInvoiceTradeId<
 }
 
 /**
+ * Erkennung des Zins-Gewerks (SRS 4.4): Kredit-Zinsen landen im
+ * Abschnitt-800-Gewerk "Finanzierung". Erkennung über Name ODER die vom
+ * Kredit-Modul gesetzte Notiz — damit eine Umbenennung des Gewerks die
+ * Zinsen nicht still aus dem Budget verschwinden lässt (Review 12.07.).
+ */
+export const isFinancingTrade = (t: Pick<Trade, 'section' | 'name'> & { notes?: string | null }): boolean =>
+  t.section === 800 && (
+    t.name.toLowerCase().replace(/[^a-z0-9äöüß]/g, '').includes('finanzierung') ||
+    (t.notes || '').toLowerCase().includes('kredit-zinsen')
+  );
+
+/**
  * Firmen-Block (User-Feedback 11.07.): Der Bauherr will primär wissen,
  * WELCHER FIRMA er wieviel bezahlt hat — die Gewerke sind nur die
  * Soll-Aufschlüsselung des Firmen-Budgets. Gewerke derselben Firma bilden
@@ -305,6 +317,40 @@ export function useTrades() {
     return true;
   };
 
+  /**
+   * Gewerke im Papierkorb (Review 12.07.: bisher gab es keine Restore-UI).
+   * Einträge älter als 30 Tage werden beim Laden endgültig entfernt
+   * (gleiche Konvention wie der Rechnungs-Papierkorb; invoices.trade_id
+   * wird per FK auf NULL gesetzt).
+   */
+  const fetchTrashedTrades = async (): Promise<Trade[]> => {
+    if (!household) return [];
+    const { data } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('household_id', household.id)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
+    const all = (data as Trade[]) || [];
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const expired = all.filter((t) => t.deleted_at && new Date(t.deleted_at).getTime() < cutoff);
+    if (expired.length > 0) {
+      await supabase.from('trades').delete().in('id', expired.map((t) => t.id));
+    }
+    return all.filter((t) => !expired.includes(t));
+  };
+
+  const restoreTrade = async (id: string) => {
+    const { error } = await supabase.from('trades').update({ deleted_at: null }).eq('id', id);
+    if (error) {
+      toast({ title: 'Fehler', description: 'Gewerk konnte nicht wiederhergestellt werden', variant: 'destructive' });
+      return false;
+    }
+    await fetchTrades();
+    toast({ title: 'Erfolg', description: 'Gewerk wurde wiederhergestellt' });
+    return true;
+  };
+
   /** Papierkorb-Logik wie bei Rechnungen: nur markieren, nicht löschen. */
   const softDeleteTrade = async (id: string) => {
     const { error } = await supabase
@@ -321,5 +367,5 @@ export function useTrades() {
     return true;
   };
 
-  return { trades, loading, available, fetchTrades, createTrade, updateTrade, softDeleteTrade, setTradeEstimate, importEstimateVersion };
+  return { trades, loading, available, fetchTrades, createTrade, updateTrade, softDeleteTrade, fetchTrashedTrades, restoreTrade, setTradeEstimate, importEstimateVersion };
 }

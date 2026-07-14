@@ -4,12 +4,11 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useInvoices } from '@/hooks/useInvoices';
-import { useTrades, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceBlockKey, tradeBlockKey, isFinancingTrade } from '@/hooks/useTrades';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useLoans } from '@/hooks/useLoans';
-import { normalizeTradeName } from '@/lib/estimateImport';
 import {
   FileText, Wallet, FolderOpen, Euro, CheckCircle2, AlertCircle,
   TrendingUp, TrendingDown, ArrowRight, Receipt
@@ -75,7 +74,7 @@ export const Dashboard: React.FC = () => {
       const key = blockKeyByInvoice.get(inv.id);
       if (key) billedByBlock.set(key, (billedByBlock.get(key) || 0) + payableOf(inv));
     }
-    const finTrade = trades.find((t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung'));
+    const finTrade = trades.find(isFinancingTrade);
     if (finTrade && totalInterest > 0) {
       const key = tradeBlockKey(finTrade);
       billedByBlock.set(key, (billedByBlock.get(key) || 0) + totalInterest);

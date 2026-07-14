@@ -12,17 +12,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { TradeEditDialog, TradeFormValues } from '@/components/budget/TradeEditDialog';
 import { EstimateImportDialog } from '@/components/budget/EstimateImportDialog';
-import { Loader2, ChevronDown, ChevronRight, Wand2, Plus, Pencil, Trash2, Upload } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, Wand2, Plus, Pencil, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTrades, resolveInvoiceTradeId, resolveInvoiceBlockKey, tradeBlockKey } from '@/hooks/useTrades';
+import { useTrades, resolveInvoiceTradeId, resolveInvoiceBlockKey, tradeBlockKey, isFinancingTrade } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useLoans } from '@/hooks/useLoans';
-import { normalizeTradeName } from '@/lib/estimateImport';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useInvoicePayments } from '@/hooks/useInvoicePayments';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
@@ -89,7 +88,7 @@ const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'de
 };
 
 const Budget: React.FC = () => {
-  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, setTradeEstimate, importEstimateVersion } = useTrades();
+  const { trades, loading: tradesLoading, available, createTrade, updateTrade, softDeleteTrade, fetchTrashedTrades, restoreTrade, setTradeEstimate, importEstimateVersion } = useTrades();
   const { invoices, loading: invLoading, fetchInvoices } = useInvoices();
   const { documents } = useDocuments();
   // Kredit-Zinsen (SRS 4.4) zählen als Kosten im Abschnitt-800-Gewerk "Finanzierung"
@@ -109,6 +108,14 @@ const Budget: React.FC = () => {
   const [tradeDefaults, setTradeDefaults] = useState<Partial<TradeFormValues> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Trade | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [trashedTrades, setTrashedTrades] = useState<Trade[]>([]);
+
+  // Gewerke-Papierkorb (30 Tage wiederherstellbar) — lädt bei Änderungen neu
+  React.useEffect(() => {
+    if (!available) return;
+    fetchTrashedTrades().then(setTrashedTrades);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [available, trades.length]);
 
   /** In die Ansichtseinheit (brutto/netto) umrechnen; tax_free bleibt unverändert. */
   const conv = (amount: number, taxStatus: TaxStatus) => {
@@ -242,7 +249,7 @@ const Budget: React.FC = () => {
 
       // Kredit-Zinsen landen als gezahlte Kosten im Gewerk "Finanzierung"
       // (steuerfrei → keine Brutto/Netto-Umrechnung)
-      if (totalInterest > 0 && list.some((t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung'))) {
+      if (totalInterest > 0 && isPrimary && list.some(isFinancingTrade)) {
         billed += totalInterest;
         paid += totalInterest;
       }
@@ -430,6 +437,7 @@ const Budget: React.FC = () => {
     if (!deleteTarget) return;
     await softDeleteTrade(deleteTarget.id);
     setDeleteTarget(null);
+    setTrashedTrades(await fetchTrashedTrades());
   };
 
   const deltaClass = (delta: number) =>
@@ -801,6 +809,41 @@ const Budget: React.FC = () => {
                 )}
               </CardContent>
             </Card>
+            {trashedTrades.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Papierkorb — Gewerke ({trashedTrades.length})</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    30 Tage wiederherstellbar, danach werden sie endgültig entfernt.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                  {trashedTrades.map((t) => (
+                    <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <span>
+                        {t.name}
+                        {t.deleted_at && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            gelöscht am {format(new Date(t.deleted_at), 'dd.MM.yyyy', { locale: de })}
+                          </span>
+                        )}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          await restoreTrade(t.id);
+                          setTrashedTrades(await fetchTrashedTrades());
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span className="ml-2">Wiederherstellen</span>
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </>
         )}
 

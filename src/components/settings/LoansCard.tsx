@@ -16,8 +16,7 @@ import { de } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useLoans } from '@/hooks/useLoans';
-import { useTrades } from '@/hooks/useTrades';
-import { normalizeTradeName } from '@/lib/estimateImport';
+import { useTrades, isFinancingTrade } from '@/hooks/useTrades';
 import { LoanWithDetails } from '@/lib/types';
 
 const emptyLoanForm = {
@@ -115,9 +114,7 @@ export const LoansCard: React.FC = () => {
           .filter((s) => s.share_percent > 0)
       );
       // Zinsen brauchen ein Zuhause: Abschnitt-800-Gewerk "Finanzierung"
-      const hasFinanzierung = trades.some(
-        (t) => t.section === 800 && normalizeTradeName(t.name).includes('finanzierung')
-      );
+      const hasFinanzierung = trades.some(isFinancingTrade);
       if (!hasFinanzierung) {
         await createTrade({ name: 'Finanzierung', section: 800, notes: 'Kredit-Zinsen (automatisch aus dem Kredit-Modul)' });
       }
@@ -169,6 +166,12 @@ export const LoansCard: React.FC = () => {
               Darlehen, Kreditnehmer-Anteile und Raten. Zinsen zählen als Baukosten (Gewerk
               „Finanzierung"), Tilgung verschiebt Vermögen vom „Kredit" auf die Kreditnehmer.
             </CardDescription>
+            {loans.length > 0 && !(householdProfiles || []).some((p) => p.name.trim().toLowerCase() === 'kredit') && (
+              <p className="text-xs text-amber-700">
+                Hinweis: Für die Ansicht „Nach Tilgung" (Zahlungen nach Person) braucht der Haushalt
+                ein virtuelles Mitglied mit dem Namen „Kredit" — unten über „Mitglied hinzufügen" anlegen.
+              </p>
+            )}
           </div>
           <Button size="sm" onClick={openCreate}>
             <Plus className="h-4 w-4" />

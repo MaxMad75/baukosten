@@ -20,9 +20,11 @@ R5-Reste sind bewusstes Backlog.
    über alle Rechnungen mit „davon ohne Budget-Zuordnung"-Ausweis; Prognose inkl. unzugeordneter Kosten).
 5. **Excel-Export:** Soll/Ist-Sheet kommt aus den Firmen-Blöcken (brutto, inkl. Zinsen und Zeile „Ohne
    Budget-Zuordnung") statt aus den DIN-Altdaten, die der App widersprachen.
-Verbleibende bekannte Punkte (Backlog): Gewerke-Papierkorb ohne Restore-UI; „Finanzierung"-Gewerk und
-„Kredit"-Profil werden am Namen erkannt (nicht umbenennen!); invoices.contractor_id als robustere
-Alternative zum Text+Dokument-Link; R4/R5.
+Nachtrag 14.07.: Gewerke-Papierkorb hat eine Restore-Karte auf der Budget-Seite (30 Tage, danach
+Bereinigung beim Laden); Zins-Gewerk-Erkennung robust via `isFinancingTrade` (Name ODER Kredit-Modul-
+Notiz — Umbenennen ist unschädlich, solange die Notiz bleibt); Kredit-Karte weist auf das nötige
+„Kredit"-Mitglied hin. Verbleibendes Backlog: invoices.contractor_id als robustere Alternative zum
+Text+Dokument-Link; R4 (KI-Ausbau); R5-Reste (React Query, Dialog-Extraktion, R2.1-Tabs).
 Ergänzend: `docs/OPTIMIERUNGSPLAN.md` (technisches Backlog, Historie), `docs/SECURITY_REVIEW.md` (RLS-Audit).
 **Vor jeder Arbeit zuerst Abschnitt 8 (Arbeitsvereinbarungen) lesen.**
 

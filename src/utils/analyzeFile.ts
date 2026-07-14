@@ -12,6 +12,8 @@ export interface AnalysisBody {
   imageBase64?: string;
 }
 
+export type AiConfidence = 'high' | 'medium' | 'low';
+
 /** Result of the analyze-document edge function. */
 export interface AiResult {
   title?: string;
@@ -22,6 +24,26 @@ export interface AiResult {
   amount?: number | null;
   invoice_date?: string | null;
   kostengruppe_code?: string | null;
+  /** Konfidenz je Rechnungsfeld (R4.1); fehlt bei älterer Function-Version */
+  confidence?: {
+    company_name?: AiConfidence;
+    invoice_number?: AiConfidence;
+    amount?: AiConfidence;
+    invoice_date?: AiConfidence;
+  } | null;
+}
+
+/**
+ * Review-Queue-Regel (SRS 4.3/R4.1): Eine AUTOMATISCH angelegte Rechnung
+ * startet als "Prüfung nötig", wenn die KI bei einem der Kernfelder
+ * (Firma, Betrag, Datum) unsicher war — statt still falsch als Entwurf.
+ * Ohne Konfidenz-Daten (alte Function-Version) bleibt alles wie bisher.
+ */
+export function aiNeedsReview(ai: AiResult): boolean {
+  const c = ai.confidence;
+  if (!c) return false;
+  return ([c.company_name, c.amount, c.invoice_date] as (AiConfidence | undefined)[])
+    .some((level) => level === 'medium' || level === 'low');
 }
 
 /** File extensions the AI analysis supports. */

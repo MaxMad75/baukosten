@@ -36,6 +36,12 @@ Falls es sich um eine RECHNUNG handelt, extrahiere zusätzlich:
 - Die passende DIN 276 Kostengruppe (3-stelliger Code)
 Der Gesamtbetrag steht meist am ENDE des Dokuments (Zeilen wie "Gesamtbetrag", "Rechnungsbetrag", "zu zahlen", "Bruttobetrag"). Wenn du dir bei einem Feld nicht sicher bist, setze es auf null statt zu raten.
 
+KONFIDENZ: Gib bei Rechnungen zu jedem extrahierten Feld (company_name, invoice_number, amount, invoice_date) eine Konfidenz an:
+- "high" = steht klar und eindeutig lesbar im Dokument
+- "medium" = abgeleitet oder mehrdeutig (z. B. mehrere Beträge, unscharfer Scan)
+- "low" = unsicher / könnte falsch sein
+Lass die Konfidenz für Felder weg, die du nicht extrahiert hast.
+
 ${DIN276_CATEGORIES}
 
 Antworte NUR mit gültigem JSON im folgenden Format, ohne zusätzlichen Text und ohne Markdown-Codeblöcke:
@@ -152,6 +158,16 @@ serve(async (req) => {
             amount: { type: "number", description: "Brutto-Gesamtbetrag, nur bei Rechnungen" },
             invoice_date: { type: "string", description: "YYYY-MM-DD, nur bei Rechnungen" },
             kostengruppe_code: { type: "string", description: "3-stelliger DIN 276 Code, nur bei Rechnungen" },
+            confidence: {
+              type: "object",
+              description: "Konfidenz je extrahiertem Rechnungsfeld: high = klar lesbar, medium = abgeleitet/mehrdeutig, low = unsicher. Nur für tatsächlich extrahierte Felder.",
+              properties: {
+                company_name: { type: "string", enum: ["high", "medium", "low"] },
+                invoice_number: { type: "string", enum: ["high", "medium", "low"] },
+                amount: { type: "string", enum: ["high", "medium", "low"] },
+                invoice_date: { type: "string", enum: ["high", "medium", "low"] },
+              },
+            },
           },
           required: ["title", "document_type", "description"],
         },

@@ -9,7 +9,7 @@ import { extractZip, zipEntryToFile, ZipEntry } from '@/utils/zipExtractor';
 import { computeBlobHash } from '@/utils/fileHash';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useInvoices } from '@/hooks/useInvoices';
-import { analyzeDocumentFile, isAnalyzable } from '@/utils/analyzeFile';
+import { analyzeDocumentFile, isAnalyzable, aiNeedsReview } from '@/utils/analyzeFile';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useToast } from '@/hooks/use-toast';
@@ -196,6 +196,8 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                   kostengruppe_code: ai.kostengruppe_code || null,
                   trade_id: trade?.id || null,
                   contractor_id: contractor?.id || null,
+                  // R4.1: unsichere KI-Extraktion startet als "Prüfung nötig"
+                  status: aiNeedsReview(ai) ? 'review_needed' : undefined,
                   file_path: uploaded.path,
                   file_name: uploaded.name,
                   ai_extracted: true,

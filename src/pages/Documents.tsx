@@ -13,7 +13,7 @@ import { useDocuments, Document } from '@/hooks/useDocuments';
 import { useContractors, matchContractorByName } from '@/hooks/useContractors';
 import { useTrades, suggestTradeForCompany } from '@/hooks/useTrades';
 import { useInvoices } from '@/hooks/useInvoices';
-import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, AiResult } from '@/utils/analyzeFile';
+import { buildAnalysisBody, analyzeDocumentFile, isAnalyzable, aiNeedsReview, AiResult } from '@/utils/analyzeFile';
 import { InvoiceFieldsSection, InvoiceForm, emptyInvoiceForm } from '@/components/documents/InvoiceFieldsSection';
 import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
 import type { Json } from '@/integrations/supabase/types';
@@ -200,7 +200,9 @@ export const Documents: React.FC = () => {
     fileName: string,
     description: string | null,
     aiExtracted: boolean,
-    contractorId: string | null
+    contractorId: string | null,
+    /** 'review_needed' für automatisch angelegte Rechnungen mit unsicherer KI-Extraktion (R4.1) */
+    status?: 'review_needed'
   ): Promise<string | null> => {
     const invoice = await createInvoice({
       amount: parseFloat(form.amount),
@@ -215,6 +217,7 @@ export const Documents: React.FC = () => {
       file_name: fileName,
       ai_extracted: aiExtracted,
       is_gross: true,
+      status,
     });
 
     return invoice?.id || null;
@@ -457,9 +460,18 @@ export const Documents: React.FC = () => {
       if (ai.document_type === 'Rechnung' && !invoiceId) {
         const form = withTradeSuggestion(invoiceFormFromAi(ai));
         if (!getInvoiceFormError(form)) {
-          invoiceId = await createInvoiceRecord(form, doc.file_path, doc.file_name, ai.description || null, true, contractorId);
+          const review = aiNeedsReview(ai);
+          invoiceId = await createInvoiceRecord(
+            form, doc.file_path, doc.file_name, ai.description || null, true, contractorId,
+            review ? 'review_needed' : undefined
+          );
           if (invoiceId) {
-            toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
+            toast({
+              title: 'Rechnung erkannt',
+              description: review
+                ? 'Rechnung angelegt — die KI war bei einzelnen Feldern unsicher, Status „Prüfung nötig".'
+                : 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.',
+            });
           }
         } else {
           needsCompletion = true;

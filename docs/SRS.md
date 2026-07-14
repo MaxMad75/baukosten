@@ -391,7 +391,12 @@ Zinsen fließen als gezahlte Kosten (steuerfrei, keine MwSt-Umrechnung) in Budge
 (Umverteilung Kredit→Kreditnehmer gemäß Anteilen, unit-getestet, Gesamtsumme bleibt konstant).
 CSV-Import des Tilgungsplans + wiederkehrende Raten-Vorlage bewusst offen (bei Bedarf).
 
-**R4 — KI-Ausbau (4.3):** Konfidenz/Review-Queue → Few-Shot-Hinweise → Modell-Eskalation → Eval
+**R4 — KI-Ausbau (4.3):** ~~Konfidenz/Review-Queue~~ (✅ R4.1 14.07.2026: analyze-document liefert
+Konfidenz je Rechnungsfeld [high/medium/low]; automatisch angelegte Rechnungen mit unsicheren
+Kernfeldern starten als `review_needed` statt still als Entwurf — Upload-Auto-Pfad + ZIP;
+„Geprüft"-Schnellaktion in der Rechnungsliste; Dashboard-Hinweis existierte schon. Abwärtskompatibel:
+ohne Konfidenz-Daten [Function noch nicht redeployt] Verhalten wie bisher. **Redeploy der Edge
+Function analyze-document via Lovable-Prompt nötig!**) → Few-Shot-Hinweise → Modell-Eskalation → Eval
 
 **R5 — Technik-Rest:** React Query (alt 4.2), Dialog-Extraktion (alt 3.1-Rest), ~~Node-24-Bump der CI~~ (✅ mit R2.2)
 

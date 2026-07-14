@@ -29,7 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import {
-  Loader2, Trash2, Edit, Save, CreditCard, Plus, Link2, Search, ArrowUp, ArrowDown, ArrowUpDown,
+  Loader2, Trash2, Edit, Save, CreditCard, Plus, Link2, Search, ArrowUp, ArrowDown, ArrowUpDown, CheckCheck,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -665,6 +665,11 @@ export const Invoices: React.FC = () => {
                       <div className="flex items-center justify-between gap-2">
                         <Badge variant={statusCfg.variant} className={statusCfg.className}>{statusCfg.label}</Badge>
                         <div className="flex gap-1">
+                          {status === 'review_needed' && (
+                            <Button size="sm" variant="outline" onClick={() => updateInvoice(invoice.id, { status: 'approved' })} title="Als geprüft markieren">
+                              <CheckCheck className="h-4 w-4" />
+                            </Button>
+                          )}
                           {status !== 'paid' && status !== 'cancelled' && (
                             <Button size="sm" variant="outline" onClick={() => openPayDialog(invoice.id)}>Zahlung</Button>
                           )}
@@ -766,6 +771,12 @@ export const Invoices: React.FC = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
+                            {status === 'review_needed' && (
+                              <Button size="sm" variant="outline" onClick={() => updateInvoice(invoice.id, { status: 'approved' })} title="Als geprüft markieren">
+                                <CheckCheck className="h-4 w-4" />
+                                <span className="ml-1 hidden lg:inline">Geprüft</span>
+                              </Button>
+                            )}
                             {status !== 'paid' && status !== 'cancelled' && (
                               <Button size="sm" variant="outline" onClick={() => openPayDialog(invoice.id)}>Zahlung</Button>
                             )}

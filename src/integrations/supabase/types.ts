@@ -781,6 +781,7 @@ export type Database = {
           ai_extracted: boolean
           amount: number
           company_name: string
+          contractor_id: string | null
           created_at: string
           created_by_profile_id: string | null
           deleted_at: string | null
@@ -806,6 +807,7 @@ export type Database = {
           ai_extracted?: boolean
           amount: number
           company_name: string
+          contractor_id?: string | null
           created_at?: string
           created_by_profile_id?: string | null
           deleted_at?: string | null
@@ -831,6 +833,7 @@ export type Database = {
           ai_extracted?: boolean
           amount?: number
           company_name?: string
+          contractor_id?: string | null
           created_at?: string
           created_by_profile_id?: string | null
           deleted_at?: string | null
@@ -853,6 +856,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "invoices_contractor_id_fkey"
+            columns: ["contractor_id"]
+            isOneToOne: false
+            referencedRelation: "contractors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "invoices_created_by_profile_id_fkey"
             columns: ["created_by_profile_id"]

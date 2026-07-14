@@ -112,16 +112,16 @@ export function useContractors() {
 
   /**
    * Merge duplicate contractors into one: re-points all references
-   * (documents, offers, construction journal, Gewerke) to the target and
-   * deletes the sources. trades MUSS dabei sein — sonst verlieren Gewerke
-   * beim Löschen der Dublette ihre Firma (FK ON DELETE SET NULL) und die
-   * Firma→Gewerk-Zuordnung bricht.
+   * (documents, offers, construction journal, Gewerke, Rechnungen) to the
+   * target and deletes the sources. trades/invoices MÜSSEN dabei sein —
+   * sonst verlieren sie beim Löschen der Dublette ihre Firma
+   * (FK ON DELETE SET NULL) und die Firma→Gewerk-Kette bricht.
    */
   const mergeContractors = async (sourceIds: string[], targetId: string) => {
     const ids = sourceIds.filter((id) => id !== targetId);
     if (ids.length === 0) return false;
 
-    for (const table of ['documents', 'offers', 'construction_journal', 'trades'] as const) {
+    for (const table of ['documents', 'offers', 'construction_journal', 'trades', 'invoices'] as const) {
       const { error } = await supabase
         .from(table)
         .update({ contractor_id: targetId })

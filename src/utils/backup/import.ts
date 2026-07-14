@@ -323,6 +323,7 @@ export async function restoreBackupZip(
         ai_extracted: inv.ai_extracted,
         is_gross: inv.is_gross,
         trade_id: tradeIdMap.get(inv.trade_id || '') || null,
+        contractor_id: contractorIdMap.get(inv.contractor_id || '') || null,
         created_by_profile_id: profileIdMap.get(inv.created_by_profile_id || '') || null,
       })
       .select('id')

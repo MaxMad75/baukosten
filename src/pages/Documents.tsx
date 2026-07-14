@@ -199,7 +199,8 @@ export const Documents: React.FC = () => {
     filePath: string,
     fileName: string,
     description: string | null,
-    aiExtracted: boolean
+    aiExtracted: boolean,
+    contractorId: string | null
   ): Promise<string | null> => {
     const invoice = await createInvoice({
       amount: parseFloat(form.amount),
@@ -209,6 +210,7 @@ export const Documents: React.FC = () => {
       description: description || null,
       kostengruppe_code: form.kostengruppe_code || null,
       trade_id: form.trade_id || null,
+      contractor_id: contractorId,
       file_path: filePath,
       file_name: fileName,
       ai_extracted: aiExtracted,
@@ -304,7 +306,8 @@ export const Documents: React.FC = () => {
         uploadedFile.path,
         uploadedFile.name,
         formData.description || null,
-        !!pendingAiResult
+        !!pendingAiResult,
+        contractorId
       );
 
       if (!invoiceId) return; // createInvoice already showed an error toast
@@ -383,7 +386,8 @@ export const Documents: React.FC = () => {
         editingDoc.file_path,
         editingDoc.file_name,
         formData.description || null,
-        false
+        false,
+        contractorId
       );
 
       if (!invoiceId) return;
@@ -453,7 +457,7 @@ export const Documents: React.FC = () => {
       if (ai.document_type === 'Rechnung' && !invoiceId) {
         const form = withTradeSuggestion(invoiceFormFromAi(ai));
         if (!getInvoiceFormError(form)) {
-          invoiceId = await createInvoiceRecord(form, doc.file_path, doc.file_name, ai.description || null, true);
+          invoiceId = await createInvoiceRecord(form, doc.file_path, doc.file_name, ai.description || null, true, contractorId);
           if (invoiceId) {
             toast({ title: 'Rechnung erkannt', description: 'Rechnung wurde automatisch in der Rechnungsverwaltung angelegt.' });
           }

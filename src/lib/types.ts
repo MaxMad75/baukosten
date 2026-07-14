@@ -52,6 +52,8 @@ export interface Invoice {
   is_gross: boolean;
   /** Primäre Gewerk-Zuordnung (SRS 4.1); Mehrfach-Zuordnung via invoice_allocations */
   trade_id?: string | null;
+  /** Firma der Rechnung als echter FK (14.07.2026) — stärkstes Signal der Firmen-Block-Kette */
+  contractor_id?: string | null;
   status: InvoiceStatus;
   created_by_profile_id: string | null;
   created_at: string;

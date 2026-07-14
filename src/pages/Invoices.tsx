@@ -198,6 +198,9 @@ export const Invoices: React.FC = () => {
       primaryKg = editAllocations[0].kostengruppe_code || null;
     }
 
+    // Firma als FK mitschreiben (backfillt beim Speichern auch Alt-Rechnungen)
+    const contractor = await findOrCreateByName(editFormData.company_name);
+
     const success = await updateInvoice(editingInvoice.id, {
       company_name: editFormData.company_name,
       invoice_number: editFormData.invoice_number || null,
@@ -206,6 +209,7 @@ export const Invoices: React.FC = () => {
       description: editFormData.description || null,
       kostengruppe_code: primaryKg,
       trade_id: editFormData.trade_id || null,
+      contractor_id: contractor?.id || null,
       is_gross: editFormData.is_gross,
       status: editFormData.status,
     });
@@ -213,14 +217,11 @@ export const Invoices: React.FC = () => {
     if (success) {
       // Keep linked documents consistent: the invoice is the master record,
       // so align the documents' contractor with the (possibly changed) company.
-      if (editFormData.company_name !== editingInvoice.company_name) {
-        const contractor = await findOrCreateByName(editFormData.company_name);
-        if (contractor) {
-          await supabase
-            .from('documents')
-            .update({ contractor_id: contractor.id })
-            .eq('invoice_id', editingInvoice.id);
-        }
+      if (editFormData.company_name !== editingInvoice.company_name && contractor) {
+        await supabase
+          .from('documents')
+          .update({ contractor_id: contractor.id })
+          .eq('invoice_id', editingInvoice.id);
       }
 
       // Save allocations

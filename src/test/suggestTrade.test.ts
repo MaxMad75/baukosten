@@ -111,6 +111,14 @@ describe('resolveInvoiceBlockKey (Firmen-Block, User-Feedback 11.07.)', () => {
       .toBe('c:c-neumeyer');
   });
 
+  it('der Firmen-FK der Rechnung schlägt Dokument-Link und Namens-Match', () => {
+    expect(resolveInvoiceBlockKey(
+      trades,
+      { trade_id: null, company_name: 'USH Estriche GmbH', contractor_id: 'c-neumeyer' },
+      'c-ush'
+    )).toBe('c:c-neumeyer');
+  });
+
   it('liefert null, wenn die Firma kein Gewerk im Budget hat', () => {
     expect(resolveInvoiceBlockKey(trades, { trade_id: null, company_name: 'Architekt Schmidmaier' })).toBeNull();
   });

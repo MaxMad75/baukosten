@@ -76,6 +76,7 @@ export interface BackupInvoice {
   ai_extracted: boolean;
   is_gross: boolean;
   trade_id?: string | null;
+  contractor_id?: string | null;
   created_by_profile_id: string | null;
   created_at: string;
   updated_at: string;

@@ -195,6 +195,7 @@ export const ZipUploadDialog: React.FC<ZipUploadDialogProps> = ({ open, onOpenCh
                   description: ai.description || null,
                   kostengruppe_code: ai.kostengruppe_code || null,
                   trade_id: trade?.id || null,
+                  contractor_id: contractor?.id || null,
                   file_path: uploaded.path,
                   file_name: uploaded.name,
                   ai_extracted: true,

@@ -23,8 +23,11 @@ R5-Reste sind bewusstes Backlog.
 Nachtrag 14.07.: Gewerke-Papierkorb hat eine Restore-Karte auf der Budget-Seite (30 Tage, danach
 Bereinigung beim Laden); Zins-Gewerk-Erkennung robust via `isFinancingTrade` (Name ODER Kredit-Modul-
 Notiz — Umbenennen ist unschädlich, solange die Notiz bleibt); Kredit-Karte weist auf das nötige
-„Kredit"-Mitglied hin. Verbleibendes Backlog: invoices.contractor_id als robustere Alternative zum
-Text+Dokument-Link; R4 (KI-Ausbau); R5-Reste (React Query, Dialog-Extraktion, R2.1-Tabs).
+„Kredit"-Mitglied hin. Nachtrag 14.07. abends: **invoices.contractor_id umgesetzt** (Migration 20260714200000 mit
+zweistufigem Backfill, vom Bauherrn ausgeführt) — Rechnungen tragen ihre Firma jetzt als echten FK
+(gesetzt bei Upload/ZIP/Bearbeiten, stärkstes Signal in der Firmen-Block-Kette, im ZIP-Restore
+gemappt), und der Firmen-Merge hängt Rechnungen mit um. Verbleibendes Backlog: R4 (KI-Ausbau);
+R5-Reste (React Query, Dialog-Extraktion, R2.1-Tabs).
 Ergänzend: `docs/OPTIMIERUNGSPLAN.md` (technisches Backlog, Historie), `docs/SECURITY_REVIEW.md` (RLS-Audit).
 **Vor jeder Arbeit zuerst Abschnitt 8 (Arbeitsvereinbarungen) lesen.**
 

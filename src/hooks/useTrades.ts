@@ -72,11 +72,12 @@ export function resolveInvoiceTradeId<
   T extends Pick<Trade, 'id'> & { contractor_id?: string | null; contractor?: Pick<Contractor, 'company_name'> | null }
 >(
   trades: T[],
-  invoice: { trade_id?: string | null; company_name: string },
+  invoice: { trade_id?: string | null; company_name: string; contractor_id?: string | null },
   contractorId?: string | null
 ): string | null {
   if (invoice.trade_id && trades.some((t) => t.id === invoice.trade_id)) return invoice.trade_id;
-  return suggestTradeForCompany(trades, invoice.company_name, contractorId).trade?.id ?? null;
+  // Firmen-FK der Rechnung schlägt den Dokument-Link (seit 14.07.)
+  return suggestTradeForCompany(trades, invoice.company_name, invoice.contractor_id ?? contractorId).trade?.id ?? null;
 }
 
 /**
@@ -111,15 +112,17 @@ export function resolveInvoiceBlockKey<
   T extends Pick<Trade, 'id'> & { contractor_id?: string | null; contractor?: Pick<Contractor, 'company_name'> | null }
 >(
   trades: T[],
-  invoice: { trade_id?: string | null; company_name: string },
+  invoice: { trade_id?: string | null; company_name: string; contractor_id?: string | null },
   contractorId?: string | null
 ): string | null {
   if (invoice.trade_id) {
     const t = trades.find((x) => x.id === invoice.trade_id);
     if (t) return tradeBlockKey(t);
   }
-  if (contractorId && trades.some((t) => t.contractor_id === contractorId)) {
-    return `c:${contractorId}`;
+  // Firmen-FK der Rechnung (seit 14.07.) schlägt den Dokument-Link
+  const effectiveContractorId = invoice.contractor_id ?? contractorId;
+  if (effectiveContractorId && trades.some((t) => t.contractor_id === effectiveContractorId)) {
+    return `c:${effectiveContractorId}`;
   }
   const { candidates } = suggestTradeForCompany(trades, invoice.company_name);
   if (candidates.length > 0) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Contractor } from '@/lib/types';
@@ -35,30 +35,29 @@ export function matchContractorByName(contractors: Contractor[], companyName: st
 export function useContractors() {
   const { household } = useAuth();
   const { toast } = useToast();
-  const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [loading, setLoading] = useState(true);
+  // React Query (R5): gemeinsamer Cache, kein Voll-Refetch je Seitenwechsel
+  const queryClient = useQueryClient();
+  const { data: contractors = [], isPending: loading } = useQuery({
+    queryKey: ['contractors', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contractors')
+        .select('*')
+        .eq('household_id', household!.id)
+        .order('company_name');
+      if (error) {
+        toast({ title: 'Fehler', description: 'Firmen konnten nicht geladen werden', variant: 'destructive' });
+        return [] as Contractor[];
+      }
+      return (data as Contractor[]) || [];
+    },
+  });
 
   const fetchContractors = async () => {
-    if (!household) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('contractors')
-      .select('*')
-      .eq('household_id', household.id)
-      .order('company_name');
-
-    if (error) {
-      toast({ title: 'Fehler', description: 'Firmen konnten nicht geladen werden', variant: 'destructive' });
-    } else {
-      setContractors((data as Contractor[]) || []);
-    }
-    setLoading(false);
+    await queryClient.invalidateQueries({ queryKey: ['contractors'] });
   };
-
-  useEffect(() => {
-    fetchContractors();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
 
   const createContractor = async (data: {
     company_name: string;

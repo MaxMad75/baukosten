@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Contractor, TaxStatus, Trade, TradeEstimate, TradeWithEstimates } from '@/lib/types';
@@ -141,31 +141,28 @@ export function resolveInvoiceBlockKey<
 export function useTrades() {
   const { household } = useAuth();
   const { toast } = useToast();
-  const [trades, setTrades] = useState<TradeWithEstimates[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [available, setAvailable] = useState(true);
+  // React Query (R5): gemeinsamer Cache, kein Voll-Refetch je Seitenwechsel
+  const queryClient = useQueryClient();
+  const { data: tradesResult, isPending: loading } = useQuery({
+    queryKey: ['trades', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async (): Promise<{ trades: TradeWithEstimates[]; available: boolean }> => {
+      const { data, error } = await supabase
+        .from('trades')
+        .select('*, trade_estimates(*), contractor:contractors(*)')
+        .eq('household_id', household!.id)
+        .is('deleted_at', null)
+        .order('section')
+        .order('sort_order')
+        .order('name');
 
-  const fetchTrades = async () => {
-    if (!household) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('trades')
-      .select('*, trade_estimates(*), contractor:contractors(*)')
-      .eq('household_id', household.id)
-      .is('deleted_at', null)
-      .order('section')
-      .order('sort_order')
-      .order('name');
-
-    if (error) {
-      // 42P01 = Tabelle existiert (noch) nicht → Feature ausblenden statt Fehler
-      if (error.code === '42P01') {
-        setAvailable(false);
-      } else {
+      if (error) {
+        // 42P01 = Tabelle existiert (noch) nicht → Feature ausblenden statt Fehler
+        if (error.code === '42P01') return { trades: [], available: false };
         toast({ title: 'Fehler', description: 'Gewerke konnten nicht geladen werden', variant: 'destructive' });
+        return { trades: [], available: true };
       }
-    } else {
-      setAvailable(true);
       const withEstimates = (data || []).map((row) => {
         const { trade_estimates, ...trade } = row as Trade & {
           trade_estimates: TradeEstimate[];
@@ -180,15 +177,15 @@ export function useTrades() {
           current_estimate: estimates.find((e) => e.is_current) || null,
         } as TradeWithEstimates;
       });
-      setTrades(withEstimates);
-    }
-    setLoading(false);
-  };
+      return { trades: withEstimates, available: true };
+    },
+  });
+  const trades = tradesResult?.trades ?? [];
+  const available = tradesResult?.available ?? true;
 
-  useEffect(() => {
-    fetchTrades();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
+  const fetchTrades = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['trades'] });
+  };
 
   const createTrade = async (data: {
     name: string;

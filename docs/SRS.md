@@ -404,7 +404,14 @@ Eval als Karte „KI-Erkennungsqualität" unter Einstellungen [computeAiQuality,
 Quote je Feld aus ai_raw_result vs. finalen Rechnungswerten]. **Erneuter Redeploy von
 analyze-document via Lovable-Prompt nötig.**)
 
-**R5 — Technik-Rest:** React Query (alt 4.2), Dialog-Extraktion (alt 3.1-Rest), ~~Node-24-Bump der CI~~ (✅ mit R2.2)
+**R5 — Technik-Rest:** ~~React Query~~ (✅ 15.07.2026: alle 7 Daten-Hooks [invoices, documents,
+contractors, trades, loans, payments, deductions] auf useQuery mit gemeinsamem Cache umgestellt,
+staleTime 60 s, Signaturen unverändert — `fetchX()` invalidiert; Seitenwechsel lösen keinen
+Voll-Refetch mehr aus, Komponenten teilen sich einen Fetch → NFR Performance erfüllt),
+~~Node-24-Bump der CI~~ (✅ mit R2.2). Bewusst offen gelassen (reine Hygiene, bei Bedarf):
+Dialog-Extraktion (alt 3.1-Rest), R2.1-Einstellungen-Tabs.
+
+**→ Release-Plan R1–R5 abgeschlossen (15.07.2026).**
 
 **Zuordnungs-Flow neu gedacht (11.07.2026, nach User-Feedback „Rechnungen kommen nicht ins
 Budget"):** Budget und Dashboard ordnen Rechnungen jetzt **implizit** zu — `resolveInvoiceTradeId`

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { InvoicePayment } from '@/lib/types';
@@ -22,27 +23,25 @@ export function aggregatePaymentsByProfile(
 export function useInvoicePayments() {
   const { household } = useAuth();
   const { toast } = useToast();
-  const [allPayments, setAllPayments] = useState<InvoicePayment[]>([]);
-  const [loading, setLoading] = useState(true);
+  // React Query (R5): gemeinsamer Cache, kein Voll-Refetch je Seitenwechsel
+  const queryClient = useQueryClient();
+  const { data: allPayments = [], isPending: loading } = useQuery({
+    queryKey: ['invoice_payments', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('invoice_payments')
+        .select('*')
+        .is('deleted_at', null);
+      if (error) return [] as InvoicePayment[];
+      return (data as InvoicePayment[]) || [];
+    },
+  });
 
   const fetchAllPayments = useCallback(async () => {
-    if (!household) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('invoice_payments')
-      .select('*')
-      .is('deleted_at', null);
-
-    if (!error && data) {
-      setAllPayments(data as InvoicePayment[]);
-    }
-    setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
-
-  useEffect(() => {
-    fetchAllPayments();
-  }, [fetchAllPayments]);
+    await queryClient.invalidateQueries({ queryKey: ['invoice_payments'] });
+  }, [queryClient]);
 
   const getPaymentsForInvoice = useCallback(
     (invoiceId: string) => allPayments.filter((p) => p.invoice_id === invoiceId),

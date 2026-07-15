@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Invoice } from '@/lib/types';
@@ -7,30 +7,29 @@ import { useToast } from '@/hooks/use-toast';
 export function useInvoices() {
   const { household, profile } = useAuth();
   const { toast } = useToast();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
+  // React Query (R5): gemeinsamer Cache, kein Voll-Refetch je Seitenwechsel
+  const queryClient = useQueryClient();
+  const { data: invoices = [], isPending: loading } = useQuery({
+    queryKey: ['invoices', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('household_id', household!.id)
+        .is('deleted_at', null)
+        .order('invoice_date', { ascending: false });
+      if (error) {
+        toast({ title: 'Fehler', description: 'Rechnungen konnten nicht geladen werden', variant: 'destructive' });
+        return [] as Invoice[];
+      }
+      return (data as Invoice[]) || [];
+    },
+  });
 
   const fetchInvoices = async () => {
-    if (!household) return;
-
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('household_id', household.id)
-      .is('deleted_at', null)
-      .order('invoice_date', { ascending: false });
-
-    if (error) {
-      toast({
-        title: 'Fehler',
-        description: 'Rechnungen konnten nicht geladen werden',
-        variant: 'destructive',
-      });
-    } else {
-      setInvoices((data as Invoice[]) || []);
-    }
-    setLoading(false);
+    await queryClient.invalidateQueries({ queryKey: ['invoices'] });
   };
 
   /** Rechnungen im Papierkorb (deleted_at gesetzt) */
@@ -65,11 +64,6 @@ export function useInvoices() {
     }
     return true;
   };
-
-  useEffect(() => {
-    fetchInvoices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
 
   const createInvoice = async (invoiceData: Omit<Partial<Invoice>, 'household_id' | 'created_by_profile_id'> & { amount: number; invoice_date: string; company_name: string }) => {
     if (!household || !profile) return null;

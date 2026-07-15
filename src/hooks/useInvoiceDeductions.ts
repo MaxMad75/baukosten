@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { InvoiceDeduction } from '@/lib/types';
@@ -11,26 +12,24 @@ export function getPayableAmount(invoiceAmount: number, deductions: Pick<Invoice
 
 export function useInvoiceDeductions() {
   const { household } = useAuth();
-  const [allDeductions, setAllDeductions] = useState<InvoiceDeduction[]>([]);
-  const [loading, setLoading] = useState(true);
+  // React Query (R5): gemeinsamer Cache, kein Voll-Refetch je Seitenwechsel
+  const queryClient = useQueryClient();
+  const { data: allDeductions = [], isPending: loading } = useQuery({
+    queryKey: ['invoice_deductions', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('invoice_deductions')
+        .select('*');
+      if (error) return [] as InvoiceDeduction[];
+      return (data as InvoiceDeduction[]) || [];
+    },
+  });
 
   const fetchAllDeductions = useCallback(async () => {
-    if (!household) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('invoice_deductions')
-      .select('*');
-
-    if (!error && data) {
-      setAllDeductions(data as InvoiceDeduction[]);
-    }
-    setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
-
-  useEffect(() => {
-    fetchAllDeductions();
-  }, [fetchAllDeductions]);
+    await queryClient.invalidateQueries({ queryKey: ['invoice_deductions'] });
+  }, [queryClient]);
 
   const getDeductionsForInvoice = useCallback(
     (invoiceId: string) => allDeductions.filter((d) => d.invoice_id === invoiceId),

@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loan, LoanPayment, LoanShare, LoanWithDetails } from '@/lib/types';
@@ -12,48 +13,44 @@ import { useToast } from '@/hooks/use-toast';
 export function useLoans() {
   const { household } = useAuth();
   const { toast } = useToast();
-  const [loans, setLoans] = useState<LoanWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [available, setAvailable] = useState(true);
+  // React Query (R5): gemeinsamer Cache, kein Voll-Refetch je Seitenwechsel
+  const queryClient = useQueryClient();
+  const { data: loansResult, isPending: loading } = useQuery({
+    queryKey: ['loans', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async (): Promise<{ loans: LoanWithDetails[]; available: boolean }> => {
+      const { data, error } = await supabase
+        .from('loans')
+        .select('*, loan_shares(*), loan_payments(*)')
+        .eq('household_id', household!.id)
+        .order('created_at');
+
+      if (error) {
+        if (error.code === '42P01') return { loans: [], available: false };
+        toast({ title: 'Fehler', description: 'Darlehen konnten nicht geladen werden', variant: 'destructive' });
+        return { loans: [], available: true };
+      }
+      const loans = (data || []).map((row) => {
+        const { loan_shares, loan_payments, ...loan } = row as Loan & {
+          loan_shares: LoanShare[];
+          loan_payments: LoanPayment[];
+        };
+        return {
+          ...loan,
+          shares: loan_shares || [],
+          payments: [...(loan_payments || [])].sort((a, b) => b.payment_date.localeCompare(a.payment_date)),
+        };
+      });
+      return { loans, available: true };
+    },
+  });
+  const loans = loansResult?.loans ?? [];
+  const available = loansResult?.available ?? true;
 
   const fetchLoans = async () => {
-    if (!household) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('loans')
-      .select('*, loan_shares(*), loan_payments(*)')
-      .eq('household_id', household.id)
-      .order('created_at');
-
-    if (error) {
-      if (error.code === '42P01') {
-        setAvailable(false);
-      } else {
-        toast({ title: 'Fehler', description: 'Darlehen konnten nicht geladen werden', variant: 'destructive' });
-      }
-    } else {
-      setAvailable(true);
-      setLoans(
-        (data || []).map((row) => {
-          const { loan_shares, loan_payments, ...loan } = row as Loan & {
-            loan_shares: LoanShare[];
-            loan_payments: LoanPayment[];
-          };
-          return {
-            ...loan,
-            shares: loan_shares || [],
-            payments: [...(loan_payments || [])].sort((a, b) => b.payment_date.localeCompare(a.payment_date)),
-          };
-        })
-      );
-    }
-    setLoading(false);
+    await queryClient.invalidateQueries({ queryKey: ['loans'] });
   };
-
-  useEffect(() => {
-    fetchLoans();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
 
   const createLoan = async (data: Partial<Loan> & { name: string }) => {
     if (!household) return null;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -29,30 +29,30 @@ export interface Document {
 export function useDocuments() {
   const { household, profile } = useAuth();
   const { toast } = useToast();
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(true);
+  // React Query (R5): gemeinsamer Cache über alle Seiten/Komponenten —
+  // Seitenwechsel lösen keinen Voll-Refetch mehr aus (SRS 5, NFR Performance).
+  const queryClient = useQueryClient();
+  const { data: documents = [], isPending: loading } = useQuery({
+    queryKey: ['documents', household?.id],
+    enabled: !!household,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('household_id', household!.id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        toast({ title: 'Fehler', description: 'Dokumente konnten nicht geladen werden', variant: 'destructive' });
+        return [] as Document[];
+      }
+      return (data as Document[]) || [];
+    },
+  });
 
   const fetchDocuments = async () => {
-    if (!household) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('household_id', household.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast({ title: 'Fehler', description: 'Dokumente konnten nicht geladen werden', variant: 'destructive' });
-    } else {
-      setDocuments((data as Document[]) || []);
-    }
-    setLoading(false);
+    await queryClient.invalidateQueries({ queryKey: ['documents'] });
   };
-
-  useEffect(() => {
-    fetchDocuments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household?.id]);
 
   const uploadDocument = async (file: File) => {
     if (!household) return null;

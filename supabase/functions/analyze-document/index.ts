@@ -107,6 +107,54 @@ serve(async (req) => {
 
     const { textContent, imageBase64, fileName } = await req.json();
 
+    // R4.2 Lernschleife light (SRS 4.3): Haushalts-Kontext in den Prompt —
+    // (a) bekannte Firmen (exakte Schreibweisen → stabile Firma→Gewerk-Kette),
+    // (b) Hinweise aus früheren Korrekturen (KI-Betrag vs. finaler Betrag).
+    // Läuft über den Auth-Client → RLS liefert nur Daten des Haushalts.
+    let householdHints = "";
+    try {
+      const { data: contractors } = await supabase
+        .from("contractors")
+        .select("company_name")
+        .order("company_name")
+        .limit(60);
+      if (contractors && contractors.length > 0) {
+        householdHints += `\n\nBEKANNTE FIRMEN DES BAUPROJEKTS — wenn der Aussteller eine davon ist, verwende EXAKT diese Schreibweise als company_name:\n` +
+          contractors.map((c: { company_name: string }) => `- ${c.company_name}`).join("\n");
+      }
+
+      const { data: analyzedDocs } = await supabase
+        .from("documents")
+        .select("ai_raw_result, invoice_id")
+        .not("ai_raw_result", "is", null)
+        .not("invoice_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(40);
+      const invoiceIds = (analyzedDocs || []).map((d: { invoice_id: string }) => d.invoice_id);
+      if (invoiceIds.length > 0) {
+        const { data: linkedInvoices } = await supabase
+          .from("invoices")
+          .select("id, company_name, amount")
+          .in("id", invoiceIds);
+        const invoiceById = new Map((linkedInvoices || []).map((i: { id: string }) => [i.id, i]));
+        const corrections: string[] = [];
+        for (const doc of analyzedDocs || []) {
+          const raw = doc.ai_raw_result as { amount?: number | null } | null;
+          const inv = invoiceById.get(doc.invoice_id) as { company_name: string; amount: number } | undefined;
+          if (!raw || !inv || raw.amount == null) continue;
+          if (Math.abs(Number(raw.amount) - Number(inv.amount)) > 0.01) {
+            corrections.push(`- Bei "${inv.company_name}" wurde der Betrag schon einmal falsch erkannt (${raw.amount} statt korrekt ${inv.amount}). Prüfe den Brutto-Endbetrag dort besonders sorgfältig.`);
+          }
+          if (corrections.length >= 5) break;
+        }
+        if (corrections.length > 0) {
+          householdHints += `\n\nHINWEISE AUS FRÜHEREN KORREKTUREN DES NUTZERS:\n` + corrections.join("\n");
+        }
+      }
+    } catch (e) {
+      console.error("household hints failed (non-fatal)", e);
+    }
+
     if (!textContent && !imageBase64) {
       return new Response(
         JSON.stringify({ error: "textContent or imageBase64 is required" }),
@@ -174,66 +222,85 @@ serve(async (req) => {
       },
     };
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
-        tools: [extractTool],
-        tool_choice: { type: "function", function: { name: "extract_document_data" } },
-      }),
-    });
+    /** Ein Gateway-Aufruf mit wählbarem Modell; gibt geparste Daten oder null. */
+    const runExtraction = async (model: string): Promise<Record<string, unknown> | null> => {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt + householdHints },
+            { role: "user", content: userContent },
+          ],
+          tools: [extractTool],
+          tool_choice: { type: "function", function: { name: "extract_document_data" } },
+        }),
+      });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Bitte versuchen Sie es später." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!response.ok) {
+        if (response.status === 429) throw { status: 429, message: "Rate limit exceeded. Bitte versuchen Sie es später." };
+        if (response.status === 402) throw { status: 402, message: "AI credits erschöpft." };
+        console.error("AI gateway error:", model, response.status, await response.text());
+        return null;
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits erschöpft." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
-    const data = await response.json();
-    const message = data.choices?.[0]?.message;
+      const data = await response.json();
+      const message = data.choices?.[0]?.message;
 
-    // Preferred path: structured tool call. Fallback: JSON in plain content.
-    let extractedData: unknown = null;
-    const toolArgs = message?.tool_calls?.[0]?.function?.arguments;
-    if (toolArgs) {
-      try {
-        extractedData = JSON.parse(toolArgs);
-      } catch (e) {
-        console.error("Could not parse tool call arguments", toolArgs, e);
-      }
-    }
-    if (!extractedData && message?.content) {
-      const jsonMatch = message.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
+      // Preferred path: structured tool call. Fallback: JSON in plain content.
+      const toolArgs = message?.tool_calls?.[0]?.function?.arguments;
+      if (toolArgs) {
         try {
-          extractedData = JSON.parse(jsonMatch[0]);
+          return JSON.parse(toolArgs);
         } catch (e) {
-          console.error("Could not parse AI response content", message.content, e);
+          console.error("Could not parse tool call arguments", toolArgs, e);
         }
       }
+      if (message?.content) {
+        const jsonMatch = message.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            return JSON.parse(jsonMatch[0]);
+          } catch (e) {
+            console.error("Could not parse AI response content", message.content, e);
+          }
+        }
+      }
+      console.error("No usable AI response", model, JSON.stringify(message));
+      return null;
+    };
+
+    // R4.2 Modell-Eskalation (SRS 4.3): Rechnung mit unsicheren/fehlenden
+    // Kernfeldern → zweiter Versuch mit dem stärkeren Modell.
+    const coreUncertain = (d: Record<string, unknown> | null): boolean => {
+      if (!d || d.document_type !== "Rechnung") return false;
+      const conf = (d.confidence || {}) as Record<string, string | undefined>;
+      return (["company_name", "amount", "invoice_date"] as const).some(
+        (f) => d[f] == null || conf[f] === "medium" || conf[f] === "low"
+      );
+    };
+
+    let extractedData: Record<string, unknown> | null;
+    try {
+      extractedData = await runExtraction("google/gemini-3-flash-preview");
+      if (coreUncertain(extractedData)) {
+        const escalated = await runExtraction("google/gemini-3-pro-preview");
+        if (escalated) extractedData = { ...escalated, escalated: true };
+      }
+    } catch (gatewayError) {
+      const { status, message } = gatewayError as { status?: number; message?: string };
+      if (status === 429 || status === 402) {
+        return new Response(JSON.stringify({ error: message }),
+          { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      throw gatewayError;
     }
 
     if (!extractedData) {
-      console.error("No usable AI response", JSON.stringify(message));
       return new Response(
         JSON.stringify({ error: "Analyse fehlgeschlagen. Bitte später erneut versuchen." }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }

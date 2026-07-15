@@ -395,8 +395,14 @@ CSV-Import des Tilgungsplans + wiederkehrende Raten-Vorlage bewusst offen (bei B
 Konfidenz je Rechnungsfeld [high/medium/low]; automatisch angelegte Rechnungen mit unsicheren
 Kernfeldern starten als `review_needed` statt still als Entwurf — Upload-Auto-Pfad + ZIP;
 „Geprüft"-Schnellaktion in der Rechnungsliste; Dashboard-Hinweis existierte schon. Abwärtskompatibel:
-ohne Konfidenz-Daten [Function noch nicht redeployt] Verhalten wie bisher. **Redeploy der Edge
-Function analyze-document via Lovable-Prompt nötig!**) → Few-Shot-Hinweise → Modell-Eskalation → Eval
+ohne Konfidenz-Daten [Function noch nicht redeployt] Verhalten wie bisher. Redeploy erfolgt 15.07.) →
+~~Few-Shot-Hinweise~~ / ~~Modell-Eskalation~~ / ~~Eval~~ (✅ R4.2 15.07.2026 — **R4 damit komplett**:
+analyze-document lädt Haushalts-Kontext in den Prompt [bekannte Firmen mit exakter Schreibweise +
+bis zu 5 Hinweise aus früheren Betrags-Korrekturen, via Auth-Client/RLS]; bei unsicheren/fehlenden
+Kernfeldern automatische Eskalation von Gemini Flash auf Gemini Pro [`escalated: true` im Ergebnis];
+Eval als Karte „KI-Erkennungsqualität" unter Einstellungen [computeAiQuality, unit-getestet:
+Quote je Feld aus ai_raw_result vs. finalen Rechnungswerten]. **Erneuter Redeploy von
+analyze-document via Lovable-Prompt nötig.**)
 
 **R5 — Technik-Rest:** React Query (alt 4.2), Dialog-Extraktion (alt 3.1-Rest), ~~Node-24-Bump der CI~~ (✅ mit R2.2)
 

@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Users, Mail, Trash2, UserPlus, Home, Loader2 } from 'lucide-react';
 import { AddMemberForm } from '@/components/AddMemberForm';
 import { LoansCard } from '@/components/settings/LoansCard';
+import { AiQualityCard } from '@/components/settings/AiQualityCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface HouseholdInvitation {
@@ -229,6 +230,9 @@ export default function Settings() {
 
         {/* Kredit-Modul (R3, SRS 4.4) */}
         <LoansCard />
+
+        {/* KI-Erkennungsqualität (R4.2, SRS 4.3) */}
+        <AiQualityCard />
 
         {/* Add Manual Member */}
         <AddMemberForm onMemberAdded={refreshProfile} />

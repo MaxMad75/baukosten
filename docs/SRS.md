@@ -308,7 +308,7 @@ loan_payments: id, loan_id, payment_date, total_amount,
 | Sicherheit | RLS pro Haushalt auf allen Tabellen/Buckets; IBAN spaltengeschützt | ✅ auditiert |
 | Datensicherheit | Papierkorb 30 Tage; wöchentl. Auto-Backup (8 Stände) + manuelles ZIP | ✅ |
 | Konsistenz | Zahlungs-/Statuslogik ausschließlich in DB (Trigger); Summen per Konstruktion korrekt | ✅ / Gewerke ⬜ |
-| Performance | Initial-Bundle < 500 kB; Seitenwechsel ohne Voll-Refetch (→ 4.2 React Query offen) | 🔶 |
+| Performance | Initial-Bundle < 500 kB; Seitenwechsel ohne Voll-Refetch (React Query, 15.07.2026) | ✅ |
 | Qualität | CI (Lint/Typecheck/Tests/Build) auf jedem Push; reine Logik unit-getestet | ✅ |
 | Mobile | Kernflüsse (Foto-Upload, Rechnungsliste, Budget lesen) am Handy nutzbar | ⬜ |
 

@@ -197,6 +197,24 @@ invoices.trade_id (nullable FK)  ← ersetzt kostengruppe_code/invoice_allocatio
 - Mehrfach-Zuordnung (eine Rechnung, mehrere Gewerke) bleibt als Ausnahme möglich
   (invoice_allocations bekommt trade_id statt kostengruppe_code) — Standard ist 1 Rechnung : 1 Gewerk.
 
+#### Leitkennzahl „Offen aus Aufträgen" (User-Feedback 15.07.2026)
+
+Die Budget-Tabelle beantwortet primär: **wie hoch war der Auftrag, wieviel ist bezahlt, was kommt
+noch?** Deshalb:
+- Spalten: Schätzung · Vorversion · **Beauftragt · Bezahlt · Offen (= Beauftragt − Bezahlt)** ·
+  Skonto · Status. Die alte Spalte „Δ Prognose" (gegen die Schätzung) ist entfallen, ebenso
+  „Abgerechnet" (redundant — wird bei den Rechnungen getrackt).
+- Arithmetik geht in jeder Zeile UND jeder Summe auf: Beauftragt − Bezahlt = Offen. Negatives Offen
+  (rot) = mehr bezahlt als beauftragt. Zwischensummen je Abschnitt, Zeile „Ohne Budget-Zuordnung"
+  (Bezahltes ohne Budgetposten) und Gesamtzeile; Kennzahlen-Karten zeigen dieselben Summen.
+- Beträge sind an jeder Spalte und in der Kartenüberschrift als **brutto/netto** ausgewiesen
+  (Umschalter oben rechts).
+- **Auftragswert pflegen:** bleibt am GEWERK gespeichert (einzige Quelle, kein zweiter Ort an der
+  Firma — sonst widersprüchliche Summen wie beim alten contractors.trade-Feld). Eingabe firmenzentriert
+  über Klick auf die Beauftragt-Zelle → `AwardedEditDialog` listet alle Gewerke der Firma mit
+  Auftragssumme, Vermerk, brutto/netto-Schalter und Gesamtsumme. Der Gewerk-Dialog kann es weiterhin
+  einzeln.
+
 #### WICHTIG — Firmen-Block-Modell (User-Feedback 11.07.2026, ersetzt die reine Gewerk-Zuordnung)
 
 Die Leitfrage des Bauherrn ist **„welcher FIRMA habe ich wieviel bezahlt"**; die Gewerke sind nur

@@ -111,7 +111,10 @@ export const Dashboard: React.FC = () => {
     return {
       billed,
       paid,
-      open: Math.max(billed - paid, 0),
+      /** Rechnungen abgerechnet, aber noch nicht bezahlt */
+      openInvoices: Math.max(billed - paid, 0),
+      /** Offen aus den Aufträgen: Beauftragt − Bezahlt (wie Budget-Seite) */
+      openFromContracts: awarded - paid,
       budget,
       awarded,
       awardedCount,
@@ -140,7 +143,9 @@ export const Dashboard: React.FC = () => {
       <div className="space-y-8">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Übersicht Ihrer Baukosten — alle Werte brutto</p>
+          <p className="text-muted-foreground mt-1">
+            Übersicht Ihrer Baukosten — alle Beträge <span className="font-medium">brutto (inkl. 19 % MwSt)</span>
+          </p>
         </div>
 
         {/* Hinweise: zu prüfende / nicht zugeordnete Rechnungen */}
@@ -197,15 +202,17 @@ export const Dashboard: React.FC = () => {
           <Card className="relative overflow-hidden">
             <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[4rem]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Abgerechnet</CardTitle>
+              <CardTitle className="text-sm font-medium">Offen aus Aufträgen</CardTitle>
               <div className="p-2 rounded-lg bg-primary/10">
                 <Receipt className="h-4 w-4 text-primary" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(metrics.billed)}</div>
+              <div className={`text-2xl font-bold ${metrics.openFromContracts < -0.005 ? 'text-destructive' : ''}`}>
+                {formatCurrency(metrics.openFromContracts)}
+              </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Σ Zahlbeträge aus {invoices.length} Rechnungen
+                {metrics.openFromContracts < -0.005 ? 'mehr bezahlt als beauftragt' : 'Beauftragt − Bezahlt'}
               </p>
             </CardContent>
           </Card>
@@ -221,7 +228,7 @@ export const Dashboard: React.FC = () => {
             <CardContent>
               <div className="text-2xl font-bold text-emerald-600">{formatCurrency(metrics.paid)}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                noch offen: {formatCurrency(metrics.open)}
+                Rechnungen noch nicht bezahlt: {formatCurrency(metrics.openInvoices)}
               </p>
             </CardContent>
           </Card>

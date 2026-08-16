@@ -71,8 +71,20 @@ interface FirmBlock {
   skontoExpected: number | null;
   /** Offen aus dem Auftrag: Beauftragt − Bezahlt (negativ = mehr bezahlt als beauftragt) */
   open: number;
-  invoices: Invoice[];
+  /** Rechnungen des Blocks mit den Werten, die in die Summen eingehen (Nachvollziehbarkeit) */
+  invoiceRows: InvoiceRow[];
   status: TradeStatus;
+}
+
+/** Eine Rechnung mit exakt den Beträgen, die in die Block-Summen einfließen */
+interface InvoiceRow {
+  invoice: Invoice;
+  /** Zahlbetrag (Betrag − Abzüge), in Ansichtseinheit */
+  payable: number;
+  /** Σ erfasste Zahlungen, in Ansichtseinheit */
+  paid: number;
+  /** Status sagt „bezahlt", aber es sind keine Zahlungen erfasst → Summen weichen ab */
+  paidWithoutPayments: boolean;
 }
 
 interface SectionGroup {
@@ -100,6 +112,26 @@ const Budget: React.FC = () => {
   const { formatAmount } = usePrivacy();
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<'gross' | 'net'>('gross');
+  // Abschnitts-Filter (User-Feedback 16.08.): z. B. nur Bauwerk/Technik/Nebenkosten,
+  // um den echten Finanzierungsbedarf ohne Grundstück & Co. zu sehen. In
+  // localStorage gemerkt, damit die Auswahl den Seitenwechsel überlebt.
+  const [hiddenSections, setHiddenSections] = useState<Set<TradeSection>>(() => {
+    try {
+      const raw = localStorage.getItem('budget.hiddenSections');
+      return raw ? new Set(JSON.parse(raw) as TradeSection[]) : new Set<TradeSection>();
+    } catch {
+      return new Set<TradeSection>();
+    }
+  });
+
+  const toggleSection = (section: TradeSection) => {
+    setHiddenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section); else next.add(section);
+      try { localStorage.setItem('budget.hiddenSections', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
   // Vergleichsbasis: gegen welche Schätzversion Ampeln/Δ/Prognose rechnen
   const [baseVersion, setBaseVersion] = useState<string | null>(null);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
@@ -210,9 +242,13 @@ const Budget: React.FC = () => {
       counts.set(t.section, (counts.get(t.section) || 0) + 1);
       sectionsOfBlock.set(key, counts);
     }
+    // Hat eine Firma Gewerke in mehreren Abschnitten, zählen ihre Rechnungen
+    // genau einmal — bevorzugt in einem SICHTBAREN Abschnitt, damit der Filter
+    // keine Ist-Werte verschluckt.
     const primarySectionOf = (key: string): TradeSection => {
-      const counts = sectionsOfBlock.get(key)!;
-      return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+      const counts = Array.from(sectionsOfBlock.get(key)!.entries());
+      const rank = (s: TradeSection) => (hiddenSections.has(s) ? 1 : 0);
+      return counts.sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0] - b[0])[0][0];
     };
 
     const blockTrades = new Map<string, TradeWithEstimates[]>(); // "section:key" → trades
@@ -240,13 +276,25 @@ const Budget: React.FC = () => {
       let billed = 0;
       let paid = 0;
       let skontoRealized = 0;
+      const invoiceRows: InvoiceRow[] = [];
       for (const inv of blockInvoices) {
         const deductions = getDeductionsForInvoice(inv.id);
-        billed += conv(getPayableAmount(Number(inv.amount), deductions), invTaxStatus(inv));
-        paid += conv(getTotalPaid(inv.id), invTaxStatus(inv));
+        const invPayable = conv(getPayableAmount(Number(inv.amount), deductions), invTaxStatus(inv));
+        const rawPaid = getTotalPaid(inv.id);
+        const invPaid = conv(rawPaid, invTaxStatus(inv));
+        billed += invPayable;
+        paid += invPaid;
         skontoRealized += deductions
           .filter((d) => d.deduction_type === 'skonto')
           .reduce((s, d) => s + conv(Number(d.amount), invTaxStatus(inv)), 0);
+        invoiceRows.push({
+          invoice: inv,
+          payable: invPayable,
+          paid: invPaid,
+          // Alt-/Sonderfall: Rechnung gilt als bezahlt, hat aber keine Zahlungszeile —
+          // dann fehlt sie in "Bezahlt", obwohl die Rechnungsliste sie als bezahlt zeigt.
+          paidWithoutPayments: (inv.status === 'paid' || inv.is_paid) && rawPaid <= 0.005,
+        });
       }
 
       // Kredit-Zinsen landen als gezahlte Kosten im Gewerk "Finanzierung"
@@ -279,7 +327,7 @@ const Budget: React.FC = () => {
         skontoRealized,
         skontoExpected: skontoExpectedSum > 0 ? skontoExpectedSum : null,
         open: awardedEffective - paid,
-        invoices: blockInvoices,
+        invoiceRows,
         status,
       };
       const blocks = bySection.get(section) || [];
@@ -306,16 +354,29 @@ const Budget: React.FC = () => {
         };
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trades, invoices, blockKeyByInvoice, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest]);
+  }, [trades, invoices, blockKeyByInvoice, getDeductionsForInvoice, getTotalPaid, viewMode, effectiveBase, totalInterest, hiddenSections]);
 
+  /** Alle vorkommenden Abschnitte (für die Filter-Chips) */
+  const allSections = useMemo(
+    () => Array.from(new Set(trades.map((t) => t.section))).sort((a, b) => a - b),
+    [trades]
+  );
+  const visibleSections = useMemo(
+    () => sections.filter((g) => !hiddenSections.has(g.section)),
+    [sections, hiddenSections]
+  );
+  const isFiltered = hiddenSections.size > 0 && allSections.some((s) => hiddenSections.has(s));
+
+  // Summen immer über die SICHTBAREN Abschnitte — der Filter beantwortet
+  // „wieviel Geld brauche ich für Bauwerk/Technik/Nebenkosten noch?"
   const grandTotals = useMemo(() => ({
-    estimate: sections.reduce((s, g) => s + g.totals.estimate, 0),
-    awardedEffective: sections.reduce((s, g) => s + g.totals.awardedEffective, 0),
-    billed: sections.reduce((s, g) => s + g.totals.billed, 0),
-    paid: sections.reduce((s, g) => s + g.totals.paid, 0),
-    skontoRealized: sections.reduce((s, g) => s + g.totals.skontoRealized, 0),
-    open: sections.reduce((s, g) => s + g.totals.open, 0),
-  }), [sections]);
+    estimate: visibleSections.reduce((s, g) => s + g.totals.estimate, 0),
+    awardedEffective: visibleSections.reduce((s, g) => s + g.totals.awardedEffective, 0),
+    billed: visibleSections.reduce((s, g) => s + g.totals.billed, 0),
+    paid: visibleSections.reduce((s, g) => s + g.totals.paid, 0),
+    skontoRealized: visibleSections.reduce((s, g) => s + g.totals.skontoRealized, 0),
+    open: visibleSections.reduce((s, g) => s + g.totals.open, 0),
+  }), [visibleSections]);
 
   // Ohne Budget-Zuordnung = Firma der Rechnung hat (noch) kein Gewerk im Budget
   const unassigned = useMemo(
@@ -340,9 +401,12 @@ const Budget: React.FC = () => {
 
   // Gesamtzeile = Budget-Blöcke + Rechnungen ohne Budget-Zuordnung, damit
   // Karten und Tabellen-Summe dieselbe Zahl zeigen (kein Geld verschwindet).
-  const paidTotal = grandTotals.paid + unassignedTotals.paid;
+  // Bei aktivem Abschnitts-Filter bleibt Unzugeordnetes außen vor (es gehört
+  // zu keinem Abschnitt) — der Hinweis unter den Karten weist es aus.
+  const unassignedInTotals = isFiltered ? 0 : unassignedTotals.paid;
+  const paidTotal = grandTotals.paid + unassignedInTotals;
   /** Offen aus allen Aufträgen: Beauftragt − Bezahlt (unzugeordnet Bezahltes zählt gegen) */
-  const openTotal = grandTotals.open - unassignedTotals.paid;
+  const openTotal = grandTotals.open - unassignedInTotals;
 
   const unassignedGroups = useMemo(() => {
     const map = new Map<string, Invoice[]>();
@@ -528,6 +592,36 @@ const Budget: React.FC = () => {
           </div>
         </div>
 
+        {/* Abschnitts-Filter: „nur Bauwerk/Technik/Nebenkosten" beantwortet
+            die Frage nach dem verbleibenden Finanzierungsbedarf */}
+        {available && allSections.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Abschnitte:</span>
+            {allSections.map((s) => {
+              const active = !hiddenSections.has(s);
+              return (
+                <Button
+                  key={s}
+                  size="sm"
+                  variant={active ? 'secondary' : 'outline'}
+                  className={active ? '' : 'text-muted-foreground line-through'}
+                  onClick={() => toggleSection(s)}
+                >
+                  {s} · {TRADE_SECTION_LABELS[s]}
+                </Button>
+              );
+            })}
+            {isFiltered && (
+              <Button size="sm" variant="ghost" onClick={() => {
+                setHiddenSections(new Set());
+                try { localStorage.removeItem('budget.hiddenSections'); } catch { /* ignore */ }
+              }}>
+                Alle zeigen
+              </Button>
+            )}
+          </div>
+        )}
+
         {!available && (
           <Card>
             <CardContent className="py-6 text-sm text-muted-foreground">
@@ -562,7 +656,7 @@ const Budget: React.FC = () => {
                   )}
                 </CardContent>
               </Card>
-              <Card>
+              <Card className={isFiltered ? 'border-primary/40' : ''}>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Offen aus Aufträgen</CardTitle></CardHeader>
                 <CardContent>
                   <div className={`text-2xl font-bold ${openTotal < -0.005 ? 'text-destructive' : ''}`}>{formatAmount(openTotal)}</div>
@@ -572,6 +666,16 @@ const Budget: React.FC = () => {
                 </CardContent>
               </Card>
             </div>
+
+            {isFiltered && (
+              <p className="text-xs text-muted-foreground">
+                Gefiltert: nur {visibleSections.map((g) => g.section).join(', ')} —
+                {' '}die Kennzahlen und Summen zeigen ausschließlich diese Abschnitte
+                {unassignedTotals.paid > 0
+                  ? `; ${formatAmount(unassignedTotals.paid)} bezahlt ohne Budget-Zuordnung sind nicht enthalten.`
+                  : '.'}
+              </p>
+            )}
 
             {unassigned.length > 0 && (
               <Card>
@@ -640,7 +744,7 @@ const Budget: React.FC = () => {
                   <>
                   {/* Mobile (R2.3): kompakte Karten je Firmen-Block */}
                   <div className="space-y-5 md:hidden">
-                    {sections.map((group) => (
+                    {visibleSections.map((group) => (
                       <div key={group.section} className="space-y-2">
                         <div className="text-sm font-semibold text-muted-foreground">
                           {group.section} · {TRADE_SECTION_LABELS[group.section]}
@@ -734,7 +838,7 @@ const Budget: React.FC = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sections.map((group) => (
+                        {visibleSections.map((group) => (
                           <React.Fragment key={group.section}>
                             <TableRow className="bg-muted/40 hover:bg-muted/40">
                               <TableCell colSpan={9} className="font-semibold text-sm">
@@ -849,7 +953,7 @@ const Budget: React.FC = () => {
                         ))}
                         {/* Bezahltes ohne Budget-Zuordnung sichtbar machen, damit die
                             Gesamtzeile mit den Kennzahlen-Karten übereinstimmt */}
-                        {unassignedTotals.paid > 0 && (
+                        {unassignedInTotals > 0 && (
                           <TableRow className="hover:bg-transparent">
                             <TableCell></TableCell>
                             <TableCell className="text-muted-foreground">Ohne Budget-Zuordnung</TableCell>
@@ -1033,24 +1137,56 @@ function BlockDetailPanel({ block, formatAmount, conv, onEdit, onDelete }: {
             </div>
           )}
         </div>
+        {/* Nachvollziehbarkeit: exakt die Rechnungen und Beträge, die in die
+            Zeile oben einfließen — inkl. Hinweis auf Rechnungen, die zwar als
+            bezahlt gelten, aber keine erfasste Zahlung haben. */}
         <div>
           <h4 className="font-semibold text-sm mb-1">
-            Rechnungen {block.contractorName ? `von ${block.contractorName}` : ''} ({block.invoices.length})
+            Rechnungen {block.contractorName ? `von ${block.contractorName}` : ''} ({block.invoiceRows.length})
           </h4>
-          {block.invoices.length === 0 ? (
+          {block.invoiceRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">Noch keine Rechnungen</p>
           ) : (
             <div className="space-y-0.5">
-              {block.invoices.map((inv) => (
-                <div key={inv.id} className="flex justify-between text-sm">
-                  <span>{format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}</span>
-                  <span className="flex items-center gap-1">
-                    {formatAmount(Number(inv.amount))}
-                    {inv.status === 'paid' && <Badge variant="secondary" className="text-xs">bezahlt</Badge>}
-                    {inv.status === 'partially_paid' && <Badge variant="secondary" className="text-xs">teilw. bezahlt</Badge>}
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Datum · Rechnung</span>
+                <span className="flex gap-4">
+                  <span className="w-24 text-right">Zahlbetrag</span>
+                  <span className="w-24 text-right">bezahlt</span>
+                </span>
+              </div>
+              {block.invoiceRows.map(({ invoice: inv, payable, paid, paidWithoutPayments }) => (
+                <div key={inv.id} className="flex justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate">
+                    {format(new Date(inv.invoice_date), 'dd.MM.yy', { locale: de })} – {inv.company_name}
+                    {inv.invoice_number ? ` · ${inv.invoice_number}` : ''}
+                    {paidWithoutPayments && (
+                      <Badge variant="outline" className="ml-2 border-amber-500 text-xs text-amber-700">
+                        bezahlt ohne erfasste Zahlung
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="flex shrink-0 gap-4">
+                    <span className="w-24 text-right">{formatAmount(payable)}</span>
+                    <span className={`w-24 text-right ${paid < payable - 0.005 ? 'text-muted-foreground' : ''}`}>
+                      {formatAmount(paid)}
+                    </span>
                   </span>
                 </div>
               ))}
+              <div className="flex justify-between gap-2 border-t pt-1 text-sm font-medium">
+                <span>Summe</span>
+                <span className="flex shrink-0 gap-4">
+                  <span className="w-24 text-right">{formatAmount(block.billed)}</span>
+                  <span className="w-24 text-right">{formatAmount(block.paid)}</span>
+                </span>
+              </div>
+              {block.invoiceRows.some((r) => r.paidWithoutPayments) && (
+                <p className="pt-1 text-xs text-amber-700">
+                  Markierte Rechnungen gelten als bezahlt, haben aber keine Zahlung erfasst — sie zählen
+                  deshalb nicht in „Bezahlt". Im Rechnungs-Dialog eine Zahlung nachtragen.
+                </p>
+              )}
             </div>
           )}
         </div>

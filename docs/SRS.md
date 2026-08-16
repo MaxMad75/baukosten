@@ -209,6 +209,16 @@ noch?** Deshalb:
   (Bezahltes ohne Budgetposten) und Gesamtzeile; Kennzahlen-Karten zeigen dieselben Summen.
 - Beträge sind an jeder Spalte und in der Kartenüberschrift als **brutto/netto** ausgewiesen
   (Umschalter oben rechts).
+- **Abschnitts-Filter (16.08.2026):** Chips über der Tabelle blenden Abschnitte aus (z. B. Grundstück
+  100), Auswahl in localStorage. Kennzahlen, Zwischensummen und Gesamtzeile rechnen dann NUR über die
+  sichtbaren Abschnitte → beantwortet „wieviel Geld brauche ich für Bauwerk/Technik/Nebenkosten noch".
+  Firmen mit Gewerken in mehreren Abschnitten zählen ihre Rechnungen bevorzugt in einem sichtbaren
+  Abschnitt (sonst verschluckt der Filter Ist-Werte). Unzugeordnetes bleibt bei aktivem Filter außen
+  vor (Hinweiszeile weist den Betrag aus).
+- **Abweichungen nachvollziehbar:** Das aufgeklappte Firmen-Panel listet jede Rechnung mit Zahlbetrag
+  und tatsächlich erfasster Zahlung plus Summenzeile (= Werte der Blockzeile). Rechnungen mit Status
+  „bezahlt" ohne erfasste Zahlung werden markiert — genau die verursachen Abweichungen zwischen
+  Rechnungsliste (Status) und Budget (Σ Zahlungen).
 - **Auftragswert pflegen:** bleibt am GEWERK gespeichert (einzige Quelle, kein zweiter Ort an der
   Firma — sonst widersprüchliche Summen wie beim alten contractors.trade-Feld). Eingabe firmenzentriert
   über Klick auf die Beauftragt-Zelle → `AwardedEditDialog` listet alle Gewerke der Firma mit

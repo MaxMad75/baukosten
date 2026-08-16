@@ -70,33 +70,41 @@ export const Dashboard: React.FC = () => {
 
     // Ist je Firmen-Block
     const billedByBlock = new Map<string, number>();
+    const paidByBlock = new Map<string, number>();
     for (const inv of active) {
       const key = blockKeyByInvoice.get(inv.id);
-      if (key) billedByBlock.set(key, (billedByBlock.get(key) || 0) + payableOf(inv));
+      if (!key) continue;
+      billedByBlock.set(key, (billedByBlock.get(key) || 0) + payableOf(inv));
+      paidByBlock.set(key, (paidByBlock.get(key) || 0) + toGross(getTotalPaid(inv.id), invTaxStatus(inv)));
     }
     const finTrade = trades.find(isFinancingTrade);
     if (finTrade && totalInterest > 0) {
       const key = tradeBlockKey(finTrade);
       billedByBlock.set(key, (billedByBlock.get(key) || 0) + totalInterest);
+      paidByBlock.set(key, (paidByBlock.get(key) || 0) + totalInterest);
     }
 
-    // Soll je Firmen-Block; Prognose = Σ max(Schätzung, Beauftragt, Abgerechnet) je Block
+    // Soll je Firmen-Block. „Beauftragt" zählt nur echte Aufträge; noch nicht
+    // vergebene Posten werden getrennt als Schätzung geführt (User-Feedback 16.08.).
     let budget = 0;
     let awarded = 0;
     let awardedCount = 0;
-    const sollByBlock = new Map<string, { est: number; awEff: number }>();
+    let notAwardedEstimate = 0;
+    const sollByBlock = new Map<string, { est: number; awEff: number; awReal: number; hasAward: boolean }>();
     for (const t of trades) {
       const est = t.current_estimate
         ? toGross(Number(t.current_estimate.amount), t.current_estimate.tax_status)
         : 0;
       const aw = t.awarded_amount != null ? toGross(Number(t.awarded_amount), t.awarded_tax_status) : null;
-      if (aw != null) awardedCount += 1;
+      if (aw != null) awardedCount += 1; else notAwardedEstimate += est;
       budget += est;
-      awarded += aw ?? est;
+      awarded += aw ?? 0;
       const key = tradeBlockKey(t);
-      const soll = sollByBlock.get(key) || { est: 0, awEff: 0 };
+      const soll = sollByBlock.get(key) || { est: 0, awEff: 0, awReal: 0, hasAward: false };
       soll.est += est;
       soll.awEff += aw ?? est;
+      soll.awReal += aw ?? 0;
+      soll.hasAward = soll.hasAward || aw != null;
       sollByBlock.set(key, soll);
     }
     let prognose = 0;
@@ -113,8 +121,13 @@ export const Dashboard: React.FC = () => {
       paid,
       /** Rechnungen abgerechnet, aber noch nicht bezahlt */
       openInvoices: Math.max(billed - paid, 0),
-      /** Offen aus den Aufträgen: Beauftragt − Bezahlt (wie Budget-Seite) */
-      openFromContracts: awarded - paid,
+      /** Offen aus erteilten Aufträgen — ohne noch nicht vergebene Posten (wie Budget-Seite) */
+      openFromContracts: Array.from(sollByBlock.entries()).reduce(
+        (s, [key, soll]) => s + (soll.hasAward ? soll.awReal - (paidByBlock.get(key) || 0) : 0),
+        0
+      ),
+      /** Geschätzte Kosten der noch nicht vergebenen Posten */
+      notAwardedEstimate,
       budget,
       awarded,
       awardedCount,
@@ -212,7 +225,9 @@ export const Dashboard: React.FC = () => {
                 {formatCurrency(metrics.openFromContracts)}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {metrics.openFromContracts < -0.005 ? 'mehr bezahlt als beauftragt' : 'Beauftragt − Bezahlt'}
+                {metrics.notAwardedEstimate > 0.005
+                  ? `+ ${formatCurrency(metrics.notAwardedEstimate)} noch nicht beauftragt`
+                  : 'aus erteilten Aufträgen'}
               </p>
             </CardContent>
           </Card>

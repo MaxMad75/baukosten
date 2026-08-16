@@ -204,6 +204,11 @@ noch?** Deshalb:
 - Spalten: Schätzung · Vorversion · **Beauftragt · Bezahlt · Offen (= Beauftragt − Bezahlt)** ·
   Skonto · Status. Die alte Spalte „Δ Prognose" (gegen die Schätzung) ist entfallen, ebenso
   „Abgerechnet" (redundant — wird bei den Rechnungen getrackt).
+- **Nur echte Aufträge zählen (16.08.2026):** „Beauftragt" ist ausschließlich die vertraglich
+  vereinbarte Summe; Gewerke ohne Auftrag zeigen „nicht beauftragt" (KEIN Schätzwert-Fallback mehr) und
+  liefern kein „Offen". Was dort laut Kostenberechnung noch fehlen könnte, steht getrennt als
+  „+ X offen zu vergeben" (Zeile/Zwischensumme/Gesamt) und als Karte **„Voraussichtlich noch nötig"**
+  = Offen aus Aufträgen + Schätzung der nicht vergebenen Posten.
 - Arithmetik geht in jeder Zeile UND jeder Summe auf: Beauftragt − Bezahlt = Offen. Negatives Offen
   (rot) = mehr bezahlt als beauftragt. Zwischensummen je Abschnitt, Zeile „Ohne Budget-Zuordnung"
   (Bezahltes ohne Budgetposten) und Gesamtzeile; Kennzahlen-Karten zeigen dieselben Summen.

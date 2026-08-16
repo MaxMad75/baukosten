@@ -64,13 +64,18 @@ interface FirmBlock {
   rows: BudgetRow[];
   estimate: number;
   prevEstimate: number;
-  awardedEffective: number;
+  /** Σ der TATSÄCHLICH beauftragten Summen (Gewerke ohne Auftrag zählen nicht) */
+  awardedReal: number;
+  /** true, sobald mindestens ein Gewerk des Blocks beauftragt ist */
+  hasAward: boolean;
+  /** Σ Schätzung der noch NICHT beauftragten Gewerke — möglicher Zusatzbedarf */
+  notAwardedEstimate: number;
   billed: number;
   paid: number;
   skontoRealized: number;
   skontoExpected: number | null;
-  /** Offen aus dem Auftrag: Beauftragt − Bezahlt (negativ = mehr bezahlt als beauftragt) */
-  open: number;
+  /** Offen aus dem Auftrag: Beauftragt − Bezahlt; null = nichts beauftragt */
+  open: number | null;
   /** Rechnungen des Blocks mit den Werten, die in die Summen eingehen (Nachvollziehbarkeit) */
   invoiceRows: InvoiceRow[];
   status: TradeStatus;
@@ -90,7 +95,16 @@ interface InvoiceRow {
 interface SectionGroup {
   section: TradeSection;
   blocks: FirmBlock[];
-  totals: Pick<FirmBlock, 'estimate' | 'prevEstimate' | 'awardedEffective' | 'billed' | 'paid' | 'skontoRealized' | 'open'>;
+  totals: {
+    estimate: number;
+    prevEstimate: number;
+    awardedReal: number;
+    notAwardedEstimate: number;
+    billed: number;
+    paid: number;
+    skontoRealized: number;
+    open: number;
+  };
 }
 
 const STATUS_BADGE: Record<TradeStatus, { variant: 'outline' | 'secondary' | 'default'; className?: string }> = {
@@ -305,12 +319,17 @@ const Budget: React.FC = () => {
       }
 
       const estimate = rows.reduce((s, r) => s + r.estimate, 0);
-      const awardedEffective = rows.reduce((s, r) => s + r.awardedEffective, 0);
+      // „Beauftragt" zählt NUR echte Aufträge (User-Feedback 16.08.) — für noch
+      // nicht vergebene Gewerke wird die Schätzung getrennt ausgewiesen, damit
+      // die offene Summe keine Wunschwerte enthält.
+      const hasAward = rows.some((r) => r.awarded != null);
+      const awardedReal = rows.reduce((s, r) => s + (r.awarded ?? 0), 0);
+      const notAwardedEstimate = rows.reduce((s, r) => s + (r.awarded == null ? r.estimate : 0), 0);
       const skontoExpectedSum = rows.reduce((s, r) => s + (r.skontoExpected ?? 0), 0);
 
       let status: TradeStatus;
       if (blockInvoices.length === 0 && billed === 0) {
-        status = rows.some((r) => r.awarded != null && r.awarded > 0) ? 'beauftragt' : 'offen';
+        status = hasAward && awardedReal > 0 ? 'beauftragt' : 'offen';
       } else {
         status = blockInvoices.length > 0 && blockInvoices.every((inv) => inv.status === 'paid') ? 'abgerechnet' : 'in Abrechnung';
       }
@@ -321,12 +340,14 @@ const Budget: React.FC = () => {
         rows,
         estimate,
         prevEstimate: rows.reduce((s, r) => s + (r.prevEstimate ?? 0), 0),
-        awardedEffective,
+        awardedReal,
+        hasAward,
+        notAwardedEstimate,
         billed,
         paid,
         skontoRealized,
         skontoExpected: skontoExpectedSum > 0 ? skontoExpectedSum : null,
-        open: awardedEffective - paid,
+        open: hasAward ? awardedReal - paid : null,
         invoiceRows,
         status,
       };
@@ -345,11 +366,12 @@ const Budget: React.FC = () => {
           totals: {
             estimate: blocks.reduce((s, b) => s + b.estimate, 0),
             prevEstimate: blocks.reduce((s, b) => s + b.prevEstimate, 0),
-            awardedEffective: blocks.reduce((s, b) => s + b.awardedEffective, 0),
+            awardedReal: blocks.reduce((s, b) => s + b.awardedReal, 0),
+            notAwardedEstimate: blocks.reduce((s, b) => s + b.notAwardedEstimate, 0),
             billed: blocks.reduce((s, b) => s + b.billed, 0),
             paid: blocks.reduce((s, b) => s + b.paid, 0),
             skontoRealized: blocks.reduce((s, b) => s + b.skontoRealized, 0),
-            open: blocks.reduce((s, b) => s + b.open, 0),
+            open: blocks.reduce((s, b) => s + (b.open ?? 0), 0),
           },
         };
       });
@@ -371,11 +393,14 @@ const Budget: React.FC = () => {
   // „wieviel Geld brauche ich für Bauwerk/Technik/Nebenkosten noch?"
   const grandTotals = useMemo(() => ({
     estimate: visibleSections.reduce((s, g) => s + g.totals.estimate, 0),
-    awardedEffective: visibleSections.reduce((s, g) => s + g.totals.awardedEffective, 0),
+    awardedReal: visibleSections.reduce((s, g) => s + g.totals.awardedReal, 0),
+    notAwardedEstimate: visibleSections.reduce((s, g) => s + g.totals.notAwardedEstimate, 0),
     billed: visibleSections.reduce((s, g) => s + g.totals.billed, 0),
     paid: visibleSections.reduce((s, g) => s + g.totals.paid, 0),
     skontoRealized: visibleSections.reduce((s, g) => s + g.totals.skontoRealized, 0),
     open: visibleSections.reduce((s, g) => s + g.totals.open, 0),
+    awardedCount: visibleSections.reduce((s, g) => s + g.blocks.filter((b) => b.hasAward).length, 0),
+    blockCount: visibleSections.reduce((s, g) => s + g.blocks.length, 0),
   }), [visibleSections]);
 
   // Ohne Budget-Zuordnung = Firma der Rechnung hat (noch) kein Gewerk im Budget
@@ -405,8 +430,12 @@ const Budget: React.FC = () => {
   // zu keinem Abschnitt) — der Hinweis unter den Karten weist es aus.
   const unassignedInTotals = isFiltered ? 0 : unassignedTotals.paid;
   const paidTotal = grandTotals.paid + unassignedInTotals;
-  /** Offen aus allen Aufträgen: Beauftragt − Bezahlt (unzugeordnet Bezahltes zählt gegen) */
-  const openTotal = grandTotals.open - unassignedInTotals;
+  /** Offen aus erteilten Aufträgen — enthält KEINE noch nicht beauftragten Posten */
+  const openTotal = grandTotals.open;
+  /** Was laut Kostenberechnung für noch nicht vergebene Posten dazukommen dürfte */
+  const notAwardedTotal = grandTotals.notAwardedEstimate;
+  /** Realistischer Restbedarf: offene Aufträge + geschätzte noch nicht vergebene Posten */
+  const stillNeededTotal = openTotal + notAwardedTotal;
 
   const unassignedGroups = useMemo(() => {
     const map = new Map<string, Invoice[]>();
@@ -553,8 +582,10 @@ const Budget: React.FC = () => {
       <TableCell className="text-right text-muted-foreground">
         {row.prevEstimate != null ? formatAmount(row.prevEstimate) : '–'}
       </TableCell>
-      <TableCell className={`text-right ${row.isAwardedFallback ? 'italic text-muted-foreground' : deltaClass(row.awardedEffective - row.estimate)}`}>
-        {formatAmount(row.awardedEffective)}
+      <TableCell className={`text-right ${row.awarded == null ? 'text-muted-foreground' : deltaClass(row.awarded - row.estimate)}`}>
+        {row.awarded == null
+          ? <span className="text-xs italic">nicht beauftragt</span>
+          : formatAmount(row.awarded)}
       </TableCell>
     </>
   );
@@ -633,7 +664,7 @@ const Budget: React.FC = () => {
 
         {available && (
           <>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Budget (Schätzung)</CardTitle></CardHeader>
                 <CardContent><div className="text-2xl font-bold">{formatAmount(grandTotals.estimate)}</div></CardContent>
@@ -641,9 +672,9 @@ const Budget: React.FC = () => {
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Beauftragt (Verträge)</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatAmount(grandTotals.awardedEffective)}</div>
-                  <div className={`text-xs ${deltaClass(grandTotals.awardedEffective - grandTotals.estimate)}`}>
-                    {formatDelta(grandTotals.awardedEffective - grandTotals.estimate, grandTotals.estimate)} zur Schätzung
+                  <div className="text-2xl font-bold">{formatAmount(grandTotals.awardedReal)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {grandTotals.awardedCount} von {grandTotals.blockCount} Firmen beauftragt
                   </div>
                 </CardContent>
               </Card>
@@ -651,17 +682,30 @@ const Budget: React.FC = () => {
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Bezahlt</CardTitle></CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatAmount(paidTotal)}</div>
-                  {unassignedTotals.paid > 0 && (
-                    <div className="text-xs text-muted-foreground">davon {formatAmount(unassignedTotals.paid)} ohne Budget-Zuordnung</div>
+                  {unassignedInTotals > 0 && (
+                    <div className="text-xs text-muted-foreground">davon {formatAmount(unassignedInTotals)} ohne Budget-Zuordnung</div>
                   )}
                 </CardContent>
               </Card>
-              <Card className={isFiltered ? 'border-primary/40' : ''}>
+              <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Offen aus Aufträgen</CardTitle></CardHeader>
                 <CardContent>
                   <div className={`text-2xl font-bold ${openTotal < -0.005 ? 'text-destructive' : ''}`}>{formatAmount(openTotal)}</div>
                   <div className="text-xs text-muted-foreground">
-                    {openTotal < -0.005 ? 'mehr bezahlt als beauftragt' : 'Beauftragt − Bezahlt'}
+                    {openTotal < -0.005 ? 'mehr bezahlt als beauftragt' : 'aus erteilten Aufträgen'}
+                  </div>
+                </CardContent>
+              </Card>
+              {/* Antwort auf „wieviel Geld brauche ich noch": offene Verträge plus
+                  geschätzte Kosten der noch nicht vergebenen Posten */}
+              <Card className="border-primary/40">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Voraussichtlich noch nötig</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatAmount(stillNeededTotal)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {notAwardedTotal > 0.005
+                      ? `davon ${formatAmount(notAwardedTotal)} noch nicht beauftragt (Schätzung)`
+                      : 'alle Posten sind beauftragt'}
                   </div>
                 </CardContent>
               </Card>
@@ -775,14 +819,14 @@ const Budget: React.FC = () => {
                                 <span className="text-muted-foreground">Schätzung</span>
                                 <span className="text-right">{formatAmount(block.estimate)}</span>
                                 <span className="text-muted-foreground">Beauftragt</span>
-                                <span className={`text-right ${deltaClass(block.awardedEffective - block.estimate)}`}>
-                                  {formatAmount(block.awardedEffective)}
+                                <span className={`text-right ${block.hasAward ? deltaClass(block.awardedReal - block.estimate) : 'italic text-muted-foreground'}`}>
+                                  {block.hasAward ? formatAmount(block.awardedReal) : 'nicht beauftragt'}
                                 </span>
                                 <span className="text-muted-foreground">Bezahlt</span>
                                 <span className="text-right">{block.paid > 0 ? formatAmount(block.paid) : '–'}</span>
                                 <span className="font-medium">Offen</span>
-                                <span className={`text-right font-medium ${block.open < -0.005 ? 'text-destructive' : ''}`}>
-                                  {formatAmount(block.open)}
+                                <span className={`text-right font-medium ${(block.open ?? 0) < -0.005 ? 'text-destructive' : ''}`}>
+                                  {block.open != null ? formatAmount(block.open) : '–'}
                                 </span>
                               </div>
                             </button>
@@ -791,9 +835,7 @@ const Budget: React.FC = () => {
                         <div className="space-y-0.5 px-1 text-sm font-medium">
                           <div className="flex justify-between">
                             <span>Zwischensumme beauftragt</span>
-                            <span className={deltaClass(group.totals.awardedEffective - group.totals.estimate)}>
-                              {formatAmount(group.totals.awardedEffective)}
-                            </span>
+                            <span>{formatAmount(group.totals.awardedReal)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>… davon bezahlt</span>
@@ -809,16 +851,28 @@ const Budget: React.FC = () => {
                     <div className="space-y-0.5 border-t px-1 pt-3 font-bold">
                       <div className="flex justify-between">
                         <span>Beauftragt gesamt</span>
-                        <span>{formatAmount(grandTotals.awardedEffective)}</span>
+                        <span>{formatAmount(grandTotals.awardedReal)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Bezahlt gesamt</span>
                         <span>{formatAmount(paidTotal)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Offen gesamt</span>
+                        <span>Offen aus Aufträgen</span>
                         <span className={openTotal < -0.005 ? 'text-destructive' : ''}>{formatAmount(openTotal)}</span>
                       </div>
+                      {notAwardedTotal > 0.005 && (
+                        <>
+                          <div className="flex justify-between font-normal text-muted-foreground">
+                            <span>noch nicht beauftragt (Schätzung)</span>
+                            <span>{formatAmount(notAwardedTotal)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Voraussichtlich noch nötig</span>
+                            <span>{formatAmount(stillNeededTotal)}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -875,20 +929,25 @@ const Budget: React.FC = () => {
                                           <TableCell className="text-right">
                                             <button
                                               className={`group inline-flex items-center gap-1 hover:underline ${
-                                                block.rows.every((r) => r.isAwardedFallback)
-                                                  ? 'italic text-muted-foreground'
-                                                  : deltaClass(block.awardedEffective - block.estimate)
+                                                block.hasAward ? deltaClass(block.awardedReal - block.estimate) : 'text-muted-foreground'
                                               }`}
                                               onClick={(e) => { e.stopPropagation(); setAwardedTarget(block); }}
                                               title="Auftragssumme(n) bearbeiten"
                                             >
-                                              {formatAmount(block.awardedEffective)}
+                                              {block.hasAward
+                                                ? formatAmount(block.awardedReal)
+                                                : <span className="text-xs italic">nicht beauftragt</span>}
                                               <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
                                             </button>
+                                            {block.hasAward && block.notAwardedEstimate > 0.005 && (
+                                              <div className="text-[10px] text-muted-foreground">
+                                                + {formatAmount(block.notAwardedEstimate)} offen zu vergeben
+                                              </div>
+                                            )}
                                           </TableCell>
                                           <TableCell className="text-right">{block.paid > 0 ? formatAmount(block.paid) : '–'}</TableCell>
-                                          <TableCell className={`text-right font-medium ${block.open < -0.005 ? 'text-destructive' : ''}`}>
-                                            {formatAmount(block.open)}
+                                          <TableCell className={`text-right font-medium ${(block.open ?? 0) < -0.005 ? 'text-destructive' : ''}`}>
+                                            {block.open != null ? formatAmount(block.open) : '–'}
                                           </TableCell>
                                           <TableCell className="text-right">
                                             {block.skontoRealized > 0
@@ -943,7 +1002,14 @@ const Budget: React.FC = () => {
                               <TableCell>Zwischensumme</TableCell>
                               <TableCell className="text-right">{formatAmount(group.totals.estimate)}</TableCell>
                               <TableCell className="text-right text-muted-foreground">{formatAmount(group.totals.prevEstimate)}</TableCell>
-                              <TableCell className={`text-right ${deltaClass(group.totals.awardedEffective - group.totals.estimate)}`}>{formatAmount(group.totals.awardedEffective)}</TableCell>
+                              <TableCell className="text-right">
+                                {formatAmount(group.totals.awardedReal)}
+                                {group.totals.notAwardedEstimate > 0.005 && (
+                                  <div className="text-[10px] font-normal text-muted-foreground">
+                                    + {formatAmount(group.totals.notAwardedEstimate)} offen zu vergeben
+                                  </div>
+                                )}
+                              </TableCell>
                               <TableCell className="text-right">{group.totals.paid > 0 ? formatAmount(group.totals.paid) : '–'}</TableCell>
                               <TableCell className={`text-right ${group.totals.open < -0.005 ? 'text-destructive' : ''}`}>{formatAmount(group.totals.open)}</TableCell>
                               <TableCell className="text-right">{group.totals.skontoRealized > 0 ? formatAmount(group.totals.skontoRealized) : '–'}</TableCell>
@@ -971,9 +1037,23 @@ const Budget: React.FC = () => {
                           <TableCell>Gesamt</TableCell>
                           <TableCell className="text-right">{formatAmount(grandTotals.estimate)}</TableCell>
                           <TableCell className="text-right"></TableCell>
-                          <TableCell className={`text-right ${deltaClass(grandTotals.awardedEffective - grandTotals.estimate)}`}>{formatAmount(grandTotals.awardedEffective)}</TableCell>
+                          <TableCell className="text-right">
+                            {formatAmount(grandTotals.awardedReal)}
+                            {notAwardedTotal > 0.005 && (
+                              <div className="text-[10px] font-normal text-muted-foreground">
+                                + {formatAmount(notAwardedTotal)} offen zu vergeben
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">{paidTotal > 0 ? formatAmount(paidTotal) : '–'}</TableCell>
-                          <TableCell className={`text-right ${openTotal < -0.005 ? 'text-destructive' : ''}`}>{formatAmount(openTotal)}</TableCell>
+                          <TableCell className={`text-right ${openTotal < -0.005 ? 'text-destructive' : ''}`}>
+                            {formatAmount(openTotal)}
+                            {notAwardedTotal > 0.005 && (
+                              <div className="text-[10px] font-normal text-muted-foreground">
+                                {formatAmount(stillNeededTotal)} inkl. Schätzung
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">{grandTotals.skontoRealized > 0 ? formatAmount(grandTotals.skontoRealized) : '–'}</TableCell>
                           <TableCell></TableCell>
                         </TableRow>

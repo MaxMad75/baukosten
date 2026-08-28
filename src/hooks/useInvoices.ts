@@ -65,6 +65,19 @@ export function useInvoices() {
     return true;
   };
 
+  /**
+   * Nächste freie Eigenbeleg-Nummer (EB-JJJJ-NNN) vom Server holen.
+   * Die Vergabe liegt bewusst in der Datenbank: zwei gleichzeitig geöffnete
+   * Browser würden clientseitig dieselbe Nummer ziehen und am Unique-Index
+   * scheitern. Fällt der Aufruf aus, bleibt das Feld leer und der Nutzer kann
+   * die Nummer selbst setzen — der Dialog bleibt bedienbar.
+   */
+  const nextSelfReceiptNumber = async (year?: number): Promise<string | null> => {
+    const { data, error } = await supabase.rpc('next_self_receipt_number', year ? { p_year: year } : {});
+    if (error) return null;
+    return (data as string) || null;
+  };
+
   const createInvoice = async (invoiceData: Omit<Partial<Invoice>, 'household_id' | 'created_by_profile_id'> & { amount: number; invoice_date: string; company_name: string }) => {
     if (!household || !profile) return null;
 
@@ -84,6 +97,7 @@ export function useInvoices() {
         
         ai_extracted: invoiceData.ai_extracted || false,
         is_gross: invoiceData.is_gross ?? true,
+        is_self_receipt: invoiceData.is_self_receipt ?? false,
         status: invoiceData.status || 'draft',
         net_amount: invoiceData.net_amount ?? null,
         tax_amount: invoiceData.tax_amount ?? null,
@@ -165,6 +179,7 @@ export function useInvoices() {
 
 
   return {
+    nextSelfReceiptNumber,
     invoices,
     loading,
     fetchInvoices,

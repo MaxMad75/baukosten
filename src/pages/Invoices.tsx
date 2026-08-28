@@ -52,6 +52,7 @@ import { PaymentsEditor } from '@/components/invoices/PaymentsEditor';
 import { DeductionsEditor, DeductionRow, deductionRowAmount } from '@/components/invoices/DeductionsEditor';
 import { PaymentsByPersonCard } from '@/components/invoices/PaymentsByPersonCard';
 import { TrashCard } from '@/components/invoices/TrashCard';
+import { SelfReceiptDialog } from '@/components/invoices/SelfReceiptDialog';
 import { useInvoiceDeductions, getPayableAmount } from '@/hooks/useInvoiceDeductions';
 import { DEDUCTION_TYPE_LABELS } from '@/lib/types';
 
@@ -63,6 +64,16 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; variant: 'default' |
   paid: { label: 'Bezahlt', variant: 'default', className: 'bg-green-600 hover:bg-green-600' },
   cancelled: { label: 'Storniert', variant: 'destructive', className: '' },
 };
+
+/**
+ * Kennzeichen für selbst ausgestellte Belege. Bewusst schmal gehalten: es
+ * steht neben jedem Firmennamen und darf die Zeile nicht dominieren.
+ */
+const SelfReceiptBadge: React.FC = () => (
+  <Badge variant="outline" className="border-slate-400 px-1.5 py-0 text-[10px] font-semibold text-slate-600" title="Eigenbeleg — selbst ausgestellt, keine Fremdrechnung">
+    EB
+  </Badge>
+);
 
 interface AllocationRow {
   kostengruppe_code: string;
@@ -88,6 +99,7 @@ export const Invoices: React.FC = () => {
   const { principalByProfile } = useLoans();
   const { toast } = useToast();
 
+  const [isSelfReceiptOpen, setIsSelfReceiptOpen] = useState(false);
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -101,6 +113,8 @@ export const Invoices: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterTrade, setFilterTrade] = useState<string>('all');
+  /** Belegart: alle · nur Fremdrechnungen · nur Eigenbelege */
+  const [filterKind, setFilterKind] = useState<'all' | 'invoice' | 'self'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -407,6 +421,8 @@ export const Invoices: React.FC = () => {
     const q = searchQuery.trim().toLowerCase();
     const list = invoices.filter((inv) => {
       if (filterStatus !== 'all' && ((inv.status as InvoiceStatus) || 'draft') !== filterStatus) return false;
+      if (filterKind === 'self' && !inv.is_self_receipt) return false;
+      if (filterKind === 'invoice' && inv.is_self_receipt) return false;
       const invBlock = blockKeyByInvoice.get(inv.id);
       if (filterTrade === 'none' && invBlock) return false;
       if (filterTrade !== 'all' && filterTrade !== 'none') {
@@ -425,7 +441,20 @@ export const Invoices: React.FC = () => {
         ? (Number(a.amount) - Number(b.amount)) * dir
         : (new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()) * dir
     );
-  }, [invoices, searchQuery, filterStatus, filterTrade, sortBy, sortDir, blockKeyByInvoice, trades]);
+  }, [invoices, searchQuery, filterStatus, filterKind, filterTrade, sortBy, sortDir, blockKeyByInvoice, trades]);
+
+  /**
+   * Wie viele Dokumente hängen an dieser Rechnung? Für Eigenbelege ist das die
+   * Aussage „hier stecken N Einzelbelege drin"; bei Fremdrechnungen ist es
+   * immer genau eines und deshalb keine Anzeige wert.
+   */
+  const attachedDocCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    documents.forEach((d) => {
+      if (d.invoice_id) counts.set(d.invoice_id, (counts.get(d.invoice_id) || 0) + 1);
+    });
+    return counts;
+  }, [documents]);
 
   const toggleSort = (key: 'date' | 'amount') => {
     if (sortBy === key) {
@@ -519,11 +548,18 @@ export const Invoices: React.FC = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Rechnungen & Kosten</h1>
-          <p className="text-muted-foreground">
-            Übersicht und Verwaltung Ihrer Baurechnungen. Neue Rechnungen werden über die Dokumentenverwaltung hochgeladen.
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Rechnungen & Kosten</h1>
+            <p className="text-muted-foreground">
+              Übersicht und Verwaltung Ihrer Baurechnungen. Rechnungen kommen über die
+              Dokumentenverwaltung; Kosten ohne Fremdrechnung erfassen Sie als Eigenbeleg.
+            </p>
+          </div>
+          <Button className="shrink-0" onClick={() => setIsSelfReceiptOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Eigenbeleg
+          </Button>
         </div>
 
         {/* Statistics Cards */}
@@ -618,6 +654,14 @@ export const Invoices: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select value={filterKind} onValueChange={(v) => setFilterKind(v as 'all' | 'invoice' | 'self')}>
+                  <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Alle Belege" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Alle Belege</SelectItem>
+                    <SelectItem value="invoice">Nur Rechnungen</SelectItem>
+                    <SelectItem value="self">Nur Eigenbelege</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={filterTrade} onValueChange={setFilterTrade}>
                   <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Alle Gewerke" /></SelectTrigger>
                   <SelectContent>
@@ -645,10 +689,16 @@ export const Invoices: React.FC = () => {
                     <div key={invoice.id} className="rounded-lg border p-3 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-sm font-medium">{invoice.company_name}</p>
+                          <p className="flex items-center gap-1.5 text-sm font-medium">
+                            {invoice.company_name}
+                            {invoice.is_self_receipt && <SelfReceiptBadge />}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {format(new Date(invoice.invoice_date), 'dd.MM.yyyy', { locale: de })}
                             {invoice.invoice_number ? ` · Nr. ${invoice.invoice_number}` : ''}
+                            {invoice.is_self_receipt && (attachedDocCount.get(invoice.id) || 0) > 0
+                              ? ` · ${attachedDocCount.get(invoice.id)} Belege`
+                              : ''}
                           </p>
                           <div className="text-xs text-muted-foreground mt-0.5">{renderTradeSummary(invoice)}</div>
                         </div>
@@ -712,8 +762,18 @@ export const Invoices: React.FC = () => {
                         <TableCell>{format(new Date(invoice.invoice_date), 'dd.MM.yyyy', { locale: de })}</TableCell>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{invoice.company_name}</p>
-                            {invoice.invoice_number && <p className="text-xs text-muted-foreground">Nr. {invoice.invoice_number}</p>}
+                            <p className="flex items-center gap-1.5 font-medium">
+                              {invoice.company_name}
+                              {invoice.is_self_receipt && <SelfReceiptBadge />}
+                            </p>
+                            {(invoice.invoice_number || (invoice.is_self_receipt && (attachedDocCount.get(invoice.id) || 0) > 0)) && (
+                              <p className="text-xs text-muted-foreground">
+                                {invoice.invoice_number ? `Nr. ${invoice.invoice_number}` : ''}
+                                {invoice.is_self_receipt && (attachedDocCount.get(invoice.id) || 0) > 0
+                                  ? `${invoice.invoice_number ? ' · ' : ''}${attachedDocCount.get(invoice.id)} Belege`
+                                  : ''}
+                              </p>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
@@ -813,6 +873,8 @@ export const Invoices: React.FC = () => {
           />
         )}
       </div>
+
+      <SelfReceiptDialog open={isSelfReceiptOpen} onOpenChange={setIsSelfReceiptOpen} />
 
       {/* Edit Invoice Dialog */}
       <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingInvoice(null); }}>

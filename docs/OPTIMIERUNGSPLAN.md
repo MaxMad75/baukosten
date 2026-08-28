@@ -259,6 +259,21 @@ Status-Trigger ignorieren Gelöschtes — manuell anwenden!). Löschen = Soft-De
 TrashCard unten auf der Rechnungsseite mit Wiederherstellen/endgültig
 löschen/Papierkorb leeren; Auto-Bereinigung nach 30 Tagen beim Laden.
 
+### N.4 Eigenbeleg / Sammelbeleg (M) — ✅ umgesetzt 28.08.2026
+Rechnungen entstanden bisher ausschließlich aus einem Dokumenten-Upload; für
+Barzahlungen, Eigenleistung oder eine Handvoll Baumarkt-Quittungen gab es keinen
+Weg, Kosten zu erfassen. `createInvoice` konnte das längst (file_path ist
+optional), hatte aber keinen Aufrufer außer dem Dokumenten-Weg.
+**Status:** Migration 20260828170000 (Spalte `is_self_receipt`, Teilindex,
+Funktion `next_self_receipt_number()` für den Nummernkreis EB-JJJJ-NNN —
+manuell anwenden!). Dialog „Eigenbeleg" auf der Rechnungsseite, EB-Kennzeichen
+in Karten- und Tabellenansicht, Filter „Alle/Nur Rechnungen/Nur Eigenbelege",
+Spalte „Belegart" im Excel-Export. Gebündelt wird über die vorhandene
+N:1-Beziehung `documents.invoice_id` — kein neues Schema; die Liste zeigt
+„N Belege" am Eigenbeleg.
+**Offen:** Belege lassen sich nur beim Anlegen anhängen; nachträgliches
+Zuordnen geht bis auf Weiteres über die Dokumentenverwaltung.
+
 ## Bekannte Stolperfallen (für alle Schritte)
 
 - `npm install` **und** der Vite-Dev-Server verändern lokal

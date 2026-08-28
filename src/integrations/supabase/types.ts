@@ -793,6 +793,7 @@ export type Database = {
           invoice_date: string
           invoice_number: string | null
           is_gross: boolean
+          is_self_receipt: boolean
           is_paid: boolean
           kostengruppe_code: string | null
           net_amount: number | null
@@ -819,6 +820,7 @@ export type Database = {
           invoice_date: string
           invoice_number?: string | null
           is_gross?: boolean
+          is_self_receipt?: boolean
           is_paid?: boolean
           kostengruppe_code?: string | null
           net_amount?: number | null
@@ -845,6 +847,7 @@ export type Database = {
           invoice_date?: string
           invoice_number?: string | null
           is_gross?: boolean
+          is_self_receipt?: boolean
           is_paid?: boolean
           kostengruppe_code?: string | null
           net_amount?: number | null
@@ -1316,6 +1319,10 @@ export type Database = {
       is_household_member: {
         Args: { check_household_id: string }
         Returns: boolean
+      }
+      next_self_receipt_number: {
+        Args: { p_year?: number }
+        Returns: string
       }
       run_all_household_backups: { Args: never; Returns: number }
     }

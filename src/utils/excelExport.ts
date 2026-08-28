@@ -84,7 +84,7 @@ function createSummarySheet(data: ExportData): SheetRow[] {
 
 function createInvoicesSheet(data: ExportData): SheetRow[] {
   const header = [
-    'Rechnungsnr.', 'Datum', 'Firma', 'Beschreibung', 'Kostengruppe',
+    'Belegart', 'Rechnungsnr.', 'Datum', 'Firma', 'Beschreibung', 'Kostengruppe',
     'Betrag', 'Abzüge', 'Zahlbetrag', 'Brutto/Netto', 'Status', 'Bezahlt', 'Zahlungsdatum', 'Bezahlt von', 'Aufteilung',
   ];
 
@@ -104,6 +104,9 @@ function createInvoicesSheet(data: ExportData): SheetRow[] {
       : '-';
 
     return [
+      // Eigenbelege müssen im Export erkennbar bleiben: für die Steuer ist der
+      // Unterschied zur Fremdrechnung wesentlich.
+      inv.is_self_receipt ? 'Eigenbeleg' : 'Rechnung',
       inv.invoice_number || '-',
       format(new Date(inv.invoice_date), 'dd.MM.yyyy', { locale: de }),
       inv.company_name,

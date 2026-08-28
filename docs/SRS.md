@@ -94,6 +94,7 @@ aus den ohnehin erfassten Rechnungen, Angeboten und Abzügen.
 | A3 | Als Bauherr erfasse ich Abzüge der Rechnungsprüfung (Skonto, Sicherheitseinbehalt, Baustrom, BW-Versicherung) in % oder €, damit Rechnung und Überweisung übereinstimmen. | MUSS | ✅ |
 | A4 | Als Bauherr sehe ich einbehaltene Sicherheitseinbehalte gesammelt („kann noch nachgefordert werden"). | MUSS | ✅ |
 | A5 | Als Bauherr kann ich Gelöschtes 30 Tage wiederherstellen (Papierkorb) und werde vor destruktiven Aktionen gewarnt. | MUSS | ✅ |
+| A6 | Als Bauherr lege ich einen **Eigenbeleg** an, um Kosten ohne Fremdrechnung zu erfassen (Barzahlung, Eigenleistung) oder mehrere Kleinbelege zu einem Sammelbeleg zu bündeln. Eigenbelege sind in Liste und Export als solche erkennbar. | MUSS | ✅ (28.08.2026) |
 
 ### Epic B — Zahlungen & Besitzverhältnisse (Kern, funktioniert gut)
 
@@ -486,6 +487,8 @@ Alle beantwortet am 08.07.2026:
 | Sicherheitseinbehalt | Einbehaltener Betrag, ggf. nach Gewährleistung fällig |
 | „Kredit" | Virtuelles Haushaltsmitglied als Zahler; Zahlungsverhältnis dokumentiert Besitzverhältnisse |
 | Prognose | Σ je Gewerk max(Schätzung, Beauftragt, Abgerechnet) — realistische Endkosten |
+| Eigenbeleg | Selbst ausgestellter Beleg statt Fremdrechnung (`invoices.is_self_receipt`); Nummernkreis EB-JJJJ-NNN, vergeben von `next_self_receipt_number()` |
+| Sammelbeleg | Eigenbeleg, an dem mehrere Dokumente hängen (`documents.invoice_id`, N:1) — bündelt Kleinbelege zu einer Kostenposition |
 
 ---
 

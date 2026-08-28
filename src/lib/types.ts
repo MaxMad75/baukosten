@@ -60,6 +60,9 @@ export interface Invoice {
   updated_at: string;
   /** Papierkorb: gesetzt = gelöscht, 30 Tage wiederherstellbar */
   deleted_at?: string | null;
+  /** Eigenbeleg (28.08.2026): selbst ausgestellt statt Fremdrechnung — Barzahlung,
+   *  Eigenleistung, oder Sammelbeleg über mehrere Kleinbelege (Story A6) */
+  is_self_receipt?: boolean;
 }
 
 export interface InvoicePayment {

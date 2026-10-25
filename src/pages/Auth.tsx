@@ -10,13 +10,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Building2 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { getSafeNextPath } from '@/lib/safeNext';
 import authBg from '@/assets/auth-bg.jpg';
 
 export default function Auth() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextParam = searchParams.get('next');
-  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/';
+  const safeNext = getSafeNextPath(nextParam);
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
